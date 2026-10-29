@@ -2,7 +2,9 @@ import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { config } from "./config.js";
 import * as memory from "./memory.js";
+import * as reminders from "./reminders.js";
 import { startTask, taskLaneConfigured } from "./tasks.js";
+import { describeNow } from "./time.js";
 
 let client = new Anthropic();
 
@@ -27,11 +29,20 @@ How to work:
 - When a request needs real work on the web — logging into an account, filling forms, booking, comparing many pages, scraping, or anything that takes more than a minute — call start_task with complete, self-contained instructions, then tell the user in one short sentence that you are on it and they will get a notification.
 - Never ask the user for passwords or card numbers in chat. Logins live in a secure vault the background agent can use.
 - When the user tells you a lasting preference or fact about themselves, save it with remember. Remove facts with forget when asked.
+- For reminders and recurring jobs ("remind me at 5", "every weekday at 8 brief me on my day") use set_reminder. Use action "run" when Jarvis should do something at that time and send the result; "notify" for a plain reminder. Times are in the user's local time zone, given in each message.
+- Messages that start with [Scheduled job] were sent by a reminder the user set, not typed live. Answer them as a short notification-sized briefing.
 - Messages that start with [Background task update] are results from tasks you started earlier. Mention them if they are relevant.
 - If a user message says it came by voice, reply in one to three short spoken sentences with no markdown, lists, or URLs.`;
 
 const RememberInput = z.object({ fact: z.string().min(1).max(500) });
 const ForgetInput = z.object({ fact_id: z.string() });
+const SetReminderInput = z.object({
+  text: z.string().min(1).max(1000),
+  due_at: z.string().refine((v) => !Number.isNaN(Date.parse(v)), "must be an ISO 8601 date-time"),
+  action: z.enum(["notify", "run"]).default("notify"),
+  repeat: z.enum(["daily", "weekdays", "weekly"]).nullish(),
+});
+const CancelReminderInput = z.object({ reminder_id: z.string() });
 const StartTaskInput = z.object({
   instructions: z.string().min(1),
   summary: z.string().min(1).max(120),
@@ -59,6 +70,34 @@ const tools: Anthropic.Beta.BetaToolUnion[] = [
       properties: { fact_id: { type: "string" } },
       required: ["fact_id"],
     },
+  },
+  {
+    name: "set_reminder",
+    description:
+      "Schedule a reminder or a recurring job. At due_at Jarvis either pushes the text to the user's phone (notify) or runs the text as a prompt and pushes the answer (run).",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        text: { type: "string", description: "What to remind the user of, or the prompt to run." },
+        due_at: { type: "string", description: "ISO 8601 date-time with the user's UTC offset, e.g. 2026-10-29T17:00:00-07:00." },
+        action: { type: "string", enum: ["notify", "run"] },
+        repeat: { type: "string", enum: ["daily", "weekdays", "weekly"], description: "Omit for a one-off." },
+      },
+      required: ["text", "due_at"],
+    },
+  },
+  {
+    name: "list_reminders",
+    description: "List the user's upcoming reminders and scheduled jobs with their ids.",
+    eager_input_streaming: true,
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "cancel_reminder",
+    description: "Cancel a reminder or scheduled job by id.",
+    eager_input_streaming: true,
+    input_schema: { type: "object", properties: { reminder_id: { type: "string" } }, required: ["reminder_id"] },
   },
   {
     name: "start_task",
@@ -116,6 +155,36 @@ async function runClientTool(
         const ok = await memory.deleteFact(config.userId, fact_id);
         return result(ok ? "Deleted." : "No fact with that id.", !ok);
       }
+      case "set_reminder": {
+        const input = SetReminderInput.parse(block.input);
+        const dueAt = new Date(input.due_at);
+        if (dueAt.getTime() < Date.now() - 60_000) return result("That time is in the past.", true);
+        const id = await reminders.createReminder({
+          userId: config.userId,
+          conversationId,
+          text: input.text,
+          action: input.action,
+          dueAt,
+          repeat: input.repeat ?? null,
+        });
+        const tz = await reminders.getTimezone(config.userId);
+        return result(`Scheduled ${id} for ${describeNow(tz, dueAt)}${input.repeat ? `, repeating ${input.repeat}` : ""}.`);
+      }
+      case "list_reminders": {
+        const tz = await reminders.getTimezone(config.userId);
+        const rows = await reminders.listReminders(config.userId);
+        if (rows.length === 0) return result("No upcoming reminders.");
+        return result(
+          rows
+            .map((r) => `[${r.id}] ${describeNow(tz, new Date(r.due_at))}${r.repeat ? ` (${r.repeat})` : ""} ${r.action}: ${r.text}`)
+            .join("\n"),
+        );
+      }
+      case "cancel_reminder": {
+        const { reminder_id } = CancelReminderInput.parse(block.input);
+        const ok = await reminders.cancelReminder(config.userId, reminder_id);
+        return result(ok ? "Cancelled." : "No upcoming reminder with that id.", !ok);
+      }
       case "start_task": {
         if (!taskLaneConfigured()) {
           return result("Background tasks are not set up on this server yet. Tell the user.", true);
@@ -145,22 +214,34 @@ function textOf(content: Anthropic.Beta.BetaContentBlock[]): string {
 export async function runTurn(opts: {
   conversationId: string;
   text: string;
-  source: "text" | "voice";
+  source: "text" | "voice" | "scheduled";
   emit: (e: ChatEvent) => void;
-}) {
+  timezone?: string;
+}): Promise<string> {
   const { conversationId, text, source, emit } = opts;
+  if (opts.timezone) await reminders.setTimezone(config.userId, opts.timezone);
+  const timezone = await reminders.getTimezone(config.userId);
 
   const userContent: Anthropic.Beta.BetaTextBlockParam[] = [];
   for (const update of await memory.takePendingTaskUpdates(conversationId)) {
     userContent.push({ type: "text", text: `[Background task update]\n${update}` });
   }
+  // The time rides in the user turn, not the system prompt, so the cached prefix stays stable.
+  userContent.push({ type: "text", text: `(User's local time: ${describeNow(timezone)}, ${timezone}.)` });
   if (source === "voice") userContent.push({ type: "text", text: "(Sent by voice.)" });
-  userContent.push({ type: "text", text });
-  await memory.appendMessage(conversationId, "user", userContent, text, source);
+  userContent.push({ type: "text", text: source === "scheduled" ? `[Scheduled job] ${text}` : text });
+  await memory.appendMessage(
+    conversationId,
+    "user",
+    userContent,
+    source === "scheduled" ? `Scheduled: ${text}` : text,
+    source === "scheduled" ? "system" : source,
+  );
 
   const system = await buildSystem();
   const messages = await memory.getApiHistory(conversationId);
   let jsonRetries = 0;
+  let finalText = "";
 
   for (let iteration = 0; iteration < 10; iteration++) {
     const stream = client.beta.messages.stream({
@@ -202,6 +283,7 @@ export async function runTurn(opts: {
     // Run tools before storing, so a failure never leaves a tool_use without its result.
     const results = await Promise.all(toolUses.map((b) => runClientTool(b, conversationId, emit)));
 
+    finalText = textOf(message.content) || finalText;
     messages.push({ role: "assistant", content: message.content });
     await memory.appendMessage(conversationId, "assistant", message.content, textOf(message.content) || null);
     if (results.length > 0) {
@@ -213,4 +295,5 @@ export async function runTurn(opts: {
   }
 
   emit({ type: "done" });
+  return finalText;
 }

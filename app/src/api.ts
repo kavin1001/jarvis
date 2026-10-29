@@ -35,6 +35,14 @@ export interface Conversation {
   updated_at: string;
 }
 
+export interface Reminder {
+  id: string;
+  text: string;
+  action: "notify" | "run";
+  due_at: string;
+  repeat: "daily" | "weekdays" | "weekly" | null;
+}
+
 export interface Fact {
   id: string;
   fact: string;
@@ -75,6 +83,8 @@ async function request<T>(s: Settings, path: string, init: { method?: string; bo
 export const api = {
   conversations: (s: Settings) => request<Conversation[]>(s, "/api/conversations"),
   deleteConversation: (s: Settings, id: string) => request(s, `/api/conversations/${id}`, { method: "DELETE" }),
+  reminders: (s: Settings) => request<Reminder[]>(s, "/api/reminders"),
+  cancelReminder: (s: Settings, id: string) => request(s, `/api/reminders/${id}`, { method: "DELETE" }),
   facts: (s: Settings) => request<Fact[]>(s, "/api/facts"),
   addFact: (s: Settings, fact: string) => request<Fact>(s, "/api/facts", { method: "POST", body: { fact } }),
   deleteFact: (s: Settings, id: string) => request(s, `/api/facts/${id}`, { method: "DELETE" }),
@@ -89,7 +99,7 @@ export const api = {
 /** Sends one message and calls onEvent for each server-sent event as it streams in. */
 export async function streamChat(
   s: Settings,
-  body: { conversationId?: string; text: string; source: "text" | "voice" },
+  body: { conversationId?: string; text: string; source: "text" | "voice"; timezone?: string },
   onEvent: (e: StreamEvent) => void,
 ) {
   const res = await fetch(`${s.url}/api/chat`, {

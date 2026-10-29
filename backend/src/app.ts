@@ -6,6 +6,7 @@ import { runTurn, type ChatEvent } from "./assistant.js";
 import { config } from "./config.js";
 import * as memory from "./memory.js";
 import { savePushToken } from "./push.js";
+import { cancelReminder, listReminders } from "./reminders.js";
 import { decideApproval, listTasks } from "./tasks.js";
 
 export const app = new Hono();
@@ -17,6 +18,7 @@ const ChatBody = z.object({
   conversationId: z.string().uuid().optional(),
   text: z.string().min(1).max(20_000),
   source: z.enum(["text", "voice"]).default("text"),
+  timezone: z.string().max(64).optional(),
 });
 
 // Streams the reply as server-sent events: conversation, text, task_started, done, error.
@@ -39,6 +41,7 @@ app.post("/api/chat", async (c) => {
         conversationId: id,
         text: body.data.text,
         source: body.data.source,
+        timezone: body.data.timezone,
         emit: (e) => void send(e),
       });
     } catch (err) {
@@ -76,6 +79,11 @@ app.post("/api/facts", async (c) => {
 });
 app.delete("/api/facts/:id", async (c) =>
   c.json({ deleted: await memory.deleteFact(config.userId, c.req.param("id")) }),
+);
+
+app.get("/api/reminders", async (c) => c.json(await listReminders(config.userId)));
+app.delete("/api/reminders/:id", async (c) =>
+  c.json({ cancelled: await cancelReminder(config.userId, c.req.param("id")) }),
 );
 
 app.get("/api/tasks", async (c) => c.json(await listTasks(config.userId)));
