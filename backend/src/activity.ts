@@ -55,6 +55,10 @@ export function describeAction(name: string, input: Input, timeZone = "UTC"): st
       return "Deleted an event from your calendar";
     case "calendar_respond_to_event":
       return `Replied ${input.response === "accepted" ? "yes" : input.response === "declined" ? "no" : "maybe"} to an invitation`;
+    case "gmail_snooze": {
+      const n = Array.isArray(input.message_ids) ? input.message_ids.length : 0;
+      return `Snoozed ${n} email${n === 1 ? "" : "s"}${when(input.until, timeZone) ? ` until ${when(input.until, timeZone)}` : ""}`;
+    }
     case "start_task":
       return `Started a background task: ${str(input.summary) || str(input.instructions)}`;
     case "continue_task":

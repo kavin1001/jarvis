@@ -31,6 +31,7 @@ export async function exportData(userId: string) {
       "SELECT text, place_name, on_event, every_time, status, created_at FROM place_reminders WHERE user_id = $1 ORDER BY created_at",
       [userId],
     ),
+    mail_snoozes: await query("SELECT about, due_at, status, created_at FROM mail_snoozes WHERE user_id = $1 ORDER BY created_at", [userId]),
     page_watches: await query("SELECT about, url, look_for, status, created_at, expires_at FROM page_watches WHERE user_id = $1 ORDER BY created_at", [userId]),
     mail_watches: await query("SELECT about, query, once, status, created_at, expires_at FROM mail_watches WHERE user_id = $1 ORDER BY created_at", [userId]),
     activity: await query("SELECT kind, summary, created_at FROM activity WHERE user_id = $1 ORDER BY created_at", [userId]),
@@ -62,6 +63,7 @@ export async function deleteAllData(userId: string) {
   await query("DELETE FROM place_reminders WHERE user_id = $1", [userId]);
   await query("DELETE FROM mail_watches WHERE user_id = $1", [userId]);
   await query("DELETE FROM page_watches WHERE user_id = $1", [userId]);
+  await query("DELETE FROM mail_snoozes WHERE user_id = $1", [userId]);
   await query("DELETE FROM places WHERE user_id = $1", [userId]);
   await query("DELETE FROM mcp_servers WHERE user_id = $1", [userId]);
   await query("DELETE FROM connectors WHERE user_id = $1", [userId]);

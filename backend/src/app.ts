@@ -13,7 +13,7 @@ import { runTurn, sourcesOf, type ChatEvent } from "./assistant.js";
 import { config } from "./config.js";
 import { query } from "./db.js";
 import { allowAttempt, authenticate, createPairingCode, isLimited, listDevices, redeemPairingCode, registerDevice, revokeDevice, type Caller } from "./devices.js";
-import { disconnectGoogle, googleStatus, handleGoogleCallback, startGoogleAuth, upcomingEvents } from "./google.js";
+import { disconnectGoogle, googleStatus, handleGoogleCallback, modifyMail, startGoogleAuth, upcomingEvents } from "./google.js";
 import { addServer, deleteServer, listServers, NewServer, setServerEnabled } from "./mcp.js";
 import { handleMcpCallback, startMcpOAuth } from "./mcpOAuth.js";
 import * as lists from "./lists.js";
@@ -24,6 +24,7 @@ import { ClaudeExport, importClaudeChats } from "./importClaude.js";
 import * as memory from "./memory.js";
 import * as mailWatch from "./mailWatch.js";
 import * as pageWatch from "./pageWatch.js";
+import * as mailSnooze from "./mailSnooze.js";
 import * as places from "./places.js";
 import { getNotifySettings, savePushToken, sendPush, setNotifySettings } from "./push.js";
 import { cancelReminder, createReminder, getTimezone, listReminders, markReminderDone, rescheduleReminder, runReminderNow, skipReminder, snoozeReminder } from "./reminders.js";
@@ -531,6 +532,17 @@ app.delete("/api/place-reminders/:id", async (c) => c.json({ cancelled: await pl
 app.get("/api/mail-watches", async (c) =>
   c.json((await mailWatch.listMailWatches(config.userId)).map(({ id, about, query, once, expires_at }) => ({ id, about, query, once, expires_at }))),
 );
+app.get("/api/mail-snoozes", async (c) =>
+  c.json((await mailSnooze.listSnoozes(config.userId)).map(({ id, about, due_at, message_ids }) => ({ id, about, due_at, count: message_ids.length }))),
+);
+// Brings the emails back now.
+app.delete("/api/mail-snoozes/:id", async (c) => {
+  try {
+    return c.json({ returned: await mailSnooze.unsnooze(config.userId, c.req.param("id"), modifyMail) });
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 502);
+  }
+});
 app.get("/api/page-watches", async (c) =>
   c.json((await pageWatch.listPageWatches(config.userId)).map(({ id, about, url, look_for, expires_at }) => ({ id, about, url, look_for, expires_at }))),
 );

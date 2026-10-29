@@ -106,6 +106,13 @@ export interface PageWatch {
   expires_at: string;
 }
 
+export interface MailSnooze {
+  id: string;
+  about: string;
+  due_at: string;
+  count: number;
+}
+
 export interface AgendaEvent {
   summary: string;
   /** ISO date-time, or a plain date for all-day events. */
@@ -388,6 +395,8 @@ export const api = {
   cancelPlaceReminder: (s: Settings, id: string) => request(s, `/api/place-reminders/${id}`, { method: "DELETE" }),
   mailWatches: (s: Settings) => request<MailWatch[]>(s, "/api/mail-watches"),
   cancelMailWatch: (s: Settings, id: string) => request(s, `/api/mail-watches/${id}`, { method: "DELETE" }),
+  mailSnoozes: (s: Settings) => request<MailSnooze[]>(s, "/api/mail-snoozes"),
+  unsnoozeMail: (s: Settings, id: string) => request(s, `/api/mail-snoozes/${id}`, { method: "DELETE" }),
   pageWatches: (s: Settings) => request<PageWatch[]>(s, "/api/page-watches"),
   cancelPageWatch: (s: Settings, id: string) => request(s, `/api/page-watches/${id}`, { method: "DELETE" }),
   triggerPlaceReminder: (s: Settings, id: string, event: "arrive" | "leave") =>

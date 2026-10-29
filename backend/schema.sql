@@ -330,3 +330,16 @@ CREATE TABLE IF NOT EXISTS page_watches (
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS page_watches_active ON page_watches (checked_at) WHERE status = 'active';
+
+-- "Snooze this until Monday": emails archived now and put back in the inbox, unread, at due_at.
+CREATE TABLE IF NOT EXISTS mail_snoozes (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id          TEXT NOT NULL,
+  conversation_id  UUID REFERENCES conversations(id) ON DELETE SET NULL,
+  message_ids      TEXT[] NOT NULL,
+  about            TEXT NOT NULL,
+  due_at           TIMESTAMPTZ NOT NULL,
+  status           TEXT NOT NULL DEFAULT 'snoozed' CHECK (status IN ('snoozed', 'back', 'failed')),
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS mail_snoozes_due ON mail_snoozes (due_at) WHERE status = 'snoozed';

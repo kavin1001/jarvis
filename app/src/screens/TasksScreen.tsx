@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { FlatList, Pressable, RefreshControl, View } from "react-native";
 import { ActionSheet, type SheetAction } from "../ActionSheet";
 import { Alert } from "../dialog";
-import { api, type MailWatch, type PageWatch, type PlaceReminder, type Reminder, type Repeat, type Settings, type Task } from "../api";
+import { api, type MailSnooze, type MailWatch, type PageWatch, type PlaceReminder, type Reminder, type Repeat, type Settings, type Task } from "../api";
 import { askApproval } from "../usePush";
 import { Empty, Header, LinkButton, relativeTime, useShared } from "../ui";
 import { Text, useColors } from "../theme";
@@ -82,23 +82,26 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
   const [atPlaces, setAtPlaces] = useState<PlaceReminder[]>([]);
   const [watches, setWatches] = useState<MailWatch[]>([]);
   const [pages, setPages] = useState<PageWatch[]>([]);
+  const [snoozed, setSnoozed] = useState<MailSnooze[]>([]);
   const [sheet, setSheet] = useState<SheetAction[] | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [t, r, p, w, pw] = await Promise.all([
+      const [t, r, p, w, pw, sn] = await Promise.all([
         api.tasks(settings),
         api.reminders(settings),
         api.placeReminders(settings).catch(() => []),
         api.mailWatches(settings).catch(() => []),
         api.pageWatches(settings).catch(() => []),
+        api.mailSnoozes(settings).catch(() => []),
       ]);
       setTasks(t);
       setReminders(r);
       setAtPlaces(p);
       setWatches(w);
       setPages(pw);
+      setSnoozed(sn);
     } finally {
       setLoading(false);
     }
@@ -175,7 +178,7 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
         keyExtractor={(t) => t.id}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
         ListHeaderComponent={
-          reminders.length > 0 || atPlaces.length > 0 || watches.length > 0 || pages.length > 0 ? (
+          reminders.length > 0 || atPlaces.length > 0 || watches.length > 0 || pages.length > 0 || snoozed.length > 0 ? (
             <View>
               <Text style={[styles.rowMeta, { paddingHorizontal: 16, paddingTop: 8 }]}>Upcoming</Text>
               {reminders.map((r) => (
@@ -226,6 +229,22 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
                   <Text style={styles.rowMeta}>
                     {w.once ? "Tells you about the first new email" : "Tells you about each new email"} · until{" "}
                     {new Date(w.expires_at).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}
+                  </Text>
+                </Pressable>
+              ))}
+              {snoozed.map((s) => (
+                <Pressable
+                  key={s.id}
+                  style={styles.row}
+                  accessibilityHint="Bring back now"
+                  onPress={() => setSheet([{ label: "Back to the inbox now", onPress: () => api.unsnoozeMail(settings, s.id).then(load, failed("bring it back")) }])}
+                >
+                  <Text style={styles.rowTitle} numberOfLines={2}>
+                    💤 {s.about}
+                  </Text>
+                  <Text style={styles.rowMeta}>
+                    {s.count === 1 ? "Email" : `${s.count} emails`} back in your inbox{" "}
+                    {new Date(s.due_at).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit", month: "short", day: "numeric" })}
                   </Text>
                 </Pressable>
               ))}
