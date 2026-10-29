@@ -1,3 +1,4 @@
+import * as DocumentPicker from "expo-document-picker";
 import { File, Paths } from "expo-file-system";
 import { Platform, Share, View } from "react-native";
 import { api, type Settings } from "../api";
@@ -28,6 +29,39 @@ export function YourData({ settings, onErased }: { settings: Settings; onErased:
     }
   }
 
+  function importClaude() {
+    Alert.alert(
+      "Import from Claude.ai",
+      "On claude.ai, open Settings, Privacy, and tap Export data. Claude emails you a link to a zip. Unzip it (the Files app does this when you tap the zip), then pick conversations.json here. Your chats come across as text, and you can search and continue them in Jarvis. Importing again skips chats you already have.",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Choose file", onPress: () => void pickExport() },
+      ],
+    );
+  }
+
+  async function pickExport() {
+    try {
+      const picked = await DocumentPicker.getDocumentAsync({ type: ["application/json", "public.json", "*/*"], copyToCacheDirectory: true });
+      if (picked.canceled) return;
+      const asset = picked.assets[0];
+      const text = Platform.OS === "web" && asset.file ? await asset.file.text() : await new File(asset.uri).text();
+      let chats: unknown;
+      try {
+        chats = JSON.parse(text);
+      } catch {
+        return Alert.alert("That isn't conversations.json", "Unzip the export from Claude and pick the conversations.json inside it.");
+      }
+      const { imported, skipped, messages } = await api.importClaude(settings, chats);
+      Alert.alert(
+        imported ? `Imported ${imported} chat${imported === 1 ? "" : "s"}` : "Nothing new to import",
+        `${messages} messages${skipped ? `; ${skipped} skipped (already imported, or empty)` : ""}. They're in History.`,
+      );
+    } catch (err) {
+      Alert.alert("Import failed", String(err));
+    }
+  }
+
   function eraseAll() {
     Alert.alert(
       "Erase everything?",
@@ -46,8 +80,9 @@ export function YourData({ settings, onErased }: { settings: Settings; onErased:
   return (
     <View style={styles.row}>
       <Text style={styles.rowMeta}>Your data</Text>
-      <View style={{ flexDirection: "row", gap: 24, paddingTop: 4 }}>
+      <View style={{ flexDirection: "row", flexWrap: "wrap", columnGap: 24, rowGap: 8, paddingTop: 4 }}>
         <LinkButton label="Export as JSON" onPress={exportAll} />
+        <LinkButton label="Import from Claude.ai" onPress={importClaude} />
         <LinkButton label="Erase everything" danger onPress={eraseAll} />
       </View>
     </View>

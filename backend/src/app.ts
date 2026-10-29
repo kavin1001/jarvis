@@ -19,6 +19,7 @@ import { handleMcpCallback, startMcpOAuth } from "./mcpOAuth.js";
 import * as lists from "./lists.js";
 import * as notes from "./notes.js";
 import { recentActivity } from "./activity.js";
+import { ClaudeExport, importClaudeChats } from "./importClaude.js";
 import * as memory from "./memory.js";
 import * as places from "./places.js";
 import { getNotifySettings, savePushToken, sendPush, setNotifySettings } from "./push.js";
@@ -48,7 +49,10 @@ app.get("/health", async (c) => {
 // Chat carries up to 4 base64 photos; everything else is small JSON.
 const tooLarge = (c: { json: (b: unknown, s: 413) => Response }) => c.json({ error: "Request too large" }, 413);
 app.use("/api/chat", bodyLimit({ maxSize: 32 * 1024 * 1024, onError: tooLarge }));
-app.use("*", async (c, next) => (c.req.path === "/api/chat" ? next() : bodyLimit({ maxSize: 1024 * 1024, onError: tooLarge })(c, next)));
+// A Claude.ai export can be large: years of chats as one JSON file.
+app.use("/api/import/claude", bodyLimit({ maxSize: 100 * 1024 * 1024, onError: tooLarge }));
+const BIG_BODIES = new Set(["/api/chat", "/api/import/claude"]);
+app.use("*", async (c, next) => (BIG_BODIES.has(c.req.path) ? next() : bodyLimit({ maxSize: 1024 * 1024, onError: tooLarge })(c, next)));
 
 /**
  * The caller's address. Behind one proxy (Render, Fly) the right-most
@@ -370,6 +374,11 @@ app.patch("/api/list-items/:id", async (c) => {
   return item ? c.json(item) : c.json({ error: "Not found" }, 404);
 });
 app.delete("/api/list-items/:id", async (c) => c.json({ deleted: (await lists.removeItems(config.userId, [c.req.param("id")])) > 0 }));
+app.post("/api/import/claude", async (c) => {
+  const body = ClaudeExport.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) return c.json({ error: "That isn't a Claude.ai conversations.json. Unzip the export and pick conversations.json." }, 400);
+  return c.json(await importClaudeChats(config.userId, body.data));
+});
 app.get("/api/activity", async (c) => c.json(await recentActivity(config.userId, Math.min(200, Number(c.req.query("limit")) || 50))));
 app.get("/api/notes", async (c) => c.json(await notes.findNotes(config.userId, (c.req.query("q") ?? "").slice(0, 200))));
 const NewNote = z.object({ body: z.string().trim().min(1).max(notes.MAX_BODY), title: z.string().trim().max(120).optional() }).strict();

@@ -5,7 +5,7 @@ Goal: a personal agent on your phone that answers instantly, remembers you, and 
 ## Built
 
 - **Talk or type:** streaming replies, tap or hold to talk, hands-free conversation, talking over Jarvis stops its speech, the best installed voice, a stop button, a choice of when replies are read aloud and how fast.
-- **Knows you:** long-term memory you can edit, shopping, packing and to-do lists you keep by voice or in the Lists tab, notes ("take a note…", or save any reply) you can search and edit, full chat history with search, conversation titles and renaming, approximate location when you allow it.
+- **Knows you:** long-term memory you can edit, shopping, packing and to-do lists you keep by voice or in the Lists tab, notes ("take a note…", or save any reply) you can search and edit, full chat history with search (including chats imported from Claude.ai), conversation titles and renaming, approximate location when you allow it.
 - **Your accounts:** Gmail (drafts, never sends), Google Calendar (add, move and delete events, find free time) and Google Contacts (look up numbers and addresses), any MCP server (Notion and Linear with sign-in, GitHub, Zapier, Pipedream…) for both quick answers and background tasks.
 - **Everyday answers:** weather forecasts for where you are or anywhere else, without a web search.
 - **Gets things done:** background tasks on Claude Managed Agents with approve or deny from the notification and files you can open from Tasks, reminders and routines with snooze, reminders for when you arrive or leave a place, a "coming up" card on a new chat, a status line while tools run.
