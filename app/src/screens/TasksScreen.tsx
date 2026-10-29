@@ -20,7 +20,7 @@ const REPEAT_LABELS: Record<Repeat, string> = {
 const ROUTINES: { label: string; text: string; time: string; repeat: Repeat; weekday?: number }[] = [
   {
     label: "Morning briefing (weekdays, 8:00)",
-    text: "Morning briefing: today's weather where I am, what's on my calendar, any important unread email, and two or three top news headlines. Keep it short.",
+    text: "Morning briefing: today's weather where I am, what's on my calendar, any important unread email, birthdays today or tomorrow, and two or three top news headlines. Keep it short.",
     time: "08:00",
     repeat: "weekdays",
   },

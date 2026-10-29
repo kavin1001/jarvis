@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Birthdays: "whose birthday is coming up?", "anyone's birthday this week?". Jarvis reads the birthdays saved in your Google Contacts and says how old people turn when the year is known. The ready-made morning briefing now mentions birthdays today or tomorrow. Uses the contacts permission you already gave; no reconnect needed.
 - Settings, Privacy, **Keep chats**: forever (as before), 1 year, 90 days or 30 days. Chats you haven't used for longer are deleted with their messages, checked hourly. Pinned chats, and chats with a background task still running, are kept. Before deleting anything straight away, Jarvis says how many chats will go. `GET/PATCH /api/privacy`.
 - Email attachments: "what's the total on the invoice Acme sent?", "when is the flight on that booking confirmation?". Jarvis can now open PDFs, images and text files attached to your email (up to 10 MB) and read them, not just the email body. Other file types are listed but not opened.
 - Tasks, **Add routine** has four more ready-made routines: an inbox catch-up on weekday afternoons, an evening journal that asks how your day went and keeps your answers in a "Journal" note, a Sunday-evening plan for the week ahead, and weekend ideas that fit the weather. `POST /api/reminders` takes `weekday` (0 is Sunday) so a weekly routine starts on the right day.

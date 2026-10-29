@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import { app } from "../src/app.js";
 import { decrypt, encrypt } from "../src/crypto.js";
 import { query, pool } from "../src/db.js";
-import { freeSlots, googleStatus, runGoogleTool, startGoogleAuth } from "../src/google.js";
+import { freeSlots, googleStatus, nextBirthdays, runGoogleTool, startGoogleAuth } from "../src/google.js";
 import { auth, resetDb } from "./helpers.js";
 
 const SECRET = "test-connector-secret";
@@ -371,5 +371,39 @@ describe("free time", () => {
     expect(text).toContain("5:00 PM to 6:00 PM");
     expect(calls[0].url).toContain("singleEvents=true");
     await expect(runGoogleTool("me", "calendar_find_free_time", { time_min: "2026-10-29T13:00:00Z", time_max: "2026-12-29T13:00:00Z" })).rejects.toThrow(/31 days/);
+  });
+});
+
+describe("birthdays", () => {
+  it("lists the next birthdays in order, across the year end and for 29 February", () => {
+    const people = [
+      { name: "Ana", month: 1, day: 3, year: 1990 },
+      { name: "Sam", month: 12, day: 30 },
+      { name: "Leap", month: 2, day: 29, year: 2000 },
+      { name: "Past", month: 12, day: 1 },
+      { name: "Today", month: 12, day: 28, year: 2000 },
+    ];
+    const found = nextBirthdays(people, { year: 2026, month: 12, day: 28 }, 10);
+    expect(found.map((b) => [b.name, b.inDays, b.turns])).toEqual([
+      ["Today", 0, 26],
+      ["Sam", 2, undefined],
+      ["Ana", 6, 37],
+    ]);
+    const leap = nextBirthdays(people, { year: 2027, month: 2, day: 20 }, 10);
+    expect(leap.map((b) => [b.name, b.at.toISOString().slice(0, 10), b.turns])).toEqual([["Leap", "2027-02-28", 27]]);
+  });
+
+  it("reads birthdays from Google Contacts across pages", async () => {
+    await connect({ access_token: "at", expires_at: Date.now() + 3600_000 }, "https://www.googleapis.com/auth/contacts.readonly https://www.googleapis.com/auth/contacts.other.readonly");
+    const today = new Date();
+    const soon = new Date(today.getTime() + 2 * 86_400_000);
+    const calls = mockFetch({
+      "people/me/connections": (url) =>
+        url.includes("pageToken=p2")
+          ? { connections: [{ names: [{ displayName: "Sam" }], birthdays: [{ date: { month: soon.getUTCMonth() + 1, day: soon.getUTCDate() } }] }] }
+          : { connections: [{ names: [{ displayName: "No date" }] }], nextPageToken: "p2" },
+    });
+    expect(await runGoogleTool("me", "contacts_birthdays", {}, "UTC")).toMatch(/^- \w{3}, \w{3} \d+: Sam$/);
+    expect(calls).toHaveLength(2);
   });
 });

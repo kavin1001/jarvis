@@ -185,6 +185,16 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
     },
   },
   {
+    name: "contacts_birthdays",
+    description:
+      "Birthdays coming up in the user's Google Contacts, soonest first, with the age they turn when the year is known. Use for \"whose birthday is coming up?\" and in briefings.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: { days: { type: "integer", description: "How far ahead to look, 1 to 366. Default 30." } },
+    },
+  },
+  {
     name: "gmail_search",
     description:
       "Search the user's Gmail with Gmail search syntax (from:, subject:, newer_than:2d, is:unread, ...). Returns sender, subject, date, snippet and id for each match.",
@@ -325,6 +335,7 @@ const isoDate = z.string().refine((v) => !Number.isNaN(Date.parse(v)), "must be 
 const hhmm = z.string().regex(/^([01]?\d|2[0-3]):[0-5]\d$/, "must be HH:MM");
 const inputs = {
   contacts_search: z.object({ query: z.string().trim().min(1).max(100) }),
+  contacts_birthdays: z.object({ days: z.number().int().min(1).max(366).default(30) }),
   gmail_search: z.object({ query: z.string(), max_results: z.number().int().min(1).max(10).default(5) }),
   gmail_read: z.object({ message_id: z.string() }),
   gmail_read_attachment: z.object({ message_id: z.string().min(1), attachment_id: z.string().min(1) }),
@@ -439,10 +450,53 @@ interface Person {
   names?: { displayName?: string }[];
   phoneNumbers?: { value?: string; type?: string }[];
   emailAddresses?: { value?: string }[];
+  birthdays?: { date?: { year?: number; month?: number; day?: number } }[];
 }
 
 // The People API asks for one empty search first to load its cache; once per process is enough.
 const warmedUp = new Set<string>();
+
+type Birthday = { name: string; month: number; day: number; year?: number };
+
+/**
+ * Birthdays within `days` of `today` (a local calendar date), soonest first. A 29 February
+ * birthday is marked on the 28th in other years.
+ */
+export function nextBirthdays(birthdays: Birthday[], today: { year: number; month: number; day: number }, days: number) {
+  const start = Date.UTC(today.year, today.month - 1, today.day);
+  const leap = (y: number) => new Date(Date.UTC(y, 1, 29)).getUTCMonth() === 1;
+  const upcoming = birthdays.flatMap((b) => {
+    for (const year of [today.year, today.year + 1]) {
+      const day = b.month === 2 && b.day === 29 && !leap(year) ? 28 : b.day;
+      const at = Date.UTC(year, b.month - 1, day);
+      if (at < start) continue;
+      const inDays = Math.round((at - start) / 86_400_000);
+      return inDays <= days ? [{ ...b, at: new Date(at), inDays, turns: b.year ? year - b.year : undefined }] : [];
+    }
+    return [];
+  });
+  return upcoming.sort((a, b) => a.inDays - b.inDays || a.name.localeCompare(b.name));
+}
+
+async function contactBirthdays(userId: string): Promise<Birthday[]> {
+  const out: Birthday[] = [];
+  let pageToken = "";
+  // Up to 5,000 contacts.
+  for (let page = 0; page < 5; page++) {
+    const res = await google<{ connections?: Person[]; nextPageToken?: string }>(
+      userId,
+      `https://people.googleapis.com/v1/people/me/connections?${new URLSearchParams({ personFields: "names,birthdays", pageSize: "1000", ...(pageToken ? { pageToken } : {}) })}`,
+    );
+    for (const p of res.connections ?? []) {
+      const date = p.birthdays?.find((b) => b.date?.month && b.date?.day)?.date;
+      const name = p.names?.[0]?.displayName;
+      if (date && name) out.push({ name, month: date.month!, day: date.day!, ...(date.year ? { year: date.year } : {}) });
+    }
+    if (!res.nextPageToken) break;
+    pageToken = res.nextPageToken;
+  }
+  return out;
+}
 
 async function searchContacts(userId: string, q: string): Promise<string> {
   const PEOPLE = "https://people.googleapis.com/v1";
@@ -520,6 +574,18 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
       if (!(await googleStatus(userId)).can_search_contacts)
         throw new Error("Jarvis needs permission to look up contacts. In Settings, tap Connect again next to Google.");
       return searchContacts(userId, q);
+    }
+    case "contacts_birthdays": {
+      const { days } = inputs.contacts_birthdays.parse(raw ?? {});
+      if (!(await googleStatus(userId)).can_search_contacts)
+        throw new Error("Jarvis needs permission to read your contacts. In Settings, tap Connect again next to Google.");
+      const today = zonedParts(new Date(), timeZone);
+      const found = nextBirthdays(await contactBirthdays(userId), today, days);
+      if (found.length === 0) return `No birthdays in your contacts in the next ${days} days.`;
+      const fmt = new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" });
+      return found
+        .map((b) => `- ${b.inDays === 0 ? "Today" : b.inDays === 1 ? "Tomorrow" : fmt.format(b.at)}: ${b.name}${b.turns ? ` (turns ${b.turns})` : ""}`)
+        .join("\n");
     }
     case "gmail_search": {
       const { query: q, max_results } = inputs.gmail_search.parse(raw);
