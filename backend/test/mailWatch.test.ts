@@ -10,7 +10,7 @@ import { auth, resetDb } from "./helpers.js";
 beforeEach(resetDb);
 afterAll(() => pool.end());
 
-const hit = (id: string, from = "Sam Lee <sam@example.com>", subject = "Re: the lease"): MailHit => ({ id, from, subject, date: "", snippet: "" });
+const hit = (id: string, from = "Sam Lee <sam@example.com>", subject = "Re: the lease"): MailHit => ({ id, from, subject, date: "", snippet: "", list: false });
 
 /** A fake Gmail that returns whatever the test puts in the inbox, and records the searches. */
 function inbox() {

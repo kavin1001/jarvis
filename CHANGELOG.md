@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Unsubscribing: "unsubscribe me from this newsletter", "which mailing lists emailed me this week?". Jarvis now sees which emails come from mailing lists and gives you the list's own unsubscribe link to tap, then offers to archive the rest from that sender. It doesn't unsubscribe for you.
 - Settings, **How Jarvis replies**: your own standing instructions, like Claude's personal preferences ("keep answers short", "use metric units", "I'm vegetarian"). They're used in every chat, including Siri and routines, until you change them. Included in export, and cleared by erase. `GET/PUT /api/instructions`.
 - Reminders that keep coming back: "remind me to take my pills at 8, and keep reminding me until I do". After it goes off, the reminder comes back every few minutes (you choose 5 to 60) until you tap **Done** on the notification or in Tasks, at most 12 times. Snoozing pushes the next one back. A daily reminder that nags stays on its schedule after you tap Done. Needs a new app build for the Done button; until then, say "done" in the chat.
 - Google Drive: "what does my lease say about pets?", "find the Q3 budget sheet", "summarise the doc Ana shared". Jarvis can search your Drive, including files shared with you, and read Google Docs, Sheets (the first sheet), Slides, PDFs, images and text files. It can't change or delete anything there. Add the `drive.readonly` scope and the Google Drive API (see `docs/DEPLOY.md`), then tap **Connect again** in Settings.

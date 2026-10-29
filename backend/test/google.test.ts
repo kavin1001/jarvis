@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import { app } from "../src/app.js";
 import { decrypt, encrypt } from "../src/crypto.js";
 import { query, pool } from "../src/db.js";
-import { freeSlots, googleStatus, nextBirthdays, runGoogleTool, startGoogleAuth } from "../src/google.js";
+import { freeSlots, googleStatus, nextBirthdays, runGoogleTool, startGoogleAuth, unsubscribeLink } from "../src/google.js";
 import { auth, resetDb } from "./helpers.js";
 
 const SECRET = "test-connector-secret";
@@ -121,6 +121,33 @@ describe("Google tools", () => {
     expect(out).toContain("Subject: Booking");
     const apiCall = calls.find((c) => c.url.includes("gmail.googleapis.com"))!;
     expect((apiCall.init?.headers as Record<string, string>).Authorization).toBe("Bearer new");
+  });
+
+  it("marks mailing lists and offers their unsubscribe link", async () => {
+    expect(unsubscribeLink("<mailto:leave@list.example?subject=unsub>, <https://list.example/u/123>")).toBe("https://list.example/u/123");
+    expect(unsubscribeLink("<mailto:leave@list.example>")).toBe("mailto:leave@list.example");
+    expect(unsubscribeLink("<http://insecure.example/u>")).toBeNull();
+    expect(unsubscribeLink("<javascript:alert(1)>")).toBeNull();
+    expect(unsubscribeLink("")).toBeNull();
+
+    await connect({ access_token: "at", expires_at: Date.now() + 3_600_000 });
+    const newsletter = {
+      id: "n1",
+      threadId: "t1",
+      snippet: "This week's deals",
+      payload: {
+        mimeType: "text/plain",
+        body: { data: Buffer.from("Deals!").toString("base64url") },
+        headers: [
+          { name: "From", value: "Shop <news@shop.example>" },
+          { name: "Subject", value: "Deals" },
+          { name: "List-Unsubscribe", value: "<https://shop.example/unsub?u=1>" },
+        ],
+      },
+    };
+    mockFetch({ "messages?": () => ({ messages: [{ id: "n1" }] }), "messages/n1": () => newsletter });
+    expect(await runGoogleTool("me", "gmail_search", { query: "deals" })).toContain("From: Shop <news@shop.example> (mailing list)");
+    expect(await runGoogleTool("me", "gmail_read", { message_id: "n1" })).toContain("Unsubscribe link (from the mailing list's header): https://shop.example/unsub?u=1\n");
   });
 
   it("wraps email bodies as untrusted and strips header line breaks in drafts", async () => {

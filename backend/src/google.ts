@@ -185,6 +185,8 @@ export interface MailHit {
   from: string;
   subject: string;
   snippet: string;
+  /** Sent by a mailing list (it has an unsubscribe header). */
+  list: boolean;
 }
 
 /** The newest emails matching a Gmail search, with their headers. */
@@ -193,10 +195,17 @@ export async function searchMail(userId: string, q: string, max = 5): Promise<Ma
   const list = await google<{ messages?: { id: string }[] }>(userId, `${GMAIL}/messages?${new URLSearchParams({ q, maxResults: String(max) })}`);
   const metas = await Promise.all(
     (list.messages ?? []).map((m) =>
-      google<GmailMessage>(userId, `${GMAIL}/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`),
+      google<GmailMessage>(userId, `${GMAIL}/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date&metadataHeaders=List-Unsubscribe`),
     ),
   );
-  return metas.map((m) => ({ id: m.id, date: header(m, "Date"), from: header(m, "From"), subject: header(m, "Subject"), snippet: m.snippet ?? "" }));
+  return metas.map((m) => ({
+    id: m.id,
+    date: header(m, "Date"),
+    from: header(m, "From"),
+    subject: header(m, "Subject"),
+    snippet: m.snippet ?? "",
+    list: Boolean(header(m, "List-Unsubscribe")),
+  }));
 }
 
 /** A file's bytes (Drive downloads and exports aren't JSON). */
@@ -513,6 +522,18 @@ interface GmailMessage {
   payload: GmailPart & { headers: GmailHeader[] };
 }
 
+/**
+ * Where to unsubscribe from a mailing list, from its List-Unsubscribe header: the web link
+ * when there is one (the user taps it), else the mailto address. Null for ordinary mail.
+ */
+export function unsubscribeLink(value: string): string | null {
+  const links = [...value.matchAll(/<([^>]+)>/g)].map((m) => m[1].trim());
+  const web = links.find((l) => /^https:\/\/[^\s]+$/i.test(l));
+  if (web) return web;
+  const mail = links.find((l) => /^mailto:[^\s]+$/i.test(l));
+  return mail ?? null;
+}
+
 const header = (m: GmailMessage, name: string) =>
   m.payload.headers.find((h) => h.name.toLowerCase() === name.toLowerCase())?.value ?? "";
 
@@ -818,7 +839,7 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
       const { query: q, max_results } = inputs.gmail_search.parse(raw);
       const found = await searchMail(userId, q, max_results);
       if (!found.length) return "No matching emails.";
-      return found.map((m) => `[${m.id}] ${m.date}\nFrom: ${m.from}\nSubject: ${m.subject}\n${m.snippet}`).join("\n\n");
+      return found.map((m) => `[${m.id}] ${m.date}\nFrom: ${m.from}${m.list ? " (mailing list)" : ""}\nSubject: ${m.subject}\n${m.snippet}`).join("\n\n");
     }
     case "gmail_read": {
       const { message_id } = inputs.gmail_read.parse(raw);
@@ -828,8 +849,9 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
       const attached = files.length
         ? `\nAttachments (open with gmail_read_attachment):\n${files.map((f) => `- [${f.id}] ${oneLine(f.filename)} (${f.mimeType}, ${kb(f.size)})`).join("\n")}\n`
         : "";
+      const unsubscribe = unsubscribeLink(header(m, "List-Unsubscribe"));
       // Email bodies are untrusted: label them so the model treats them as data.
-      return `From: ${header(m, "From")}\nTo: ${header(m, "To")}\nDate: ${header(m, "Date")}\nSubject: ${header(m, "Subject")}\n${attached}\n<email_body untrusted="true">\n${body}\n</email_body>`;
+      return `From: ${header(m, "From")}\nTo: ${header(m, "To")}\nDate: ${header(m, "Date")}\nSubject: ${header(m, "Subject")}\n${unsubscribe ? `Unsubscribe link (from the mailing list's header): ${unsubscribe}\n` : ""}${attached}\n<email_body untrusted="true">\n${body}\n</email_body>`;
     }
     case "gmail_read_attachment": {
       const { message_id, attachment_id } = inputs.gmail_read_attachment.parse(raw);
