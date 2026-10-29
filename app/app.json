@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "Jarvis",
+    "slug": "jarvis",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "bundleIdentifier": "com.kavin.jarvis",
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "com.kavin.jarvis"
+    },
+    "plugins": [
+      [
+        "expo-speech-recognition",
+        {
+          "microphonePermission": "Jarvis listens while you hold the mic button.",
+          "speechRecognitionPermission": "Jarvis turns your voice into text to answer you."
+        }
+      ],
+      "expo-notifications",
+      "expo-secure-store"
+    ]
+  }
+}

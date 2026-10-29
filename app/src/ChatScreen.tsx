@@ -1,0 +1,178 @@
+import * as SecureStore from "expo-secure-store";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import { api, streamChat, type ChatMessage, type PendingApproval, type Settings } from "./api";
+import { askApproval, usePush } from "./usePush";
+import { createSpeaker, useVoice } from "./useVoice";
+
+const CONVERSATION_KEY = "jarvis-conversation";
+
+export default function ChatScreen({ settings }: { settings: Settings }) {
+  const [conversationId, setConversationId] = useState<string | undefined>();
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [approvals, setApprovals] = useState<PendingApproval[]>([]);
+  const list = useRef<FlatList<ChatMessage>>(null);
+
+  const refresh = useCallback(async () => {
+    const tasks = await api.tasks(settings).catch(() => []);
+    setApprovals(tasks.flatMap((t) => t.pending_approvals));
+    if (conversationId) setMessages(await api.messages(settings, conversationId));
+  }, [settings, conversationId]);
+
+  useEffect(() => {
+    SecureStore.getItemAsync(CONVERSATION_KEY).then((id) => setConversationId(id ?? undefined));
+  }, []);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+  usePush(settings, refresh);
+
+  async function send(text: string, source: "text" | "voice") {
+    if (!text.trim() || busy) return;
+    setBusy(true);
+    setDraft("");
+    const speaker = source === "voice" ? createSpeaker() : null;
+    const replyId = `pending-${Date.now()}`;
+    setMessages((m) => [
+      ...m,
+      { id: `local-${Date.now()}`, role: "user", kind: "turn", text, source },
+      { id: replyId, role: "assistant", kind: "turn", text: "", source: "text" },
+    ]);
+    const appendReply = (delta: string) =>
+      setMessages((m) => m.map((msg) => (msg.id === replyId ? { ...msg, text: msg.text + delta } : msg)));
+
+    try {
+      await streamChat(settings, { conversationId, text, source }, (e) => {
+        switch (e.type) {
+          case "conversation":
+            if (e.conversationId !== conversationId) {
+              setConversationId(e.conversationId);
+              SecureStore.setItemAsync(CONVERSATION_KEY, e.conversationId);
+            }
+            break;
+          case "text":
+            appendReply(e.text);
+            speaker?.push(e.text);
+            break;
+          case "task_started":
+            appendReply(`\n\n⏳ Working in the background: ${e.summary}`);
+            break;
+          case "error":
+            appendReply(`\n\n${e.message}`);
+            break;
+        }
+      });
+    } catch (err) {
+      appendReply(`\n\nCould not reach Jarvis: ${String(err)}`);
+    } finally {
+      speaker?.flush();
+      setBusy(false);
+    }
+  }
+
+  const voice = useVoice((transcript) => send(transcript, "voice"));
+
+  function newChat() {
+    SecureStore.deleteItemAsync(CONVERSATION_KEY);
+    setConversationId(undefined);
+    setMessages([]);
+  }
+
+  return (
+    <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <View style={styles.header}>
+        <Text style={styles.title}>Jarvis</Text>
+        <Pressable onPress={newChat}>
+          <Text style={styles.link}>New chat</Text>
+        </Pressable>
+      </View>
+
+      {approvals.map((a) => (
+        <Pressable key={a.id} style={styles.approval} onPress={() => askApproval(settings, a.id, a.summary, refresh)}>
+          <Text style={styles.approvalText}>Needs your OK: {a.summary}</Text>
+        </Pressable>
+      ))}
+
+      <FlatList
+        ref={list}
+        data={messages}
+        keyExtractor={(m) => m.id}
+        contentContainerStyle={styles.list}
+        onContentSizeChange={() => list.current?.scrollToEnd({ animated: true })}
+        renderItem={({ item }) => (
+          <View
+            style={[
+              styles.bubble,
+              item.role === "user" ? styles.user : styles.assistant,
+              item.kind === "task_update" && styles.taskUpdate,
+            ]}
+          >
+            <Text style={item.role === "user" ? styles.userText : undefined}>
+              {item.source === "voice" ? "🎙 " : ""}
+              {item.text || "…"}
+            </Text>
+          </View>
+        )}
+      />
+
+      {voice.listening && <Text style={styles.partial}>{voice.partial || "Listening…"}</Text>}
+
+      <View style={styles.composer}>
+        <TextInput
+          style={styles.input}
+          value={draft}
+          onChangeText={setDraft}
+          placeholder="Ask Jarvis"
+          multiline
+          editable={!busy}
+        />
+        {draft ? (
+          <Pressable style={styles.button} onPress={() => send(draft, "text")} disabled={busy}>
+            <Text style={styles.buttonText}>Send</Text>
+          </Pressable>
+        ) : (
+          <Pressable
+            style={[styles.button, voice.listening && styles.listening]}
+            onPressIn={voice.start}
+            onPressOut={voice.stop}
+            disabled={busy}
+          >
+            <Text style={styles.buttonText}>{voice.listening ? "●" : "Hold"}</Text>
+          </Pressable>
+        )}
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16 },
+  title: { fontSize: 22, fontWeight: "700" },
+  link: { color: "#2563eb", fontSize: 16 },
+  approval: { backgroundColor: "#fef3c7", marginHorizontal: 16, marginBottom: 8, padding: 12, borderRadius: 8 },
+  approvalText: { color: "#92400e" },
+  list: { padding: 16, gap: 8 },
+  bubble: { maxWidth: "85%", padding: 12, borderRadius: 16 },
+  user: { alignSelf: "flex-end", backgroundColor: "#2563eb" },
+  userText: { color: "white" },
+  assistant: { alignSelf: "flex-start", backgroundColor: "#f1f5f9" },
+  taskUpdate: { borderWidth: 1, borderColor: "#94a3b8" },
+  partial: { textAlign: "center", color: "#64748b", padding: 8 },
+  composer: { flexDirection: "row", padding: 12, gap: 8, alignItems: "flex-end" },
+  input: { flex: 1, borderWidth: 1, borderColor: "#cbd5e1", borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, maxHeight: 120 },
+  button: { backgroundColor: "#2563eb", borderRadius: 24, paddingHorizontal: 18, paddingVertical: 12 },
+  listening: { backgroundColor: "#dc2626" },
+  buttonText: { color: "white", fontWeight: "600" },
+});
