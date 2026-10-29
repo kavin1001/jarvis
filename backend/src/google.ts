@@ -7,12 +7,14 @@ import { zonedParts, zonedToUtc } from "./time.js";
 
 // Read mail, save drafts (never send), archive and mark mail, read and change calendar events,
 // look up contacts (saved ones, and "other contacts": people the user has emailed), see which
-// calendars the user has, so shared and family calendars count too, and search and read Drive files.
+// calendars the user has, so shared and family calendars count too, search and read Drive files, and
+// make new Google Docs (drive.file only reaches files Jarvis itself created).
 const MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify";
 const CONTACTS_SCOPES = ["https://www.googleapis.com/auth/contacts.readonly", "https://www.googleapis.com/auth/contacts.other.readonly"];
 const CALENDAR_LIST_SCOPE = "https://www.googleapis.com/auth/calendar.calendarlist.readonly";
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
 const CONTACTS_WRITE_SCOPE = "https://www.googleapis.com/auth/contacts";
+const DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file";
 const SCOPES = [
   "openid",
   "email",
@@ -24,6 +26,7 @@ const SCOPES = [
   CALENDAR_LIST_SCOPE,
   DRIVE_SCOPE,
   CONTACTS_WRITE_SCOPE,
+  DRIVE_FILE_SCOPE,
 ];
 
 interface Tokens {
@@ -62,6 +65,7 @@ export async function googleStatus(userId: string) {
     can_see_all_calendars: Boolean(row?.scopes.split(" ").includes(CALENDAR_LIST_SCOPE)),
     can_read_drive: Boolean(row?.scopes.split(" ").includes(DRIVE_SCOPE)),
     can_edit_contacts: Boolean(row?.scopes.split(" ").includes(CONTACTS_WRITE_SCOPE)),
+    can_create_docs: Boolean(row?.scopes.split(" ").includes(DRIVE_FILE_SCOPE)),
   };
 }
 
@@ -453,6 +457,20 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
     input_schema: { type: "object", properties: { file_id: { type: "string" } }, required: ["file_id"] },
   },
   {
+    name: "drive_create_doc",
+    description:
+      "Make a new Google Doc in the user's Drive and get its link: meeting notes, a plan, a packing list, a draft letter, a summary to share. Write the content in Markdown (headings, lists, bold, links, tables); it becomes real Doc formatting. Only when the user asks for a doc, or says yes when you offer one.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "The doc's name, e.g. \"Lisbon trip plan\"." },
+        content: { type: "string", description: "The whole doc in Markdown. Don't repeat the title as a heading." },
+      },
+      required: ["title", "content"],
+    },
+  },
+  {
     name: "gmail_snooze",
     description:
       "Snooze emails: archive them now and put them back in the inbox, unread, at a set time, with a notification (\"snooze this until Monday morning\", \"bring the Acme thread back after my trip\"). Ids from gmail_search. Cancel with cancel_reminder to bring them back early; list_reminders shows them.",
@@ -585,6 +603,7 @@ const inputs = {
   calendar_delete_event: z.object({ event_id: z.string().min(1) }),
   drive_search: z.object({ query: z.string().trim().min(1).max(200), max_results: z.number().int().min(1).max(10).default(8) }),
   drive_read: z.object({ file_id: z.string().regex(/^[\w-]{10,200}$/, "must be a Drive file id") }),
+  drive_create_doc: z.object({ title: z.string().trim().min(1).max(200), content: z.string().max(200_000) }),
   calendar_respond_to_event: z.object({
     event_id: z.string().min(1),
     response: z.enum(["accepted", "declined", "tentative"]),
@@ -1035,6 +1054,36 @@ function driveKind(mimeType: string) {
   return mimeType.replace(/^application\/(vnd\.google-apps\.)?/, "");
 }
 
+/**
+ * Makes a Google Doc from Markdown: Drive converts an uploaded text/markdown file into Doc formatting. One
+ * multipart upload with the file's name and type, then the content.
+ */
+async function createDoc(userId: string, title: string, markdown: string) {
+  const boundary = `jarvis-${randomBytes(12).toString("hex")}`;
+  const body =
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
+    JSON.stringify({ name: title, mimeType: "application/vnd.google-apps.document" }) +
+    `\r\n--${boundary}\r\nContent-Type: text/markdown; charset=UTF-8\r\n\r\n${markdown}\r\n--${boundary}--`;
+  const res = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${await accessToken(userId)}`, "Content-Type": `multipart/related; boundary=${boundary}` },
+    body,
+  });
+  if (!res.ok) throw new Error(`Google API ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  return (await res.json()) as { id: string; webViewLink: string };
+}
+
+/** Moves a doc Jarvis made to the bin (undo from Settings). The user can still get it back from there for 30 days. */
+export async function trashDriveFile(userId: string, fileId: string) {
+  if (!/^[\w-]{10,200}$/.test(fileId)) throw new Error("Not a Drive file id");
+  try {
+    await google(userId, `${DRIVE}/${fileId}`, { method: "PATCH", body: { trashed: true } });
+  } catch (err) {
+    if (/\b404\b/.test((err as Error).message)) throw new Error("That doc isn't in Drive any more.");
+    throw err;
+  }
+}
+
 async function driveRead(userId: string, fileId: string): Promise<GoogleToolResult> {
   const f = await google<DriveFile>(userId, `${DRIVE}/${encodeURIComponent(fileId)}?fields=id,name,mimeType,size&supportsAllDrives=true`);
   const wrap = (text: string) => {
@@ -1321,6 +1370,13 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
           return `[${f.id}] ${f.name} (${driveKind(f.mimeType)}${by}${f.modifiedTime ? `, changed ${f.modifiedTime.slice(0, 10)}` : ""})`;
         })
         .join("\n");
+    }
+    case "drive_create_doc": {
+      if (!(await googleStatus(userId)).can_create_docs)
+        throw new Error("Jarvis needs permission to make Google Docs. In Settings, tap Connect again next to Google.");
+      const { title, content } = inputs.drive_create_doc.parse(raw);
+      const doc = await createDoc(userId, title, content);
+      return `Created the Google Doc (id ${doc.id}): ${doc.webViewLink}`;
     }
     case "calendar_respond_to_event": {
       const { event_id, response, note } = inputs.calendar_respond_to_event.parse(raw);

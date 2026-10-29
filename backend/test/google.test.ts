@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import { app } from "../src/app.js";
 import { decrypt, encrypt } from "../src/crypto.js";
 import { query, pool } from "../src/db.js";
-import { deleteContact, deleteDraft, freeSlots, googleStatus, nextBirthdays, restoreEvent, runGoogleTool, startGoogleAuth, unsubscribeLink } from "../src/google.js";
+import { deleteContact, deleteDraft, freeSlots, googleStatus, nextBirthdays, restoreEvent, runGoogleTool, trashDriveFile, startGoogleAuth, unsubscribeLink } from "../src/google.js";
 import { auth, resetDb } from "./helpers.js";
 
 const SECRET = "test-connector-secret";
@@ -83,7 +83,7 @@ describe("Google OAuth", () => {
 
   it("exposes status, start and disconnect to the app", async () => {
     const status = await app.request("/api/connectors", { headers: auth });
-    expect(await status.json()).toEqual({ google: { available: true, connected: false, email: null, can_organize: false, can_search_contacts: false, can_see_all_calendars: false, can_read_drive: false, can_edit_contacts: false } });
+    expect(await status.json()).toEqual({ google: { available: true, connected: false, email: null, can_organize: false, can_search_contacts: false, can_see_all_calendars: false, can_read_drive: false, can_edit_contacts: false, can_create_docs: false } });
     const start = await app.request("/api/connectors/google/start", { method: "POST", headers: auth });
     expect((await start.json()).url).toMatch(/^https:\/\/accounts\.google\.com\//);
 
@@ -400,6 +400,35 @@ describe("Google tools", () => {
     ]);
     await expect(runGoogleTool("me", "gmail_organize", { message_ids: ["m3"], action: "remove_label", label: "Nope" })).rejects.toThrow(/no Gmail label called "Nope"/);
     await expect(runGoogleTool("me", "gmail_organize", { message_ids: ["m3"], action: "add_label" })).rejects.toThrow(/need a label name/);
+  });
+
+  it("makes a Google Doc from Markdown and bins it for undo", async () => {
+    await connect({ access_token: "at", expires_at: Date.now() + 3600_000 }, "email");
+    await expect(runGoogleTool("me", "drive_create_doc", { title: "Plan", content: "x" })).rejects.toThrow(/make Google Docs/);
+    await query("UPDATE connectors SET scopes = 'email https://www.googleapis.com/auth/drive.file'");
+    const calls = mockFetch({
+      "upload/drive/v3/files": () => ({ id: "doc_1234567890", webViewLink: "https://docs.google.com/document/d/doc_1234567890/edit" }),
+      "drive/v3/files/doc_1234567890": () => ({}),
+      "drive/v3/files/gone_1234567890": () => new Response("not found", { status: 404 }),
+    });
+    expect(await runGoogleTool("me", "drive_create_doc", { title: "Lisbon trip", content: "## Day 1\n- Café Ç at 9" })).toBe(
+      "Created the Google Doc (id doc_1234567890): https://docs.google.com/document/d/doc_1234567890/edit",
+    );
+    const upload = calls[0];
+    expect(upload.url).toContain("uploadType=multipart");
+    const type = (upload.init!.headers as Record<string, string>)["Content-Type"];
+    const boundary = type.match(/^multipart\/related; boundary=(\S+)$/)![1];
+    const parts = (upload.init!.body as string).split(`--${boundary}`);
+    expect(parts).toHaveLength(4);
+    expect(JSON.parse(parts[1].split("\r\n\r\n")[1])).toEqual({ name: "Lisbon trip", mimeType: "application/vnd.google-apps.document" });
+    expect(parts[2]).toBe("\r\nContent-Type: text/markdown; charset=UTF-8\r\n\r\n## Day 1\n- Café Ç at 9\r\n");
+    expect(parts[3]).toBe("--");
+
+    await trashDriveFile("me", "doc_1234567890");
+    expect(calls.at(-1)!.init?.method).toBe("PATCH");
+    expect(JSON.parse(calls.at(-1)!.init!.body as string)).toEqual({ trashed: true });
+    await expect(trashDriveFile("me", "gone_1234567890")).rejects.toThrow(/isn't in Drive/);
+    await expect(trashDriveFile("me", "../x")).rejects.toThrow(/Not a Drive file id/);
   });
 
   it("saves a new contact, adds to a saved one without duplicates, and deletes for undo", async () => {

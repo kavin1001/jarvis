@@ -132,7 +132,7 @@ export default function SettingsScreen({
         <View style={styles.row}>
           <Text style={styles.rowMeta}>Gmail, Google Calendar, Contacts and Drive</Text>
           <Text>{google.connected ? `Connected${google.email ? ` as ${google.email}` : ""}` : "Not connected"}</Text>
-          {google.connected && (!google.can_organize || !google.can_search_contacts || !google.can_see_all_calendars || !google.can_read_drive || google.can_edit_contacts === false) ? (
+          {google.connected && (!google.can_organize || !google.can_search_contacts || !google.can_see_all_calendars || !google.can_read_drive || google.can_edit_contacts === false || google.can_create_docs === false) ? (
             <View style={{ alignItems: "flex-start" }}>
               <Text style={styles.rowMeta}>
                 Connect again to let Jarvis{" "}
@@ -142,6 +142,7 @@ export default function SettingsScreen({
                   !google.can_see_all_calendars && "see your shared and family calendars",
                   !google.can_read_drive && "search and read your Google Drive",
                   google.can_edit_contacts === false && "save contacts for you",
+                  google.can_create_docs === false && "make Google Docs",
                 ]
                   .filter(Boolean)
                   .join(", ")}

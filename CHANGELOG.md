@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Google Docs: "put that plan in a Google Doc", "make a doc of the meeting notes". Jarvis writes it with headings, lists and tables and gives you the link to open or share. **Undo** in Settings moves it to the bin. Add the `drive.file` scope to the consent screen (see `docs/DEPLOY.md`), then tap **Connect again** in Settings.
 - Deleted an event by mistake? **Undo** in Settings now puts back an event Jarvis deleted (for 8 days), with its title, time, place, notes and repeats. Guests aren't emailed again.
 - Ask what Jarvis costs: "how much have you cost me this week?" gets today's, this week's and this month's Claude spend, and how close you are to the daily cap. The same estimates as Settings.
 - The app icon shows how many approvals are waiting for you, like the Tasks tab does, and clears when you've answered them. Needs a new app build.
