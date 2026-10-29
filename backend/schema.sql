@@ -185,3 +185,13 @@ CREATE TABLE IF NOT EXISTS budget_alerts (
   day      DATE NOT NULL,
   PRIMARY KEY (user_id, day)
 );
+
+-- Files a background task's agent saved to /mnt/session/outputs/, kept in the Files API.
+CREATE TABLE IF NOT EXISTS task_files (
+  file_id     TEXT PRIMARY KEY,
+  task_id     UUID NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  filename    TEXT NOT NULL,
+  mime_type   TEXT NOT NULL,
+  size_bytes  BIGINT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);

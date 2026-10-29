@@ -5,6 +5,7 @@ import { api, type Reminder, type Settings, type Task } from "../api";
 import { askApproval } from "../usePush";
 import { Empty, Header, LinkButton, relativeTime, useShared } from "../ui";
 import { Text, useColors } from "../theme";
+import { fileSize, openTaskFile } from "../taskFiles";
 
 const ROUTINES: { label: string; text: string; time: string; repeat: "daily" | "weekdays" }[] = [
   {
@@ -135,6 +136,20 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
                 Latest: {item.last_message}
               </Text>
             ) : null}
+            {item.files.map((f) => (
+              <Pressable
+                key={f.id}
+                onPress={() => openTaskFile(settings, item.id, f).catch((err) => Alert.alert("Couldn't open the file", String(err)))}
+                accessibilityRole="button"
+                accessibilityHint="Downloads the file to share or save it"
+                style={{ flexDirection: "row", gap: 8, alignItems: "center", backgroundColor: colors.surface, padding: 10, borderRadius: 8, marginTop: 6 }}
+              >
+                <Text style={{ flex: 1, color: colors.accent }} numberOfLines={1}>
+                  📄 {f.filename}
+                </Text>
+                <Text style={styles.rowMeta}>{fileSize(f.size_bytes)}</Text>
+              </Pressable>
+            ))}
             {item.pending_approvals.map((a) => (
               <Pressable
                 key={a.id}

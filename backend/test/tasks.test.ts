@@ -3,8 +3,19 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { pool, query } from "../src/db.js";
 import { addServer } from "../src/mcp.js";
 import * as memory from "../src/memory.js";
-import { cancelTask, decideApproval, expireApprovals, listTasks, resumeTasks, setTaskClient, startTask } from "../src/tasks.js";
-import { resetDb } from "./helpers.js";
+import { deleteAllData } from "../src/account.js";
+import { app } from "../src/app.js";
+import {
+  cancelTask,
+  decideApproval,
+  expireApprovals,
+  listTasks,
+  resumeTasks,
+  setOutputRetryMs,
+  setTaskClient,
+  startTask,
+} from "../src/tasks.js";
+import { auth, resetDb } from "./helpers.js";
 
 /** An async queue standing in for a session's live event stream. */
 function liveStream() {
@@ -24,14 +35,25 @@ function liveStream() {
   };
 }
 
-function fakeTaskClient(opts: { history?: unknown[]; status?: string } = {}) {
+type OutputFile = { id: string; filename: string; mime_type: string; size_bytes: number };
+function fakeTaskClient(opts: { history?: unknown[]; status?: string; files?: OutputFile[] } = {}) {
   const stream = liveStream();
   const sent: unknown[] = [];
   const created: Record<string, unknown>[] = [];
   const vaults = { credentials: [] as unknown[], deleted: [] as string[] };
   const archived: string[] = [];
+  const fileLists: unknown[] = [];
+  const deletedFiles: string[] = [];
   const client = {
     beta: {
+      files: {
+        list: async function* (params: unknown) {
+          fileLists.push(params);
+          yield* opts.files ?? [];
+        },
+        download: async (id: string) => new Response(`contents of ${id}`),
+        delete: async (id: string) => void deletedFiles.push(id),
+      },
       agents: {
         retrieve: async (id: string) => ({
           id,
@@ -63,7 +85,7 @@ function fakeTaskClient(opts: { history?: unknown[]; status?: string } = {}) {
     },
   };
   setTaskClient(client as unknown as Anthropic);
-  return { stream, sent, created, vaults, archived };
+  return { stream, sent, created, vaults, archived, fileLists, deletedFiles };
 }
 
 const until = async (check: () => Promise<boolean>) => {
@@ -77,7 +99,10 @@ const until = async (check: () => Promise<boolean>) => {
 const taskStatus = async (id: string) =>
   (await query<{ status: string }>("SELECT status FROM tasks WHERE id = $1", [id]))[0].status;
 
-beforeEach(resetDb);
+beforeEach(async () => {
+  await resetDb();
+  setOutputRetryMs(0);
+});
 afterAll(() => pool.end());
 
 describe("task lane", () => {
@@ -102,6 +127,33 @@ describe("task lane", () => {
     await until(async () => (await taskStatus(taskId)) === "done");
 
     expect(await memory.takePendingTaskUpdates(conv)).toEqual(['Task "Book dinner" finished.\n\nBooked for 7pm.']);
+  });
+
+  it("keeps the files the agent saved and serves them to the app", async () => {
+    const files = [{ id: "file_1", filename: "flights.csv", mime_type: "text/csv", size_bytes: 120 }];
+    const { stream, sent, fileLists, deletedFiles } = fakeTaskClient({ files });
+    const conv = await memory.createConversation("me");
+    const taskId = await startTask("me", conv, "Compare flights", "Flights");
+    await until(async () => sent.length === 1);
+    stream.push({ type: "agent.message", id: "evt_msg", content: [{ type: "text", text: "Saved a comparison." }] });
+    stream.push({ type: "session.status_idle", id: "evt_idle", stop_reason: { type: "end_turn" } });
+    await until(async () => (await taskStatus(taskId)) === "done");
+
+    expect(fileLists[0]).toMatchObject({ scope_id: "sesn_1" });
+    const [update] = await memory.takePendingTaskUpdates(conv);
+    expect(update).toContain("Files: flights.csv");
+    const [task] = (await listTasks("me")) as { files: unknown[] }[];
+    expect(task.files).toEqual([{ id: "file_1", filename: "flights.csv", mime_type: "text/csv", size_bytes: 120 }]);
+
+    const res = await app.request(`/api/tasks/${taskId}/files/file_1`, { headers: auth });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-disposition")).toBe("attachment; filename*=UTF-8''flights.csv");
+    expect(await res.text()).toBe("contents of file_1");
+    expect((await app.request(`/api/tasks/${taskId}/files/file_other`, { headers: auth })).status).toBe(404);
+
+    // "Erase everything" removes them from the Files API as well.
+    await deleteAllData("me");
+    expect(deletedFiles).toEqual(["file_1"]);
   });
 
   it("gives the task the user's MCP servers, with tokens in a vault it deletes afterwards", async () => {

@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Background tasks can hand you files. When the agent makes a spreadsheet, report, chart or document, it shows up under the task in **Tasks**. Tap it to save or share it from the phone's share sheet, or to download it in a browser. The finished-task message lists the file names, and **Erase everything** deletes the files too. Needs a new app build, since it adds `expo-sharing`.
 - Spending: with `DAILY_BUDGET_USD` set, Jarvis sends one notification a day when today's spend passes 80% of the cap, so the cap doesn't arrive mid-task as a surprise. Background-task costs count too.
 - "Call Mom", "text Sam I'm running late", "email Ana": Jarvis answers with a tappable 📞, 💬 or ✉️ link that opens your phone's dialer, Messages or Mail with everything filled in. Nothing is dialed or sent until you confirm on the phone. Jarvis only uses numbers and addresses you gave it or it saved.
 - Tables in replies (flights, prices, comparisons) show as real tables with a header row, and scroll sideways when they're wide. Read aloud, a table is spoken one row at a time, without the pipes and dashes.

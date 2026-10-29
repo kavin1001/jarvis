@@ -1,5 +1,6 @@
 import { query } from "./db.js";
 import { disconnectGoogle } from "./google.js";
+import { deleteTaskFiles } from "./tasks.js";
 
 /** Everything Jarvis keeps about the user, as plain JSON. Secrets (tokens, keys) are left out. */
 export async function exportData(userId: string) {
@@ -34,11 +35,12 @@ export async function exportData(userId: string) {
 }
 
 /**
- * Deletes conversations, memory, reminders, tasks and connectors (revoking Google).
+ * Deletes conversations, memory, reminders, tasks and their files, and connectors (revoking Google).
  * Devices, push tokens and usage history stay, so the phone stays signed in and spend stays accurate.
  */
 export async function deleteAllData(userId: string) {
   await disconnectGoogle(userId).catch(() => {});
+  await deleteTaskFiles(userId).catch(() => {});
   await query("DELETE FROM reminders WHERE user_id = $1", [userId]);
   await query("DELETE FROM conversations WHERE user_id = $1", [userId]); // cascades to messages, tasks, approvals
   await query("DELETE FROM facts WHERE user_id = $1", [userId]);

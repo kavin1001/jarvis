@@ -22,7 +22,7 @@ import { cancelReminder, createReminder, getTimezone, listReminders, snoozeRemin
 import { serverStatus } from "./status.js";
 import { firstOccurrence } from "./time.js";
 import { summarize } from "./usage.js";
-import { cancelTask, decideApproval, listTasks } from "./tasks.js";
+import { cancelTask, decideApproval, downloadTaskFile, listTasks } from "./tasks.js";
 
 export const app = new Hono<{ Variables: { caller: Caller } }>();
 // Defaults: nosniff, frame-ancestors via X-Frame-Options, strict referrer, no CSP (the web app uses inline styles).
@@ -331,6 +331,18 @@ app.get("/api/usage", async (c) =>
 );
 
 app.get("/api/tasks", async (c) => c.json(await listTasks(config.userId)));
+app.get("/api/tasks/:id/files/:fileId", async (c) => {
+  const file = await downloadTaskFile(config.userId, c.req.param("id"), c.req.param("fileId"));
+  if (!file?.body) return c.json({ error: "Not found" }, 404);
+  return new Response(file.body, {
+    headers: {
+      "Content-Type": file.mime_type || "application/octet-stream",
+      // The agent picked the name, so it's encoded rather than trusted in the header.
+      "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(file.filename)}`,
+      "X-Content-Type-Options": "nosniff",
+    },
+  });
+});
 app.post("/api/tasks/:id/cancel", async (c) => {
   const id = z.string().uuid().safeParse(c.req.param("id"));
   const cancelled = id.success && (await cancelTask(config.userId, id.data));

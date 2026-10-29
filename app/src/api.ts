@@ -32,6 +32,15 @@ export interface Task {
   cost_usd: number;
   created_at: string;
   pending_approvals: PendingApproval[];
+  /** Files the agent saved for the user. */
+  files: TaskFile[];
+}
+
+export interface TaskFile {
+  id: string;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
 }
 
 export interface Conversation {
