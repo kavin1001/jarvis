@@ -142,7 +142,7 @@ export default function SettingsScreen({
                   !google.can_see_all_calendars && "see your shared and family calendars",
                   !google.can_read_drive && "search and read your Google Drive",
                   google.can_edit_contacts === false && "save contacts for you",
-                  google.can_create_docs === false && "make Google Docs",
+                  google.can_create_docs === false && "make Google Docs and Sheets",
                 ]
                   .filter(Boolean)
                   .join(", ")}

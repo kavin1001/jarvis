@@ -431,6 +431,23 @@ describe("Google tools", () => {
     await expect(trashDriveFile("me", "../x")).rejects.toThrow(/Not a Drive file id/);
   });
 
+  it("makes a Google Sheet from CSV", async () => {
+    await connect({ access_token: "at", expires_at: Date.now() + 3600_000 }, "email");
+    await expect(runGoogleTool("me", "drive_create_sheet", { title: "Budget", csv: "a,b" })).rejects.toThrow(/make Google Sheets/);
+    await query("UPDATE connectors SET scopes = 'email https://www.googleapis.com/auth/drive.file'");
+    const calls = mockFetch({
+      "upload/drive/v3/files": () => ({ id: "sheet_1234567890", webViewLink: "https://docs.google.com/spreadsheets/d/sheet_1234567890/edit" }),
+    });
+    const csv = 'Item,Cost\n"Rent, October",1200\nTotal,=SUM(B2:B2)';
+    expect(await runGoogleTool("me", "drive_create_sheet", { title: "October budget", csv })).toBe(
+      "Created the Google Sheet (id sheet_1234567890): https://docs.google.com/spreadsheets/d/sheet_1234567890/edit",
+    );
+    const boundary = ((calls[0].init!.headers as Record<string, string>)["Content-Type"]).match(/boundary=(\S+)$/)![1];
+    const parts = (calls[0].init!.body as string).split(`--${boundary}`);
+    expect(JSON.parse(parts[1].split("\r\n\r\n")[1])).toEqual({ name: "October budget", mimeType: "application/vnd.google-apps.spreadsheet" });
+    expect(parts[2]).toBe(`\r\nContent-Type: text/csv; charset=UTF-8\r\n\r\n${csv}\r\n`);
+  });
+
   it("saves a new contact, adds to a saved one without duplicates, and deletes for undo", async () => {
     await connect({ access_token: "at", expires_at: Date.now() + 3600_000 }, "email");
     await expect(runGoogleTool("me", "contacts_save", { name: "Ana", phone: "555 0101" })).rejects.toThrow(/change your contacts/);

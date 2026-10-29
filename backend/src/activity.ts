@@ -71,6 +71,8 @@ export function describeAction(name: string, input: Input, timeZone = "UTC"): st
     }
     case "drive_create_doc":
       return `Made the Google Doc "${str(input.title)}"`;
+    case "drive_create_sheet":
+      return `Made the Google Sheet "${str(input.title)}"`;
     case "contacts_save":
       return input.contact_id ? "Updated a contact" : `Saved ${str(input.name)} to your contacts`;
     case "calendar_create_event": {
@@ -127,8 +129,9 @@ export function undoFor(name: string, input: Input, result: string): Undo | null
       const id = result.match(/^Event deleted \(undo ([0-9a-f-]{36})\)/)?.[1];
       return id ? { tool: "restore_event", copy_id: id } : null;
     }
-    case "drive_create_doc": {
-      const id = result.match(/^Created the Google Doc \(id ([\w-]{10,200})\)/)?.[1];
+    case "drive_create_doc":
+    case "drive_create_sheet": {
+      const id = result.match(/^Created the Google (?:Doc|Sheet) \(id ([\w-]{10,200})\)/)?.[1];
       return id ? { tool: "trash_drive_file", file_id: id } : null;
     }
     case "contacts_save": {

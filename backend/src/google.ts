@@ -471,6 +471,20 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
     },
   },
   {
+    name: "drive_create_sheet",
+    description:
+      "Make a new Google Sheet in the user's Drive and get its link: a budget, a comparison table, an expense log, a schedule, anything in rows and columns. Write the rows as CSV with a header row; formulas like =SUM(B2:B9) work. Only when the user asks for a sheet or spreadsheet, or says yes when you offer one.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "The sheet's name, e.g. \"October budget\"." },
+        csv: { type: "string", description: "The rows as CSV, header row first. Quote cells that contain commas." },
+      },
+      required: ["title", "csv"],
+    },
+  },
+  {
     name: "gmail_snooze",
     description:
       "Snooze emails: archive them now and put them back in the inbox, unread, at a set time, with a notification (\"snooze this until Monday morning\", \"bring the Acme thread back after my trip\"). Ids from gmail_search. Cancel with cancel_reminder to bring them back early; list_reminders shows them.",
@@ -604,6 +618,7 @@ const inputs = {
   drive_search: z.object({ query: z.string().trim().min(1).max(200), max_results: z.number().int().min(1).max(10).default(8) }),
   drive_read: z.object({ file_id: z.string().regex(/^[\w-]{10,200}$/, "must be a Drive file id") }),
   drive_create_doc: z.object({ title: z.string().trim().min(1).max(200), content: z.string().max(200_000) }),
+  drive_create_sheet: z.object({ title: z.string().trim().min(1).max(200), csv: z.string().min(1).max(200_000) }),
   calendar_respond_to_event: z.object({
     event_id: z.string().min(1),
     response: z.enum(["accepted", "declined", "tentative"]),
@@ -1055,15 +1070,17 @@ function driveKind(mimeType: string) {
 }
 
 /**
- * Makes a Google Doc from Markdown: Drive converts an uploaded text/markdown file into Doc formatting. One
- * multipart upload with the file's name and type, then the content.
+ * Makes a Google Doc from Markdown, or a Sheet from CSV: Drive converts the uploaded file into the Google
+ * format. One multipart upload with the file's name and type, then the content.
  */
-async function createDoc(userId: string, title: string, markdown: string) {
+async function createDriveFile(userId: string, title: string, kind: "doc" | "sheet", content: string) {
+  const [mimeType, contentType] =
+    kind === "doc" ? ["application/vnd.google-apps.document", "text/markdown"] : ["application/vnd.google-apps.spreadsheet", "text/csv"];
   const boundary = `jarvis-${randomBytes(12).toString("hex")}`;
   const body =
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
-    JSON.stringify({ name: title, mimeType: "application/vnd.google-apps.document" }) +
-    `\r\n--${boundary}\r\nContent-Type: text/markdown; charset=UTF-8\r\n\r\n${markdown}\r\n--${boundary}--`;
+    JSON.stringify({ name: title, mimeType }) +
+    `\r\n--${boundary}\r\nContent-Type: ${contentType}; charset=UTF-8\r\n\r\n${content}\r\n--${boundary}--`;
   const res = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink", {
     method: "POST",
     headers: { Authorization: `Bearer ${await accessToken(userId)}`, "Content-Type": `multipart/related; boundary=${boundary}` },
@@ -1073,7 +1090,7 @@ async function createDoc(userId: string, title: string, markdown: string) {
   return (await res.json()) as { id: string; webViewLink: string };
 }
 
-/** Moves a doc Jarvis made to the bin (undo from Settings). The user can still get it back from there for 30 days. */
+/** Moves a doc or sheet Jarvis made to the bin (undo from Settings). The user can still get it back from there for 30 days. */
 export async function trashDriveFile(userId: string, fileId: string) {
   if (!/^[\w-]{10,200}$/.test(fileId)) throw new Error("Not a Drive file id");
   try {
@@ -1375,8 +1392,15 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
       if (!(await googleStatus(userId)).can_create_docs)
         throw new Error("Jarvis needs permission to make Google Docs. In Settings, tap Connect again next to Google.");
       const { title, content } = inputs.drive_create_doc.parse(raw);
-      const doc = await createDoc(userId, title, content);
+      const doc = await createDriveFile(userId, title, "doc", content);
       return `Created the Google Doc (id ${doc.id}): ${doc.webViewLink}`;
+    }
+    case "drive_create_sheet": {
+      if (!(await googleStatus(userId)).can_create_docs)
+        throw new Error("Jarvis needs permission to make Google Sheets. In Settings, tap Connect again next to Google.");
+      const { title, csv } = inputs.drive_create_sheet.parse(raw);
+      const sheet = await createDriveFile(userId, title, "sheet", csv);
+      return `Created the Google Sheet (id ${sheet.id}): ${sheet.webViewLink}`;
     }
     case "calendar_respond_to_event": {
       const { event_id, response, note } = inputs.calendar_respond_to_event.parse(raw);
