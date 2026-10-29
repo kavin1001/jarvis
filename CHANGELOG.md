@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- App updates without reinstalling: once `npx eas update:configure` has been run (see `docs/DEPLOY.md`), fixes and features that don't need new native code reach your phone with `npx eas update`. The app downloads them at launch, and Settings shows the version with a **Check for updates** button. Needs one more EAS build to start.
 - Snooze email: "snooze this until Monday morning", "bring the Acme thread back after my trip". Jarvis archives the email now and puts it back in your inbox, unread, at the time you said, with a notification. Snoozed email shows in Tasks, where **Back to the inbox now** brings it back early. Uses the archive permission you already gave.
 - Sources under answers: when Jarvis looks something up on the web, the pages it used show as small links under the reply ("1 · bbc.co.uk"). Tap one to open it. They stay with the chat in History.
 - Page alerts: "tell me when tickets for the show go on sale", "let me know when the registration form opens", "tell me when this page changes". Jarvis checks the page every half hour for up to 30 days and sends a notification when the words appear (or the page changes). Alerts show in Tasks, where you can stop them. Only public web pages can be watched. This also fixes stopping a routine that keeps reminding you: its remaining reminders now stop too.

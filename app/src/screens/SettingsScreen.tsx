@@ -10,6 +10,7 @@ import { locationSharingEnabled, setLocationSharing } from "../location";
 import { Activity } from "./Activity";
 import { ChatRetention } from "./ChatRetention";
 import { ReplyStyle } from "./ReplyStyle";
+import { AppVersion } from "./AppVersion";
 import { Devices } from "./Devices";
 import { SetupStatus } from "./SetupStatus";
 import { YourData } from "./YourData";
@@ -248,6 +249,7 @@ export default function SettingsScreen({
         <Text style={styles.rowMeta}>Backend</Text>
         <Text>{settings.url}</Text>
       </View>
+      <AppVersion />
       <View style={styles.row}>
         <Text style={styles.rowMeta}>App version</Text>
         <Text>{Constants.expoConfig?.version ?? "dev"}</Text>

@@ -3,6 +3,9 @@
     "name": "Jarvis",
     "slug": "jarvis",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "ios": {

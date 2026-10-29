@@ -49,12 +49,15 @@ cd app
 npm install
 npx eas login
 npx eas init                       # links the project and adds the projectId push needs
+npx eas update:configure           # adds the update URL, so later changes reach the phone without a rebuild
 npx eas build --profile preview --platform ios
 ```
 
 EAS walks you through certificates and push keys. Install the build from the link it prints (or use `--profile production` and `npx eas submit` for TestFlight). On first launch, enter your backend URL and `JARVIS_APP_TOKEN`. The app swaps it for its own device token and doesn't keep the master. To add another phone or iPad, tap **Settings**, then **Pair another device**, and enter that code on the new device.
 
 For day-to-day development: `npx eas build --profile development --platform ios` once, then `npx expo start` and open the dev build.
+
+**Updates without a rebuild.** Changes to the app's code (not new native modules) can go straight to the installed app: `npx eas update --channel preview` (or `production` for a TestFlight build). The phone downloads it at the next launch and uses it the launch after, or right away from **Settings**, **Check for updates**. A change that adds a native module, or bumps `version` in `app.json`, needs a new build; the update channel only serves builds with the same version. EAS Update's free tier covers one person's phone.
 
 ## 5. Gmail, Google Calendar and Contacts (optional, free Google Cloud account)
 
