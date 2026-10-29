@@ -14,7 +14,7 @@ import { api, streamChat, type ChatMessage, type PendingApproval, type Settings 
 import type { Command } from "../deepLink";
 import { choosePhotos, type Photo } from "../photos";
 import { askApproval } from "../usePush";
-import { createSpeaker, useVoice } from "../useVoice";
+import { createSpeaker, isStopPhrase, useVoice } from "../useVoice";
 
 export default function ChatScreen({
   settings,
@@ -37,6 +37,13 @@ export default function ChatScreen({
   const [busy, setBusy] = useState(false);
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const list = useRef<FlatList<ChatMessage>>(null);
+  // Hands-free: after Jarvis finishes speaking, listen again until silence or "stop".
+  const [handsFree, setHandsFreeState] = useState(false);
+  const handsFreeRef = useRef(false);
+  const setHandsFree = (on: boolean) => {
+    handsFreeRef.current = on;
+    setHandsFreeState(on);
+  };
 
   const refresh = useCallback(async () => {
     const tasks = await api.tasks(settings).catch(() => []);
@@ -55,7 +62,7 @@ export default function ChatScreen({
     setBusy(true);
     setDraft("");
     setPhotos([]);
-    const speaker = source === "voice" ? createSpeaker() : null;
+    const speaker = source === "voice" ? createSpeaker(() => handsFreeRef.current && voice.start()) : null;
     const replyId = `pending-${Date.now()}`;
     setMessages((m) => [
       ...m,
@@ -92,7 +99,13 @@ export default function ChatScreen({
     }
   }
 
-  const voice = useVoice((transcript) => send(transcript, "voice"));
+  const voice = useVoice(
+    (transcript) => {
+      if (handsFreeRef.current && isStopPhrase(transcript)) return setHandsFree(false);
+      send(transcript, "voice");
+    },
+    () => setHandsFree(false),
+  );
 
   // Each command runs once, after the screen is ready.
   const handled = useRef(0);
@@ -100,7 +113,10 @@ export default function ChatScreen({
     if (!command || command.id === handled.current || busy) return;
     handled.current = command.id;
     if (command.kind === "new") onConversation(undefined);
-    else if (command.kind === "listen") voice.start();
+    else if (command.kind === "listen") {
+      setHandsFree(command.handsFree);
+      voice.start();
+    }
     else send(command.text, command.voice ? "voice" : "text");
   }, [command, busy]);
 
@@ -123,9 +139,22 @@ export default function ChatScreen({
     <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.header}>
         <Text style={styles.title}>Jarvis</Text>
-        <Pressable onPress={() => onConversation(undefined)}>
-          <Text style={styles.link}>New chat</Text>
-        </Pressable>
+        <View style={{ flexDirection: "row", gap: 16, alignItems: "center" }}>
+          <Pressable
+            onPress={() => {
+              if (handsFree) return setHandsFree(false);
+              setHandsFree(true);
+              if (!voice.listening && !busy) voice.start();
+            }}
+            style={[styles.pill, handsFree && styles.pillOn]}
+            accessibilityLabel={handsFree ? "Turn off hands-free" : "Start a hands-free conversation"}
+          >
+            <Text style={[styles.pillText, handsFree && { color: "white" }]}>Hands-free</Text>
+          </Pressable>
+          <Pressable onPress={() => onConversation(undefined)}>
+            <Text style={styles.link}>New chat</Text>
+          </Pressable>
+        </View>
       </View>
 
       {approvals.map((a) => (
@@ -227,5 +256,8 @@ const styles = StyleSheet.create({
   input: { flex: 1, borderWidth: 1, borderColor: "#cbd5e1", borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, maxHeight: 120 },
   button: { backgroundColor: "#2563eb", borderRadius: 24, paddingHorizontal: 18, paddingVertical: 12 },
   listening: { backgroundColor: "#dc2626" },
+  pill: { borderWidth: 1, borderColor: "#2563eb", borderRadius: 14, paddingHorizontal: 10, paddingVertical: 4 },
+  pillOn: { backgroundColor: "#2563eb" },
+  pillText: { color: "#2563eb", fontSize: 14 },
   buttonText: { color: "white", fontWeight: "600" },
 });

@@ -7,6 +7,7 @@ Jarvis opens links that start with `jarvis://`, so the iOS Shortcuts app can lau
 | `jarvis://listen` | Opens Jarvis and starts listening. It stops when you stop talking. |
 | `jarvis://ask?text=...` | Sends the text and shows the answer |
 | `jarvis://ask?text=...&voice=1` | Same, and reads a short answer aloud |
+| `jarvis://listen?handsfree=1` | Starts a hands-free conversation. Jarvis keeps listening after each answer until you go quiet or say "stop" |
 | `jarvis://new` | Starts a new chat |
 
 ## "Hey Siri, Jarvis"
@@ -15,7 +16,7 @@ Jarvis opens links that start with `jarvis://`, so the iOS Shortcuts app can lau
 2. Add **Open URLs** and set the URL to `jarvis://listen`.
 3. Rename the shortcut to **Jarvis**.
 
-Now say "Hey Siri, Jarvis" and start talking once the app opens.
+Now say "Hey Siri, Jarvis" and start talking once the app opens. Use `jarvis://listen?handsfree=1` instead for a back-and-forth conversation, which works well in the car.
 
 ## Ask from Siri in one go
 

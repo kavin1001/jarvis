@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Hands-free conversations: tap **Hands-free** in chat, or open `jarvis://listen?handsfree=1`. After each spoken answer Jarvis listens again. The conversation ends when you go quiet or say "stop", "that's all" or "thanks Jarvis".
 - Connected apps: add any remote MCP server (URL plus an optional token) in Settings, and Jarvis can use its tools through the Claude API's MCP connector. Tokens are encrypted at rest and never sent back to the app. You can switch servers on and off or remove them. See `docs/MCP.md`.
 - App: error messages from the backend now show up in alerts instead of a bare status code.
 - Siri, Shortcuts and the Action button: Jarvis opens `jarvis://listen`, `jarvis://ask?text=...&voice=1` and `jarvis://new` links, so "Hey Siri, Jarvis" or one press of the Action button gets you a listening Jarvis. Recipes are in `docs/SHORTCUTS.md`.
