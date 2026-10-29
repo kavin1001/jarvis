@@ -75,8 +75,29 @@ export type ChatEvent =
   | { type: "text"; text: string }
   | { type: "task_started"; taskId: string; summary: string }
   | { type: "status"; text: string }
+  /** The web pages a reply cites, after the reply's text. */
+  | { type: "sources"; sources: WebSource[] }
   | { type: "done" }
   | { type: "error"; message: string };
+
+export interface WebSource {
+  url: string;
+  title: string;
+}
+
+/** The pages cited in a reply's text (web search and fetch citations), each once, at most 6. */
+export function sourcesOf(content: unknown): WebSource[] {
+  if (!Array.isArray(content)) return [];
+  const seen = new Map<string, WebSource>();
+  for (const block of content as { type?: string; citations?: { url?: string; title?: string | null }[] | null }[]) {
+    if (block.type !== "text") continue;
+    for (const c of block.citations ?? []) {
+      if (!c.url || !/^https?:\/\//.test(c.url) || seen.has(c.url)) continue;
+      seen.set(c.url, { url: c.url, title: c.title?.trim() || new URL(c.url).hostname });
+    }
+  }
+  return [...seen.values()].slice(0, 6);
+}
 
 const TOOL_STATUS: Record<string, string> = {
   web_search: "Searching the web…",
@@ -941,6 +962,8 @@ async function runTurnNow(opts: {
     );
 
     finalText = textOf(message.content) || finalText;
+    const sources = sourcesOf(message.content);
+    if (sources.length) emit({ type: "sources", sources });
     messages.push({ role: "assistant", content: message.content });
     await memory.appendMessage(conversationId, "assistant", message.content, textOf(message.content) || null);
     if (results.length > 0) {

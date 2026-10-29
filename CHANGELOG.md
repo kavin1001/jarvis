@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Sources under answers: when Jarvis looks something up on the web, the pages it used show as small links under the reply ("1 · bbc.co.uk"). Tap one to open it. They stay with the chat in History.
 - Page alerts: "tell me when tickets for the show go on sale", "let me know when the registration form opens", "tell me when this page changes". Jarvis checks the page every half hour for up to 30 days and sends a notification when the words appear (or the page changes). Alerts show in Tasks, where you can stop them. Only public web pages can be watched. This also fixes stopping a routine that keeps reminding you: its remaining reminders now stop too.
 - Unsubscribing: "unsubscribe me from this newsletter", "which mailing lists emailed me this week?". Jarvis now sees which emails come from mailing lists and gives you the list's own unsubscribe link to tap, then offers to archive the rest from that sender. It doesn't unsubscribe for you.
 - Settings, **How Jarvis replies**: your own standing instructions, like Claude's personal preferences ("keep answers short", "use metric units", "I'm vegetarian"). They're used in every chat, including Siri and routines, until you change them. Included in export, and cleared by erase. `GET/PUT /api/instructions`.

@@ -19,6 +19,7 @@ import { useConnection } from "../connection";
 import { approximateLocation } from "../location";
 import { ActionSheet, type SheetAction } from "../ActionSheet";
 import { Markdown, plainText } from "../Markdown";
+import { Sources } from "../Sources";
 import * as Speech from "expo-speech";
 import type { Doc } from "../documents";
 import { chooseAttachments, type Photo } from "../photos";
@@ -202,6 +203,9 @@ export default function ChatScreen({
             break;
           case "status":
             setStatus(e.text);
+            break;
+          case "sources":
+            setMessages((m) => m.map((msg) => (msg.id === replyId ? { ...msg, sources: [...(msg.sources ?? []), ...e.sources].slice(0, 6) } : msg)));
             break;
           case "task_started":
             appendReply(`\n\n⏳ Working in the background: ${e.summary}`);
@@ -463,7 +467,10 @@ export default function ChatScreen({
             ]}
           >
             {item.role === "assistant" && item.text ? (
-              <Markdown text={item.text} />
+              <>
+                <Markdown text={item.text} />
+                {item.sources?.length ? <Sources sources={item.sources} /> : null}
+              </>
             ) : (
               <Text style={item.role === "user" ? styles.userText : undefined}>
                 {item.source === "voice" ? "🎙 " : ""}

@@ -1,6 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { attachmentContent, runTurn, setClient, toolStatus, type ChatEvent } from "../src/assistant.js";
+import { attachmentContent, runTurn, setClient, sourcesOf, toolStatus, type ChatEvent } from "../src/assistant.js";
 import { app } from "../src/app.js";
 import { pool } from "../src/db.js";
 import { addServer } from "../src/mcp.js";
@@ -124,6 +124,28 @@ describe("runTurn", () => {
     await runTurn({ conversationId: id, text: "again", source: "text", emit: () => {} });
     expect(requests[1].system as unknown[]).toHaveLength(2);
     expect((requests[1].system as { text: string }[])[0].text).toBe(system[0].text);
+  });
+
+  it("sends the pages a reply cites, live and with the history", async () => {
+    const cite = (url: string, title: string | null) => ({ type: "web_search_result_location", url, title, cited_text: "…", encrypted_index: "x" });
+    const content = [
+      { type: "text", text: "It opens at 9", citations: [cite("https://example.com/hours", "Opening hours"), cite("https://example.com/hours", "Opening hours")] },
+      { type: "text", text: " and closes at 5.", citations: [cite("https://news.example/x", null), cite("javascript:alert(1)", "bad")] },
+    ];
+    expect(sourcesOf(content)).toEqual([
+      { url: "https://example.com/hours", title: "Opening hours" },
+      { url: "https://news.example/x", title: "news.example" },
+    ]);
+    expect(sourcesOf("plain text")).toEqual([]);
+
+    fakeClient([{ content: content as never, stop_reason: "end_turn" }]);
+    const id = await memory.createConversation("me");
+    const events: ChatEvent[] = [];
+    await runTurn({ conversationId: id, text: "when is it open?", source: "text", emit: (e) => events.push(e) });
+    expect(events.find((e) => e.type === "sources")).toEqual({ type: "sources", sources: sourcesOf(content) });
+    const history = await (await app.request(`/api/conversations/${id}/messages`, { headers: auth })).json();
+    expect(history.at(-1).sources).toHaveLength(2);
+    expect(history[0].sources).toBeUndefined();
   });
 
   it("marks voice turns and folds in pending task updates", async () => {

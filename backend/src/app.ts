@@ -9,7 +9,7 @@ import { secureHeaders } from "hono/secure-headers";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { deleteAllData, exportData } from "./account.js";
-import { runTurn, type ChatEvent } from "./assistant.js";
+import { runTurn, sourcesOf, type ChatEvent } from "./assistant.js";
 import { config } from "./config.js";
 import { query } from "./db.js";
 import { allowAttempt, authenticate, createPairingCode, isLimited, listDevices, redeemPairingCode, registerDevice, revokeDevice, type Caller } from "./devices.js";
@@ -312,7 +312,10 @@ app.get("/api/conversations/:id/messages", async (c) => {
   return c.json(
     rows
       .filter((r) => r.display_text)
-      .map((r) => ({ id: r.id, role: r.role, kind: r.kind, text: r.display_text, source: r.source, createdAt: r.created_at })),
+      .map((r) => {
+        const sources = r.role === "assistant" ? sourcesOf(r.content) : [];
+        return { id: r.id, role: r.role, kind: r.kind, text: r.display_text, source: r.source, createdAt: r.created_at, ...(sources.length ? { sources } : {}) };
+      }),
   );
 });
 

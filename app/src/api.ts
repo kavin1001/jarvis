@@ -17,6 +17,13 @@ export interface ChatMessage {
   kind: "turn" | "task_update";
   text: string;
   source: "text" | "voice" | "system";
+  /** Web pages the reply cites. */
+  sources?: WebSource[];
+}
+
+export interface WebSource {
+  url: string;
+  title: string;
 }
 
 export interface PendingApproval {
@@ -168,6 +175,7 @@ export type StreamEvent =
   | { type: "task_started"; taskId: string; summary: string }
   /** What Jarvis is doing while a tool runs, such as "Searching the web…". */
   | { type: "status"; text: string }
+  | { type: "sources"; sources: WebSource[] }
   | { type: "done" }
   | { type: "error"; message: string };
 
