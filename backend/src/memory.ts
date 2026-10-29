@@ -38,6 +38,14 @@ export async function conversationBelongsTo(conversationId: string, userId: stri
   return rows.length > 0;
 }
 
+export async function deleteConversation(conversationId: string, userId: string) {
+  const rows = await query("DELETE FROM conversations WHERE id = $1 AND user_id = $2 RETURNING id", [
+    conversationId,
+    userId,
+  ]);
+  return rows.length > 0;
+}
+
 export async function getMessages(conversationId: string): Promise<StoredMessage[]> {
   return query<StoredMessage>(
     "SELECT * FROM messages WHERE conversation_id = $1 ORDER BY id",

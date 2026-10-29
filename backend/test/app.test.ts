@@ -42,3 +42,17 @@ describe("HTTP API", () => {
     expect(res.status).toBe(404);
   });
 });
+
+describe("facts and conversations", () => {
+  it("adds a fact by hand and deletes a conversation", async () => {
+    const json = { ...auth, "Content-Type": "application/json" };
+    const added = await app.request("/api/facts", { method: "POST", headers: json, body: JSON.stringify({ fact: "Vegetarian" }) });
+    expect(await added.json()).toMatchObject({ fact: "Vegetarian" });
+
+    const { createConversation, listConversations } = await import("../src/memory.js");
+    const id = await createConversation("me");
+    const res = await app.request(`/api/conversations/${id}`, { method: "DELETE", headers: auth });
+    expect(await res.json()).toEqual({ deleted: true });
+    expect(await listConversations("me")).toEqual([]);
+  });
+});

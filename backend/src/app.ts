@@ -62,7 +62,18 @@ app.get("/api/conversations/:id/messages", async (c) => {
   );
 });
 
+app.delete("/api/conversations/:id", async (c) =>
+  c.json({ deleted: await memory.deleteConversation(c.req.param("id"), config.userId) }),
+);
+
 app.get("/api/facts", async (c) => c.json(await memory.listFacts(config.userId)));
+const FactBody = z.object({ fact: z.string().min(1).max(500) });
+app.post("/api/facts", async (c) => {
+  const body = FactBody.safeParse(await c.req.json());
+  if (!body.success) return c.json({ error: body.error.message }, 400);
+  const id = await memory.addFact(config.userId, body.data.fact);
+  return c.json({ id, fact: body.data.fact });
+});
 app.delete("/api/facts/:id", async (c) =>
   c.json({ deleted: await memory.deleteFact(config.userId, c.req.param("id")) }),
 );
