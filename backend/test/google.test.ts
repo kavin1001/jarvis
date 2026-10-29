@@ -650,6 +650,28 @@ describe("email attachments", () => {
     expect(await runGoogleTool("me", "gmail_read_attachment", { message_id: "m9", attachment_id: "att-3" })).toMatch(/too large/);
     await expect(runGoogleTool("me", "gmail_read_attachment", { message_id: "m9", attachment_id: "nope" })).rejects.toThrow(/No attachment/);
   });
+
+  it("saves any attachment to Drive with a resumable upload", async () => {
+    await connect({ access_token: "at", expires_at: Date.now() + 3600_000 });
+    await expect(runGoogleTool("me", "gmail_save_attachment", { message_id: "m9", attachment_id: "att-2" })).rejects.toThrow(/save files to Drive/);
+    await query("UPDATE connectors SET scopes = 'https://www.googleapis.com/auth/drive.file'");
+    const docx = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0xff, 0x00]);
+    const calls = mockFetch({
+      "attachments/att-2": () => ({ data: docx.toString("base64url"), size: docx.length }),
+      "messages/m9": () => message,
+      "upload/drive/v3/files?uploadType=resumable": () => new Response(null, { status: 200, headers: { location: "https://upload.test/session-1" } }),
+      "upload.test/session-1": () => ({ id: "file_1234567890", webViewLink: "https://drive.google.com/file/d/file_1234567890/view" }),
+    });
+    expect(await runGoogleTool("me", "gmail_save_attachment", { message_id: "m9", attachment_id: "att-2" })).toBe(
+      'Saved "notes.docx" to Drive (id file_1234567890): https://drive.google.com/file/d/file_1234567890/view',
+    );
+    const start = calls.find((c) => c.url.includes("uploadType=resumable"))!;
+    expect(JSON.parse(start.init!.body as string)).toEqual({ name: "notes.docx", mimeType: message.payload.parts[2].mimeType });
+    const put = calls.at(-1)!;
+    expect(put.init?.method).toBe("PUT");
+    expect(Buffer.from(put.init!.body as Uint8Array)).toEqual(docx);
+    expect(await runGoogleTool("me", "gmail_save_attachment", { message_id: "m9", attachment_id: "att-3" })).toMatch(/too large/);
+  });
 });
 
 describe("free time", () => {

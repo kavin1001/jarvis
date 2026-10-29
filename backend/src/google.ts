@@ -315,6 +315,16 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
     },
   },
   {
+    name: "gmail_save_attachment",
+    description:
+      "Save a file attached to an email into the user's Google Drive and get its link: \"save the boarding pass to my Drive\", \"keep that invoice\". Any file type, by the attachment id gmail_read lists.",
+    input_schema: {
+      type: "object",
+      properties: { message_id: { type: "string" }, attachment_id: { type: "string" } },
+      required: ["message_id", "attachment_id"],
+    },
+  },
+  {
     name: "gmail_create_draft",
     description:
       "Save an email draft in the user's Gmail. It is NOT sent; the user reviews and sends it from Gmail. Pass reply_to_message_id to draft a reply in the same thread, and reply_all to copy everyone else who was on that email.",
@@ -578,6 +588,7 @@ const inputs = {
   gmail_search: z.object({ query: z.string(), max_results: z.number().int().min(1).max(10).default(5) }),
   gmail_read: z.object({ message_id: z.string() }),
   gmail_read_attachment: z.object({ message_id: z.string().min(1), attachment_id: z.string().min(1) }),
+  gmail_save_attachment: z.object({ message_id: z.string().min(1), attachment_id: z.string().min(1) }),
   gmail_create_draft: z.object({
     to: z.string().min(3),
     cc: z.string().optional(),
@@ -680,6 +691,8 @@ function attachmentsOf(part: GmailPart): { id: string; filename: string; mimeTyp
 }
 
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+// Gmail's own limit on what can be attached to an email.
+const MAX_SAVE_BYTES = 25 * 1024 * 1024;
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
 
 /** An attachment for Claude to read: the assistant uploads PDFs and images, and passes text inline. */
@@ -1101,6 +1114,41 @@ function driveKind(mimeType: string) {
   return mimeType.replace(/^application\/(vnd\.google-apps\.)?/, "");
 }
 
+const GMAIL_ME = "https://gmail.googleapis.com/gmail/v1/users/me";
+
+/** An email's attachment by id. Gmail can hand out a fresh attachment id per fetch, so match on the id or, failing that, on it being the only one. */
+async function findAttachment(userId: string, messageId: string, attachmentId: string) {
+  const m = await google<GmailMessage>(userId, `${GMAIL_ME}/messages/${encodeURIComponent(messageId)}?format=full`);
+  const files = attachmentsOf(m.payload);
+  const file = files.find((f) => f.id === attachmentId) ?? (files.length === 1 ? files[0] : undefined);
+  if (!file) throw new Error("No attachment with that id on this email. Call gmail_read again for the current ids.");
+  return file;
+}
+
+async function attachmentBytes(userId: string, messageId: string, attachmentId: string) {
+  const { data } = await google<{ data: string }>(
+    userId,
+    `${GMAIL_ME}/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`,
+  );
+  // Gmail sends base64url.
+  return Buffer.from(data, "base64url");
+}
+
+/** Uploads a file to Drive as it is, in two steps (a resumable upload), since attachments can be bigger than a multipart upload allows. */
+async function uploadToDrive(userId: string, name: string, mimeType: string, bytes: Buffer) {
+  const token = await accessToken(userId);
+  const start = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,webViewLink", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": mimeType },
+    body: JSON.stringify({ name, mimeType }),
+  });
+  const session = start.headers.get("location");
+  if (!start.ok || !session) throw new Error(`Google API ${start.status}: ${(await start.text()).slice(0, 300)}`);
+  const res = await fetch(session, { method: "PUT", headers: { "Content-Type": mimeType }, body: new Uint8Array(bytes) });
+  if (!res.ok) throw new Error(`Google API ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  return (await res.json()) as { id: string; webViewLink: string };
+}
+
 /**
  * Makes a Google Doc from Markdown, or a Sheet from CSV: Drive converts the uploaded file into the Google
  * format. One multipart upload with the file's name and type, then the content.
@@ -1233,11 +1281,7 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
     }
     case "gmail_read_attachment": {
       const { message_id, attachment_id } = inputs.gmail_read_attachment.parse(raw);
-      const m = await google<GmailMessage>(userId, `${GMAIL}/messages/${encodeURIComponent(message_id)}?format=full`);
-      // Gmail can hand out a fresh attachment id per fetch, so match on the id or, failing that, on it being the only one.
-      const files = attachmentsOf(m.payload);
-      const file = files.find((f) => f.id === attachment_id) ?? (files.length === 1 ? files[0] : undefined);
-      if (!file) throw new Error("No attachment with that id on this email. Call gmail_read again for the current ids.");
+      const file = await findAttachment(userId, message_id, attachment_id);
       if (file.size > MAX_ATTACHMENT_BYTES) return `${file.filename} is ${kb(file.size)}, too large to open here (the limit is 10 MB).`;
       const lower = file.filename.toLowerCase();
       const type =
@@ -1249,12 +1293,17 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
               ? "text/plain"
               : null;
       if (!type) return `Jarvis can't open ${file.filename} (${file.mimeType}) yet: only PDFs, images and text files.`;
-      const { data } = await google<{ data: string }>(
-        userId,
-        `${GMAIL}/messages/${encodeURIComponent(message_id)}/attachments/${encodeURIComponent(file.id)}`,
-      );
-      // Gmail sends base64url; the API wants standard base64.
-      return { attachment: { filename: file.filename, media_type: type, data: Buffer.from(data, "base64url").toString("base64") } };
+      const data = await attachmentBytes(userId, message_id, file.id);
+      return { attachment: { filename: file.filename, media_type: type, data: data.toString("base64") } };
+    }
+    case "gmail_save_attachment": {
+      if (!(await googleStatus(userId)).can_create_docs)
+        throw new Error("Jarvis needs permission to save files to Drive. In Settings, tap Connect again next to Google.");
+      const { message_id, attachment_id } = inputs.gmail_save_attachment.parse(raw);
+      const file = await findAttachment(userId, message_id, attachment_id);
+      if (file.size > MAX_SAVE_BYTES) return `${file.filename} is ${kb(file.size)}, too large to save from here (the limit is 25 MB).`;
+      const saved = await uploadToDrive(userId, file.filename, file.mimeType, await attachmentBytes(userId, message_id, file.id));
+      return `Saved "${oneLine(file.filename)}" to Drive (id ${saved.id}): ${saved.webViewLink}`;
     }
     case "gmail_create_draft": {
       const { to, cc, subject, body, reply_to_message_id, reply_all } = inputs.gmail_create_draft.parse(raw);

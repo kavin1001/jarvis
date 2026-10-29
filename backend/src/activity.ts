@@ -76,6 +76,8 @@ export function describeAction(name: string, input: Input, timeZone = "UTC"): st
       return `Made the Google Sheet "${str(input.title)}"`;
     case "doc_append":
       return "Added text to a Google Doc";
+    case "gmail_save_attachment":
+      return "Saved an email attachment to Drive";
     case "sheet_append_rows": {
       const n = Array.isArray(input.rows) ? input.rows.length : 0;
       return `Added ${n} row${n === 1 ? "" : "s"} to a Google Sheet`;
@@ -139,6 +141,10 @@ export function undoFor(name: string, input: Input, result: string): Undo | null
     case "drive_create_doc":
     case "drive_create_sheet": {
       const id = result.match(/^Created the Google (?:Doc|Sheet) \(id ([\w-]{10,200})\)/)?.[1];
+      return id ? { tool: "trash_drive_file", file_id: id } : null;
+    }
+    case "gmail_save_attachment": {
+      const id = result.match(/^Saved ".*" to Drive \(id ([\w-]{10,200})\):/)?.[1];
       return id ? { tool: "trash_drive_file", file_id: id } : null;
     }
     case "sheet_append_rows": {
