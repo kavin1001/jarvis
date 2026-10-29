@@ -35,6 +35,16 @@ async function readBackground(): Promise<Background | null> {
 }
 const writeBackground = (b: Background) => SecureStore.setItemAsync(BG_KEY, JSON.stringify(b), BG);
 
+/**
+ * Whether a geofence report is the arrival or departure a reminder waits for. Watching starts
+ * with a report of where the phone is now, and starts again each time the app relaunches, so
+ * only a change from the last known state counts; the first report just sets that state.
+ */
+export function isCrossing(known: boolean | undefined, inside: boolean, onEvent: "arrive" | "leave") {
+  if (known === undefined || known === inside) return false;
+  return inside === (onEvent === "arrive");
+}
+
 type GeofenceEvent = { eventType: Location.GeofencingEventType; region: Location.LocationRegion };
 
 if (placeRemindersSupported) {
@@ -45,14 +55,11 @@ if (placeRemindersSupported) {
     const bg = await readBackground();
     if (!bg) return;
     const inside = data.eventType === Location.GeofencingEventType.Enter;
-    // Watching starts with a report of where the phone is now, and starts again each time the
-    // app relaunches. Only a change from the last known state is an arrival or departure.
     const known = bg.inside[id];
     bg.inside[id] = inside;
     await writeBackground(bg);
-    if (known === undefined || known === inside) return;
     const reminder = bg.reminders.find((r) => r.id === id);
-    if (!reminder || (reminder.on_event === "arrive") !== inside) return;
+    if (!reminder || !isCrossing(known, inside, reminder.on_event)) return;
     try {
       await api.triggerPlaceReminder(bg.settings, id, inside ? "arrive" : "leave");
     } catch {

@@ -17,8 +17,9 @@ export function plainText(text: string) {
   return text
     .replace(/```[^\n]*\n?/g, "")
     // Tables: drop the |---| rule and read cells with a pause between them.
-    .replace(new RegExp(TABLE_RULE.source, "gm"), "")
-    .replace(/^\s*\|(.*)\|\s*$/gm, (_, row: string) => row.split("|").map((c) => c.trim()).join(", "))
+    // [ \t] rather than \s, so a match never runs on into the next line.
+    .replace(new RegExp(TABLE_RULE.source.replace(/\\s/g, "[ \\t]") + "\\n?", "gm"), "")
+    .replace(/^[ \t]*\|(.*)\|[ \t]*$/gm, (_, row: string) => row.split("|").map((c) => c.trim()).join(", "))
     .replace(/^#{1,6}\s+/gm, "")
     .replace(/^\s*[-*•]\s+/gm, "")
     .replace(/\[([^\]]+)\]\(((?:https?:\/\/|tel:|sms:|mailto:)[^)\s]+)\)/g, "$1")

@@ -47,6 +47,7 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - run: npm ci
       - run: npm run typecheck
+      - run: npm test
       - run: npx expo export --platform ios --output-dir /tmp/expo-export
         env:
           EXPO_OFFLINE: 1
