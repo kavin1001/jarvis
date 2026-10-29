@@ -186,7 +186,15 @@ describe("Google tools", () => {
     await connect({ access_token: "at", expires_at: Date.now() + 3600_000 });
     const calls = mockFetch({
       "calendars/primary/events": (_url, init) => {
-        const body = JSON.parse(init!.body as string);
+        if (init?.method !== "POST")
+          // The new series' own first instance, and dinner at 7:30 that day.
+          return {
+            items: [
+              { id: "new1_20261103T000000Z", summary: "Gym", start: { dateTime: "2026-11-03T00:00:00Z" }, end: { dateTime: "2026-11-03T01:00:00Z" } },
+              { id: "d1", summary: "Dinner", start: { dateTime: "2026-11-03T00:30:00Z" }, end: { dateTime: "2026-11-03T01:30:00Z" } },
+            ],
+          };
+        const body = JSON.parse(init.body as string);
         return { id: "new1", htmlLink: "https://calendar.example/new1", ...(body.conferenceData ? { hangoutLink: "https://meet.google.com/abc-defg-hij" } : {}) };
       },
     });
@@ -196,25 +204,30 @@ describe("Google tools", () => {
       { summary: "Gym", start: "2026-11-02T19:00:00-05:00", end: "2026-11-02T20:00:00-05:00", repeat: { frequency: "weekly", days: ["MO", "WE"], until: "2026-12-31" }, meet_link: true },
       "America/New_York",
     );
-    expect(out).toBe("Event created (id new1): https://calendar.example/new1\nMeet link: https://meet.google.com/abc-defg-hij");
-    expect(calls[0].url).toContain("conferenceDataVersion=1");
-    const timed = JSON.parse(calls[0].init!.body as string);
+    expect(out).toBe(
+      'Event created (id new1): https://calendar.example/new1\nMeet link: https://meet.google.com/abc-defg-hij\nHeads up: it overlaps with "Dinner" (7:30 PM to 8:30 PM).',
+    );
+    const posts = () => calls.filter((c) => c.init?.method === "POST");
+    expect(posts()[0].url).toContain("conferenceDataVersion=1");
+    const timed = JSON.parse(posts()[0].init!.body as string);
     expect(timed.start).toEqual({ dateTime: "2026-11-03T00:00:00.000Z", timeZone: "America/New_York" });
     // Until the end of Dec 31 in New York, so the 7pm session that day is kept.
     expect(timed.recurrence).toEqual(["RRULE:FREQ=WEEKLY;BYDAY=MO,WE;UNTIL=20270101T045959Z"]);
     expect(timed.conferenceData.createRequest.conferenceSolutionKey).toEqual({ type: "hangoutsMeet" });
 
     await runGoogleTool("me", "calendar_create_event", { summary: "Trip", start: "2026-11-02", end: "2026-11-05", all_day: true, repeat: { frequency: "yearly", count: 3 } });
-    const allDay = JSON.parse(calls[1].init!.body as string);
+    const allDay = JSON.parse(posts()[1].init!.body as string);
     expect(allDay).toMatchObject({ start: { date: "2026-11-02" }, end: { date: "2026-11-06" }, recurrence: ["RRULE:FREQ=YEARLY;COUNT=3"] });
-    expect(calls[1].url).not.toContain("conferenceDataVersion");
+    expect(posts()[1].url).not.toContain("conferenceDataVersion");
+    // All-day events aren't checked for clashes.
+    expect(calls).toHaveLength(3);
 
     await expect(runGoogleTool("me", "calendar_create_event", { summary: "x", start: "2026-11-02T10:00:00Z", end: "2026-11-03", all_day: true })).rejects.toThrow(/YYYY-MM-DD/);
     await expect(runGoogleTool("me", "calendar_create_event", { summary: "x", start: "2026-11-05", end: "2026-11-02", all_day: true })).rejects.toThrow(/after the start/);
     await expect(
       runGoogleTool("me", "calendar_create_event", { summary: "x", start: "2026-11-02T10:00:00Z", end: "2026-11-02T11:00:00Z", repeat: { frequency: "daily", days: ["MO"] } }),
     ).rejects.toThrow(/weekly/);
-    expect(calls).toHaveLength(2);
+    expect(calls).toHaveLength(3);
   });
 
   it("moves an event keeping its length, and deletes one", async () => {
@@ -222,7 +235,7 @@ describe("Google tools", () => {
     const calls = mockFetch({
       "events/ev1": (_url, init) =>
         init?.method === "PATCH"
-          ? { htmlLink: "https://calendar.example/ev1" }
+          ? { id: "ev1", htmlLink: "https://calendar.example/ev1" }
           : init?.method === "DELETE"
             ? {}
             : { start: { dateTime: "2026-10-29T15:00:00Z" }, end: { dateTime: "2026-10-29T15:30:00Z" } },

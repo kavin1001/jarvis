@@ -345,7 +345,7 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
   {
     name: "calendar_create_event",
     description:
-      "Add an event to the user's primary calendar: timed or all-day, once or repeating, optionally with a Google Meet link. No invitations are sent. Confirm the details with the user first unless they were explicit.",
+      "Add an event to the user's primary calendar: timed or all-day, once or repeating, optionally with a Google Meet link. No invitations are sent. Confirm the details with the user first unless they were explicit. If the answer says it overlaps with other events, tell the user.",
     eager_input_streaming: true,
     input_schema: {
       type: "object",
@@ -376,7 +376,7 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
   {
     name: "calendar_update_event",
     description:
-      "Change an event on the user's primary calendar: move it, rename it, or change its place or notes. Pass only the fields that change. No updates are sent to guests. Get the id from calendar_list_events.",
+      "Change an event on the user's primary calendar: move it, rename it, or change its place or notes. Pass only the fields that change. No updates are sent to guests. If the answer says it overlaps with other events, tell the user. Get the id from calendar_list_events.",
     eager_input_streaming: true,
     input_schema: {
       type: "object",
@@ -787,6 +787,31 @@ function parseEventRef(ref: string) {
   return bar === -1 ? { url: `${eventsUrl("primary")}/${encodeURIComponent(ref)}` } : { url: `${eventsUrl(ref.slice(0, bar))}/${encodeURIComponent(ref.slice(bar + 1))}` };
 }
 
+/** Whether an event takes up the user's time: not all-day, not marked "free", not an invitation they declined. */
+const blocksTime = (ev: CalEvent) =>
+  Boolean(ev.start.dateTime && ev.end.dateTime) && ev.transparency !== "transparent" && !ev.attendees?.some((a) => a.self && a.responseStatus === "declined");
+
+/**
+ * A heads-up about other events between start and end, so Claude can mention a double booking after adding or
+ * moving an event. `skip` is that event's own id (a repeating event's instances are `<id>_<time>`). Never throws.
+ */
+async function clashes(userId: string, start: number, end: number, timeZone: string, skip: string) {
+  try {
+    const params = new URLSearchParams({ timeMin: new Date(start).toISOString(), timeMax: new Date(end).toISOString(), singleEvents: "true", maxResults: "20" });
+    const found = (await eventsAcross<CalEvent>(userId, params))
+      .map((e) => e.event)
+      .filter((ev) => ev.id !== skip && !ev.id.startsWith(`${skip}_`) && blocksTime(ev));
+    if (found.length === 0) return "";
+    const time = new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit" });
+    const named = found
+      .slice(0, 3)
+      .map((ev) => `"${ev.summary ?? "(no title)"}" (${time.format(Date.parse(ev.start.dateTime!))} to ${time.format(Date.parse(ev.end.dateTime!))})`);
+    return `\nHeads up: it overlaps with ${named.join(", ")}${found.length > 3 ? ` and ${found.length - 3} more` : ""}.`;
+  } catch {
+    return "";
+  }
+}
+
 /** One events.list query run on every calendar, each event tagged with its calendar. */
 async function eventsAcross<E>(userId: string, params: URLSearchParams): Promise<{ calendar: Calendar; event: E }[]> {
   const calendars = await calendarsOf(userId);
@@ -1012,8 +1037,7 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
       const events = (await eventsAcross<CalEvent>(userId, params)).map((e) => e.event);
       // All-day events, ones marked "free", and invitations the user declined don't block time.
       const busy = events
-        .filter((ev) => ev.start.dateTime && ev.end.dateTime && ev.transparency !== "transparent")
-        .filter((ev) => !ev.attendees?.some((a) => a.self && a.responseStatus === "declined"))
+        .filter(blocksTime)
         .map((ev) => ({ start: ev.start.dateTime!, end: ev.end.dateTime! }));
       const slots = freeSlots(busy, from, to, { minMinutes: f.duration_minutes, dayStart: f.day_start, dayEnd: f.day_end, weekends: f.include_weekends }, timeZone);
       if (slots.length === 0) return `No free ${f.duration_minutes}-minute slots between ${f.day_start} and ${f.day_end} in that range.`;
@@ -1047,13 +1071,15 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
           },
         },
       );
-      return `Event created (id ${created.id}): ${created.htmlLink}${created.hangoutLink ? `\nMeet link: ${created.hangoutLink}` : ""}`;
+      const clash = e.all_day ? "" : await clashes(userId, Date.parse(e.start), Date.parse(e.end), timeZone, created.id);
+      return `Event created (id ${created.id}): ${created.htmlLink}${created.hangoutLink ? `\nMeet link: ${created.hangoutLink}` : ""}${clash}`;
     }
     case "calendar_update_event": {
       const { event_id, start, end, ...rest } = inputs.calendar_update_event.parse(raw);
       const { url } = parseEventRef(event_id);
       const body: Record<string, unknown> = { ...rest };
       let was = "";
+      let clash = "";
       if (start || end) {
         // Moving only the start keeps the event's length.
         const current = await google<{ start: { dateTime?: string }; end: { dateTime?: string } }>(userId, url);
@@ -1068,8 +1094,9 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
         // The old times, so the move can be undone from Settings.
         was = ` (it was ${new Date(oldStart).toISOString()} to ${new Date(oldEnd).toISOString()})`;
       }
-      const updated = await google<{ htmlLink: string }>(userId, `${url}?sendUpdates=none`, { method: "PATCH", body });
-      return `Event updated${was}: ${updated.htmlLink}`;
+      const updated = await google<{ id: string; htmlLink: string }>(userId, `${url}?sendUpdates=none`, { method: "PATCH", body });
+      if (body.start) clash = await clashes(userId, Date.parse((body.start as { dateTime: string }).dateTime), Date.parse((body.end as { dateTime: string }).dateTime), timeZone, updated.id);
+      return `Event updated${was}: ${updated.htmlLink}${clash}`;
     }
     case "calendar_delete_event": {
       const { event_id } = inputs.calendar_delete_event.parse(raw);

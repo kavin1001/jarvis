@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Double-booking heads-up: when Jarvis adds or moves an event, it checks your calendars (including shared ones) and tells you if the new time overlaps something else, like "that overlaps with Dinner, 7:30 to 8:30". Events marked free and invitations you declined don't count.
 - More kinds of events: "add gym every Monday and Wednesday at 7 until Christmas", "put Mom's visit on the calendar, Friday to Sunday", "set up a call with a Meet link". Jarvis can now add repeating events, all-day events and events with a Google Meet link. Still no invitations go out. Uses the calendar permission you already gave.
 - Undo in Settings, **What Jarvis did on your accounts**: put archived or marked email back, delete an event Jarvis added, move an event back to where it was, or end a snooze early, for up to a week after Jarvis did it. Undone entries are crossed out.
 - App updates without reinstalling: once `npx eas update:configure` has been run (see `docs/DEPLOY.md`), fixes and features that don't need new native code reach your phone with `npx eas update`. The app downloads them at launch, and Settings shows the version with a **Check for updates** button. Needs one more EAS build to start.
