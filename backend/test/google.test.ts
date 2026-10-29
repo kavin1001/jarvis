@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import { app } from "../src/app.js";
 import { decrypt, encrypt } from "../src/crypto.js";
 import { query, pool } from "../src/db.js";
-import { deleteDraft, freeSlots, googleStatus, nextBirthdays, runGoogleTool, startGoogleAuth, unsubscribeLink } from "../src/google.js";
+import { deleteContact, deleteDraft, freeSlots, googleStatus, nextBirthdays, runGoogleTool, startGoogleAuth, unsubscribeLink } from "../src/google.js";
 import { auth, resetDb } from "./helpers.js";
 
 const SECRET = "test-connector-secret";
@@ -83,7 +83,7 @@ describe("Google OAuth", () => {
 
   it("exposes status, start and disconnect to the app", async () => {
     const status = await app.request("/api/connectors", { headers: auth });
-    expect(await status.json()).toEqual({ google: { available: true, connected: false, email: null, can_organize: false, can_search_contacts: false, can_see_all_calendars: false, can_read_drive: false } });
+    expect(await status.json()).toEqual({ google: { available: true, connected: false, email: null, can_organize: false, can_search_contacts: false, can_see_all_calendars: false, can_read_drive: false, can_edit_contacts: false } });
     const start = await app.request("/api/connectors/google/start", { method: "POST", headers: auth });
     expect((await start.json()).url).toMatch(/^https:\/\/accounts\.google\.com\//);
 
@@ -391,6 +391,45 @@ describe("Google tools", () => {
     await expect(runGoogleTool("me", "gmail_organize", { message_ids: ["m3"], action: "add_label" })).rejects.toThrow(/need a label name/);
   });
 
+  it("saves a new contact, adds to a saved one without duplicates, and deletes for undo", async () => {
+    await connect({ access_token: "at", expires_at: Date.now() + 3600_000 }, "email");
+    await expect(runGoogleTool("me", "contacts_save", { name: "Ana", phone: "555 0101" })).rejects.toThrow(/change your contacts/);
+    await query("UPDATE connectors SET scopes = 'email https://www.googleapis.com/auth/contacts'");
+    const calls = mockFetch({
+      "people:createContact": () => ({ resourceName: "people/c9" }),
+      "people/c1:updateContact": () => ({}),
+      "people/c9:deleteContact": () => ({}),
+      "people/c1": () => ({ resourceName: "people/c1", etag: "e1", names: [{ displayName: "Sam Lee" }], phoneNumbers: [{ value: "+1 555-0100" }], emailAddresses: [{ value: "sam@example.com" }] }),
+    });
+    const body = (i: number) => JSON.parse(calls[i].init!.body as string);
+
+    expect(await runGoogleTool("me", "contacts_save", { name: "Ana Ruiz", phone: "+1 555 0101", birthday: "--03-15", note: "Plumber" })).toBe(
+      "Saved a new contact (id people/c9): Ana Ruiz, phone +1 555 0101, birthday --03-15.",
+    );
+    expect(body(0)).toEqual({
+      names: [{ unstructuredName: "Ana Ruiz" }],
+      phoneNumbers: [{ value: "+1 555 0101" }],
+      birthdays: [{ date: { month: 3, day: 15 } }],
+      biographies: [{ value: "Plumber", contentType: "TEXT_PLAIN" }],
+    });
+
+    // The number is already there (formatted differently); only the email is new.
+    expect(await runGoogleTool("me", "contacts_save", { contact_id: "people/c1", phone: "15550100", email: "sam@work.example" })).toBe(
+      "Updated Sam Lee: added phone 15550100, email sam@work.example.",
+    );
+    const update = calls.find((c) => c.url.includes(":updateContact"))!;
+    expect(update.url).toContain("updatePersonFields=emailAddresses");
+    expect(JSON.parse(update.init!.body as string)).toEqual({ etag: "e1", emailAddresses: [{ value: "sam@example.com" }, { value: "sam@work.example" }] });
+    expect(await runGoogleTool("me", "contacts_save", { contact_id: "people/c1", email: "SAM@example.com" })).toBe("Sam Lee already has that.");
+
+    await expect(runGoogleTool("me", "contacts_save", { contact_id: "people/c1" })).rejects.toThrow(/Nothing to add/);
+    await expect(runGoogleTool("me", "contacts_save", { phone: "555" })).rejects.toThrow(/Give a name/);
+    await expect(runGoogleTool("me", "contacts_save", { name: "X", birthday: "March 15" })).rejects.toThrow(/YYYY-MM-DD/);
+
+    await deleteContact("me", "people/c9");
+    expect(calls.at(-1)).toMatchObject({ url: "https://people.googleapis.com/v1/people/c9:deleteContact", init: { method: "DELETE" } });
+  });
+
   it("looks up contacts and people the user has emailed, after one warm-up search", async () => {
     const scopes = "email https://www.googleapis.com/auth/contacts.readonly https://www.googleapis.com/auth/contacts.other.readonly";
     await connect({ access_token: "at", expires_at: Date.now() + 3600_000 }, "email");
@@ -402,7 +441,14 @@ describe("Google tools", () => {
         new URL(url).searchParams.get("query")
           ? {
               results: [
-                { person: { names: [{ displayName: "Sam Lee" }], phoneNumbers: [{ value: "+1 555 0100", type: "mobile" }], emailAddresses: [{ value: "sam@example.com" }] } },
+                {
+                  person: {
+                    resourceName: "people/c1",
+                    names: [{ displayName: "Sam Lee" }],
+                    phoneNumbers: [{ value: "+1 555 0100", type: "mobile" }],
+                    emailAddresses: [{ value: "sam@example.com" }],
+                  },
+                },
                 { person: { names: [{ displayName: "Sam No Details" }] } },
               ],
             }
@@ -419,7 +465,7 @@ describe("Google tools", () => {
     });
     expect(await runGoogleTool("me", "contacts_search", { query: "Sam" })).toBe(
       // A saved contact also found among people emailed shows once; one with no number or email is left out.
-      "- Sam Lee: mobile +1 555 0100, sam@example.com\n- samantha@work.example (emailed, not a saved contact): samantha@work.example",
+      "- Sam Lee [people/c1]: mobile +1 555 0100, sam@example.com\n- samantha@work.example (emailed, not a saved contact): samantha@work.example",
     );
     expect(calls.filter((c) => new URL(c.url).searchParams.get("query") === "")).toHaveLength(2);
     await runGoogleTool("me", "contacts_search", { query: "Ana" });

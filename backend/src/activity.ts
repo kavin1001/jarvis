@@ -22,7 +22,8 @@ export type Undo =
   | { tool: "calendar_delete_event"; event_id: string }
   | { tool: "calendar_update_event"; event_id: string; start: string; end: string }
   | { tool: "unsnooze"; snooze_id: string }
-  | { tool: "gmail_delete_draft"; draft_id: string };
+  | { tool: "gmail_delete_draft"; draft_id: string }
+  | { tool: "delete_contact"; contact_id: string };
 
 const KEEP_DAYS = 90;
 // Undo is offered for a week; after that the mail or event has likely moved on.
@@ -66,6 +67,8 @@ export function describeAction(name: string, input: Input, timeZone = "UTC"): st
       if (input.action === "remove_label") return `Removed the label "${str(input.label)}" from ${emails}`;
       return `${ORGANIZE[String(input.action)] ?? "Changed"} ${emails}`;
     }
+    case "contacts_save":
+      return input.contact_id ? "Updated a contact" : `Saved ${str(input.name)} to your contacts`;
     case "calendar_create_event": {
       const on = input.all_day ? day(input.start) : when(input.start, timeZone);
       const freq = (input.repeat as { frequency?: unknown } | undefined)?.frequency;
@@ -115,6 +118,10 @@ export function undoFor(name: string, input: Input, result: string): Undo | null
       if (!ids.length || !action) return null;
       if (!action.endsWith("_label")) return { tool: "gmail_organize", message_ids: ids, action };
       return typeof input.label === "string" ? { tool: "gmail_organize", message_ids: ids, action, label: input.label } : null;
+    }
+    case "contacts_save": {
+      const id = result.match(/^Saved a new contact \(id (people\/c?\d+)\)/)?.[1];
+      return id ? { tool: "delete_contact", contact_id: id } : null;
     }
     case "gmail_create_draft": {
       const id = result.match(/^Draft (\S+) saved in Gmail/)?.[1];

@@ -13,7 +13,7 @@ import { runTurn, sourcesOf, type ChatEvent } from "./assistant.js";
 import { config } from "./config.js";
 import { query } from "./db.js";
 import { allowAttempt, authenticate, createPairingCode, isLimited, listDevices, redeemPairingCode, registerDevice, revokeDevice, type Caller } from "./devices.js";
-import { deleteDraft, disconnectGoogle, googleStatus, handleGoogleCallback, modifyMail, runGoogleTool, startGoogleAuth, upcomingEvents } from "./google.js";
+import { deleteContact, deleteDraft, disconnectGoogle, googleStatus, handleGoogleCallback, modifyMail, runGoogleTool, startGoogleAuth, upcomingEvents } from "./google.js";
 import { addServer, deleteServer, listServers, NewServer, setServerEnabled } from "./mcp.js";
 import { handleMcpCallback, startMcpOAuth } from "./mcpOAuth.js";
 import * as lists from "./lists.js";
@@ -412,13 +412,14 @@ app.put("/api/instructions", async (c) => {
   if (!body.success) return c.json({ error: `instructions must be text up to ${memory.MAX_INSTRUCTIONS} characters, or null` }, 400);
   return c.json({ instructions: await memory.setInstructions(config.userId, body.data.instructions) });
 });
-// Settings, Undo: puts archived mail back, deletes a draft or an event Jarvis added, moves an event back, ends a snooze.
+// Settings, Undo: puts archived mail back, deletes a draft, contact or event Jarvis added, moves an event back, ends a snooze.
 app.post("/api/activity/:id/undo", async (c) => {
   try {
     const undone = await undoActivity(config.userId, c.req.param("id"), async (u) => {
       if (u.tool === "unsnooze") {
         if (!(await mailSnooze.unsnooze(config.userId, u.snooze_id, modifyMail))) throw new Error("That email is already back in the inbox.");
       } else if (u.tool === "gmail_delete_draft") await deleteDraft(config.userId, u.draft_id);
+      else if (u.tool === "delete_contact") await deleteContact(config.userId, u.contact_id);
       else if (u.tool === "gmail_organize") await runGoogleTool(config.userId, "gmail_organize", { message_ids: u.message_ids, action: u.action, label: u.label });
       else if (u.tool === "calendar_update_event") await runGoogleTool(config.userId, "calendar_update_event", { event_id: u.event_id, start: u.start, end: u.end });
       else await runGoogleTool(config.userId, "calendar_delete_event", { event_id: u.event_id });

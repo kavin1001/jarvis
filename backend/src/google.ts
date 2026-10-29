@@ -12,6 +12,7 @@ const MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify";
 const CONTACTS_SCOPES = ["https://www.googleapis.com/auth/contacts.readonly", "https://www.googleapis.com/auth/contacts.other.readonly"];
 const CALENDAR_LIST_SCOPE = "https://www.googleapis.com/auth/calendar.calendarlist.readonly";
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
+const CONTACTS_WRITE_SCOPE = "https://www.googleapis.com/auth/contacts";
 const SCOPES = [
   "openid",
   "email",
@@ -22,6 +23,7 @@ const SCOPES = [
   ...CONTACTS_SCOPES,
   CALENDAR_LIST_SCOPE,
   DRIVE_SCOPE,
+  CONTACTS_WRITE_SCOPE,
 ];
 
 interface Tokens {
@@ -59,6 +61,7 @@ export async function googleStatus(userId: string) {
     can_search_contacts: Boolean(row && CONTACTS_SCOPES.every((sc) => row.scopes.split(" ").includes(sc))),
     can_see_all_calendars: Boolean(row?.scopes.split(" ").includes(CALENDAR_LIST_SCOPE)),
     can_read_drive: Boolean(row?.scopes.split(" ").includes(DRIVE_SCOPE)),
+    can_edit_contacts: Boolean(row?.scopes.split(" ").includes(CONTACTS_WRITE_SCOPE)),
   };
 }
 
@@ -247,6 +250,23 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
       type: "object",
       properties: { query: { type: "string", description: "A name or part of one, an email address or a phone number." } },
       required: ["query"],
+    },
+  },
+  {
+    name: "contacts_save",
+    description:
+      "Save a new contact in the user's Google Contacts, or add a phone number, email or birthday to one they already have (pass contact_id from contacts_search). Adding never removes what's there. Only when the user asked; say what you saved.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Full name, for a new contact" },
+        contact_id: { type: "string", description: "people/… id of an existing saved contact, from contacts_search" },
+        phone: { type: "string" },
+        email: { type: "string" },
+        birthday: { type: "string", description: "YYYY-MM-DD, or --MM-DD when the year isn't known" },
+        note: { type: "string", description: "A short note, for a new contact, e.g. \"Plumber Ana recommended\"" },
+      },
     },
   },
   {
@@ -487,6 +507,17 @@ const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be YYYY-MM-DD").refine
 const hhmm = z.string().regex(/^([01]?\d|2[0-3]):[0-5]\d$/, "must be HH:MM");
 const inputs = {
   contacts_search: z.object({ query: z.string().trim().min(1).max(100) }),
+  contacts_save: z
+    .object({
+      name: z.string().trim().min(1).max(120).optional(),
+      contact_id: z.string().regex(/^people\/c?\d+$/, "must be a people/… id from contacts_search").optional(),
+      phone: z.string().trim().min(3).max(40).optional(),
+      email: z.string().trim().email().max(200).optional(),
+      birthday: z.string().regex(/^(\d{4}|-)-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/, "must be YYYY-MM-DD or --MM-DD").optional(),
+      note: z.string().trim().max(500).optional(),
+    })
+    .refine((c) => c.contact_id || c.name, "Give a name for a new contact, or the contact_id of an existing one")
+    .refine((c) => !c.contact_id || c.phone || c.email || c.birthday, "Nothing to add: give a phone, email or birthday"),
   contacts_birthdays: z.object({ days: z.number().int().min(1).max(366).default(30) }),
   gmail_search: z.object({ query: z.string(), max_results: z.number().int().min(1).max(10).default(5) }),
   gmail_read: z.object({ message_id: z.string() }),
@@ -676,6 +707,8 @@ export function addressHeader(list: string) {
 }
 
 interface Person {
+  resourceName?: string;
+  etag?: string;
   names?: { displayName?: string }[];
   phoneNumbers?: { value?: string; type?: string }[];
   emailAddresses?: { value?: string }[];
@@ -727,6 +760,62 @@ async function contactBirthdays(userId: string): Promise<Birthday[]> {
   return out;
 }
 
+/** --MM-DD or YYYY-MM-DD as the People API's date. */
+function birthdayDate(v: string) {
+  const [y, m, d] = v.split("-").slice(-3);
+  return { ...(y ? { year: Number(y) } : {}), month: Number(m), day: Number(d) };
+}
+
+/** Creates a contact, or adds a phone, email or birthday to a saved one. */
+async function saveContact(userId: string, c: z.infer<typeof inputs.contacts_save>): Promise<string> {
+  if (!(await googleStatus(userId)).can_edit_contacts)
+    throw new Error("Jarvis needs permission to change your contacts. In Settings, tap Connect again next to Google.");
+  const PEOPLE = "https://people.googleapis.com/v1";
+  const added = [c.phone && `phone ${c.phone}`, c.email && `email ${c.email}`, c.birthday && `birthday ${c.birthday}`].filter(Boolean).join(", ");
+  if (!c.contact_id) {
+    const made = await google<Person>(userId, `${PEOPLE}/people:createContact?personFields=names`, {
+      method: "POST",
+      body: {
+        names: [{ unstructuredName: c.name }],
+        ...(c.phone ? { phoneNumbers: [{ value: c.phone }] } : {}),
+        ...(c.email ? { emailAddresses: [{ value: c.email }] } : {}),
+        ...(c.birthday ? { birthdays: [{ date: birthdayDate(c.birthday) }] } : {}),
+        ...(c.note ? { biographies: [{ value: c.note, contentType: "TEXT_PLAIN" }] } : {}),
+      },
+    });
+    return `Saved a new contact (id ${made.resourceName}): ${c.name}${added ? `, ${added}` : ""}.`;
+  }
+  const fields = "names,phoneNumbers,emailAddresses,birthdays";
+  const current = await google<Person>(userId, `${PEOPLE}/${c.contact_id}?personFields=${fields}`);
+  const name = current.names?.[0]?.displayName ?? c.contact_id;
+  const update: Record<string, unknown> = { etag: current.etag };
+  const changed: string[] = [];
+  if (c.phone) {
+    const digits = (v?: string) => (v ?? "").replace(/\D/g, "");
+    if (!current.phoneNumbers?.some((p) => digits(p.value) === digits(c.phone))) {
+      update.phoneNumbers = [...(current.phoneNumbers ?? []), { value: c.phone }];
+      changed.push("phoneNumbers");
+    }
+  }
+  if (c.email && !current.emailAddresses?.some((e) => e.value?.toLowerCase() === c.email!.toLowerCase())) {
+    update.emailAddresses = [...(current.emailAddresses ?? []), { value: c.email }];
+    changed.push("emailAddresses");
+  }
+  if (c.birthday) {
+    update.birthdays = [{ date: birthdayDate(c.birthday) }];
+    changed.push("birthdays");
+  }
+  if (changed.length === 0) return `${name} already has that.`;
+  await google(userId, `${PEOPLE}/${c.contact_id}:updateContact?updatePersonFields=${changed.join(",")}`, { method: "PATCH", body: update });
+  return `Updated ${name}: added ${added}.`;
+}
+
+/** Deletes a contact Jarvis created (undo from Settings). */
+export async function deleteContact(userId: string, resourceName: string) {
+  if (!/^people\/c?\d+$/.test(resourceName)) throw new Error("Not a contact id");
+  await google(userId, `https://people.googleapis.com/v1/${resourceName}:deleteContact`, { method: "DELETE" });
+}
+
 async function searchContacts(userId: string, q: string): Promise<string> {
   const PEOPLE = "https://people.googleapis.com/v1";
   const search = (path: string, readMask: string, query: string) =>
@@ -751,7 +840,9 @@ async function searchContacts(userId: string, q: string): Promise<string> {
       const key = `${name}|${emails[0] ?? phones[0] ?? ""}`.toLowerCase();
       if (seen.has(key) || (phones.length === 0 && emails.length === 0)) continue;
       seen.add(key);
-      lines.push(`- ${name}${from}: ${[...phones, ...emails].join(", ")}`);
+      // Saved contacts carry their id, so contacts_save can add to them.
+      const id = !from && p.resourceName ? ` [${p.resourceName}]` : "";
+      lines.push(`- ${name}${from}${id}: ${[...phones, ...emails].join(", ")}`);
     }
   }
   return lines.length ? lines.join("\n") : `No contacts match "${q}".`;
@@ -975,6 +1066,8 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
         throw new Error("Jarvis needs permission to look up contacts. In Settings, tap Connect again next to Google.");
       return searchContacts(userId, q);
     }
+    case "contacts_save":
+      return saveContact(userId, inputs.contacts_save.parse(raw));
     case "contacts_birthdays": {
       const { days } = inputs.contacts_birthdays.parse(raw ?? {});
       if (!(await googleStatus(userId)).can_search_contacts)
