@@ -43,6 +43,15 @@ export interface Reminder {
   repeat: "daily" | "weekdays" | "weekly" | null;
 }
 
+export interface Usage {
+  today_usd: number;
+  last_7_days_usd: number;
+  month_to_date_usd: number;
+  chat_turns_today: number;
+  tasks_today: number;
+  daily_budget_usd: number | null;
+}
+
 export interface Fact {
   id: string;
   fact: string;
@@ -83,6 +92,7 @@ async function request<T>(s: Settings, path: string, init: { method?: string; bo
 export const api = {
   conversations: (s: Settings) => request<Conversation[]>(s, "/api/conversations"),
   deleteConversation: (s: Settings, id: string) => request(s, `/api/conversations/${id}`, { method: "DELETE" }),
+  usage: (s: Settings) => request<Usage>(s, "/api/usage"),
   reminders: (s: Settings) => request<Reminder[]>(s, "/api/reminders"),
   cancelReminder: (s: Settings, id: string) => request(s, `/api/reminders/${id}`, { method: "DELETE" }),
   facts: (s: Settings) => request<Fact[]>(s, "/api/facts"),

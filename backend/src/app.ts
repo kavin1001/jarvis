@@ -6,7 +6,8 @@ import { runTurn, type ChatEvent } from "./assistant.js";
 import { config } from "./config.js";
 import * as memory from "./memory.js";
 import { savePushToken } from "./push.js";
-import { cancelReminder, listReminders } from "./reminders.js";
+import { cancelReminder, getTimezone, listReminders } from "./reminders.js";
+import { summarize } from "./usage.js";
 import { decideApproval, listTasks } from "./tasks.js";
 
 export const app = new Hono();
@@ -94,6 +95,10 @@ app.delete("/api/facts/:id", async (c) =>
 app.get("/api/reminders", async (c) => c.json(await listReminders(config.userId)));
 app.delete("/api/reminders/:id", async (c) =>
   c.json({ cancelled: await cancelReminder(config.userId, c.req.param("id")) }),
+);
+
+app.get("/api/usage", async (c) =>
+  c.json(await summarize(config.userId, await getTimezone(config.userId), config.dailyBudgetUsd)),
 );
 
 app.get("/api/tasks", async (c) => c.json(await listTasks(config.userId)));

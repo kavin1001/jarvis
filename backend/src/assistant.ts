@@ -5,6 +5,7 @@ import * as memory from "./memory.js";
 import * as reminders from "./reminders.js";
 import { startTask, taskLaneConfigured } from "./tasks.js";
 import { describeNow } from "./time.js";
+import { overDailyBudget, recordMessageUsage } from "./usage.js";
 
 let client = new Anthropic();
 
@@ -236,6 +237,12 @@ export async function runTurn(opts: {
   const { conversationId, text, source, emit } = opts;
   if (opts.timezone) await reminders.setTimezone(config.userId, opts.timezone);
   const timezone = await reminders.getTimezone(config.userId);
+  if (await overDailyBudget(config.userId, timezone, config.dailyBudgetUsd)) {
+    const notice = `You've reached today's spending cap of $${config.dailyBudgetUsd}. Jarvis will be back after midnight, or raise DAILY_BUDGET_USD on the server.`;
+    emit({ type: "text", text: notice });
+    emit({ type: "done" });
+    return notice;
+  }
 
   const userContent: (Anthropic.Beta.BetaTextBlockParam | Anthropic.Beta.BetaImageBlockParam)[] = [];
   for (const update of await memory.takePendingTaskUpdates(conversationId)) {
@@ -283,6 +290,8 @@ export async function runTurn(opts: {
       if (err instanceof Anthropic.APIError || jsonRetries++ >= 2) throw err;
       continue;
     }
+
+    await recordMessageUsage(config.userId, message);
 
     if (message.stop_reason === "refusal") {
       // Not stored: a refused turn is not valid history to send back.

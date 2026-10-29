@@ -125,6 +125,14 @@ async function handleEvent(taskId: string, event: SessionEvent): Promise<boolean
         await recordApproval(taskId, event.id, "tool_confirmation", ask);
       }
       return false;
+    case "session.usage": {
+      const cost = event.usage.list_cost;
+      if (cost?.currency === "USD") {
+        // Amounts are in cents, as a string.
+        await query("UPDATE tasks SET cost_usd = $2 WHERE id = $1", [taskId, Number(cost.amount) / 100]);
+      }
+      return false;
+    }
     case "session.status_idle":
       if (event.stop_reason.type === "requires_action") return false;
       await completeTask(taskId, event.stop_reason.type === "end_turn" ? "done" : "failed");

@@ -95,3 +95,20 @@ CREATE TABLE IF NOT EXISTS reminders (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS reminders_due_idx ON reminders (due_at) WHERE status = 'scheduled';
+
+-- 0.4: usage and cost tracking.
+CREATE TABLE IF NOT EXISTS usage_events (
+  id                 BIGSERIAL PRIMARY KEY,
+  user_id            TEXT NOT NULL,
+  model              TEXT NOT NULL,
+  input_tokens       INTEGER NOT NULL DEFAULT 0,
+  output_tokens      INTEGER NOT NULL DEFAULT 0,
+  cache_read_tokens  INTEGER NOT NULL DEFAULT 0,
+  cache_write_tokens INTEGER NOT NULL DEFAULT 0,
+  web_searches       INTEGER NOT NULL DEFAULT 0,
+  cost_usd           NUMERIC(12, 6) NOT NULL,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS usage_events_user_time_idx ON usage_events (user_id, created_at);
+-- List cost reported by the Managed Agents session (tokens and sandbox time).
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS cost_usd NUMERIC(12, 6) NOT NULL DEFAULT 0;
