@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode } from "react";
-import { Linking, Platform, StyleSheet, View, type TextStyle } from "react-native";
+import { Linking, Platform, ScrollView, StyleSheet, View, type TextStyle } from "react-native";
 import { Text, useStyles, type Palette } from "./theme";
 
 /**
@@ -16,6 +16,9 @@ export function Markdown({ text, style }: { text: string; style?: TextStyle }) {
 export function plainText(text: string) {
   return text
     .replace(/```[^\n]*\n?/g, "")
+    // Tables: drop the |---| rule and read cells with a pause between them.
+    .replace(new RegExp(TABLE_RULE.source, "gm"), "")
+    .replace(/^\s*\|(.*)\|\s*$/gm, (_, row: string) => row.split("|").map((c) => c.trim()).join(", "))
     .replace(/^#{1,6}\s+/gm, "")
     .replace(/^\s*[-*•]\s+/gm, "")
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, "$1")
@@ -27,7 +30,18 @@ type Block =
   | { kind: "p"; text: string }
   | { kind: "h"; text: string }
   | { kind: "li"; marker: string; text: string }
-  | { kind: "code"; text: string };
+  | { kind: "code"; text: string }
+  | { kind: "table"; header: string[]; rows: string[][] };
+
+const TABLE_RULE = /^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?\s*$/;
+/** "| a | b |" into ["a", "b"]. */
+const cells = (line: string) =>
+  line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((c) => c.trim());
 
 function blocks(text: string): Block[] {
   const out: Block[] = [];
@@ -44,6 +58,16 @@ function blocks(text: string): Block[] {
       const code: string[] = [];
       while (++i < lines.length && !lines[i].startsWith("```")) code.push(lines[i]);
       out.push({ kind: "code", text: code.join("\n") });
+      continue;
+    }
+    // A table: a header row, a |---|---| rule, then rows.
+    if (line.includes("|") && i + 1 < lines.length && TABLE_RULE.test(lines[i + 1])) {
+      flush();
+      const header = cells(line);
+      const rows: string[][] = [];
+      i++;
+      while (i + 1 < lines.length && lines[i + 1].includes("|") && lines[i + 1].trim()) rows.push(cells(lines[++i]));
+      out.push({ kind: "table", header, rows });
       continue;
     }
     const heading = line.match(/^#{1,6}\s+(.*)$/);
@@ -74,6 +98,31 @@ function renderBlock(b: Block, key: number, styles: Styles, style?: TextStyle) {
           {b.text}
         </Text>
       );
+    case "table": {
+      // Each column is as wide as its longest cell, within limits; wide tables scroll sideways.
+      const columns = b.header.length;
+      const widths = Array.from({ length: columns }, (_, c) => {
+        const longest = Math.max(...[b.header, ...b.rows].map((r) => plainText(r[c] ?? "").length));
+        return Math.min(220, Math.max(56, longest * 8 + 16));
+      });
+      const row = (r: string[], header: boolean, k: string) => (
+        <View key={k} style={[styles.tableRow, header && styles.tableHeader]}>
+          {widths.map((w, c) => (
+            <Text key={c} style={[style, styles.cell, { width: w }, header && { fontWeight: "700" }]}>
+              {inline(r[c] ?? "", styles)}
+            </Text>
+          ))}
+        </View>
+      );
+      return (
+        <ScrollView key={key} horizontal style={styles.table} showsHorizontalScrollIndicator={false}>
+          <View>
+            {row(b.header, true, "h")}
+            {b.rows.map((r, i) => row(r, false, String(i)))}
+          </View>
+        </ScrollView>
+      );
+    }
     case "h":
       return (
         <Text key={key} style={[style, styles.heading]}>
@@ -129,4 +178,8 @@ const makeStyles = (colors: Palette) =>
     code: { fontFamily: mono, fontSize: 14, backgroundColor: colors.code },
     codeBlock: { fontFamily: mono, fontSize: 13, backgroundColor: colors.code, padding: 8, borderRadius: 6 },
     link: { color: colors.accent, textDecorationLine: "underline" },
+    table: { borderWidth: 1, borderColor: colors.border, borderRadius: 6 },
+    tableRow: { flexDirection: "row", borderBottomWidth: StyleSheet.hairlineWidth, borderColor: colors.border },
+    tableHeader: { backgroundColor: colors.code },
+    cell: { paddingHorizontal: 8, paddingVertical: 6 },
   });
