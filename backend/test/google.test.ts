@@ -275,6 +275,44 @@ describe("Google tools", () => {
   });
 });
 
+describe("email attachments", () => {
+  const message = {
+    id: "m9",
+    threadId: "t9",
+    snippet: "",
+    payload: {
+      mimeType: "multipart/mixed",
+      headers: [{ name: "Subject", value: "Your invoice" }],
+      parts: [
+        { mimeType: "text/plain", body: { data: Buffer.from("See attached.").toString("base64url") } },
+        { mimeType: "application/pdf", filename: "invoice.pdf", body: { attachmentId: "att-1", size: 52_000 } },
+        { mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", filename: "notes.docx", body: { attachmentId: "att-2", size: 9_000 } },
+        { mimeType: "application/zip", filename: "huge.zip", body: { attachmentId: "att-3", size: 50_000_000 } },
+      ],
+    },
+  };
+
+  it("lists attachments and opens PDFs as base64, refusing other types and huge files", async () => {
+    await connect({ access_token: "at", expires_at: Date.now() + 3600_000 });
+    // Gmail sends attachment data base64url-encoded.
+    const pdf = Buffer.from("%PDF-1.4 fake ~~~ >>>");
+    mockFetch({
+      "attachments/att-1": () => ({ data: pdf.toString("base64url"), size: pdf.length }),
+      "messages/m9": () => message,
+    });
+    const read = (await runGoogleTool("me", "gmail_read", { message_id: "m9" })) as string;
+    expect(read).toContain("- [att-1] invoice.pdf (application/pdf, 51 KB)");
+    expect(read).toContain("See attached.");
+
+    expect(await runGoogleTool("me", "gmail_read_attachment", { message_id: "m9", attachment_id: "att-1" })).toEqual({
+      attachment: { filename: "invoice.pdf", media_type: "application/pdf", data: pdf.toString("base64") },
+    });
+    expect(await runGoogleTool("me", "gmail_read_attachment", { message_id: "m9", attachment_id: "att-2" })).toMatch(/can't open notes\.docx/);
+    expect(await runGoogleTool("me", "gmail_read_attachment", { message_id: "m9", attachment_id: "att-3" })).toMatch(/too large/);
+    await expect(runGoogleTool("me", "gmail_read_attachment", { message_id: "m9", attachment_id: "nope" })).rejects.toThrow(/No attachment/);
+  });
+});
+
 describe("free time", () => {
   const day = { minMinutes: 30, dayStart: "09:00", dayEnd: "18:00", weekends: false };
   const NY = "America/New_York";
