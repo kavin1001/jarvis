@@ -1,0 +1,52 @@
+import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
+import * as ImagePicker from "expo-image-picker";
+import { ActionSheetIOS, Alert, Platform } from "react-native";
+
+export interface Photo {
+  uri: string; // for the preview
+  media_type: "image/jpeg";
+  data: string; // base64
+}
+
+// Claude reads images best at up to ~1568 px on the long edge; bigger only costs tokens.
+const MAX_EDGE = 1568;
+
+async function prepare(asset: ImagePicker.ImagePickerAsset): Promise<Photo> {
+  const scale = Math.min(1, MAX_EDGE / Math.max(asset.width, asset.height));
+  const context = ImageManipulator.manipulate(asset.uri);
+  if (scale < 1) context.resize({ width: Math.round(asset.width * scale) });
+  const image = await context.renderAsync();
+  const result = await image.saveAsync({ format: SaveFormat.JPEG, compress: 0.7, base64: true });
+  return { uri: result.uri, media_type: "image/jpeg", data: result.base64! };
+}
+
+async function pick(source: "camera" | "library"): Promise<Photo[]> {
+  const permission =
+    source === "camera"
+      ? await ImagePicker.requestCameraPermissionsAsync()
+      : await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!permission.granted) {
+    Alert.alert("Permission needed", `Allow ${source === "camera" ? "camera" : "photo"} access in Settings to share images with Jarvis.`);
+    return [];
+  }
+  const options: ImagePicker.ImagePickerOptions = { mediaTypes: ["images"], quality: 1, allowsMultipleSelection: source === "library", selectionLimit: 4 };
+  const result = source === "camera" ? await ImagePicker.launchCameraAsync(options) : await ImagePicker.launchImageLibraryAsync(options);
+  if (result.canceled) return [];
+  return Promise.all(result.assets.slice(0, 4).map(prepare));
+}
+
+/** Asks camera or library, then returns resized JPEGs ready to send. */
+export function choosePhotos(): Promise<Photo[]> {
+  return new Promise((resolve) => {
+    const choose = (i: number) => resolve(i === 0 ? pick("camera") : i === 1 ? pick("library") : Promise.resolve([]));
+    if (Platform.OS === "ios") {
+      ActionSheetIOS.showActionSheetWithOptions({ options: ["Take photo", "Choose from library", "Cancel"], cancelButtonIndex: 2 }, choose);
+    } else {
+      Alert.alert("Add a photo", undefined, [
+        { text: "Take photo", onPress: () => choose(0) },
+        { text: "Choose from library", onPress: () => choose(1) },
+        { text: "Cancel", style: "cancel", onPress: () => choose(2) },
+      ]);
+    }
+  });
+}

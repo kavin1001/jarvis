@@ -1,4 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
+import Anthropic, { toFile } from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { config } from "./config.js";
 import * as memory from "./memory.js";
@@ -11,6 +11,20 @@ let client = new Anthropic();
 /** Test seam: swap the Claude client for a fake. */
 export function setClient(fake: Anthropic) {
   client = fake;
+}
+
+export interface ImageInput {
+  media_type: "image/jpeg" | "image/png" | "image/webp" | "image/gif";
+  data: string; // base64
+}
+
+/** Uploads once through the Files API so history carries a small file id, not the pixels. */
+async function uploadImage(image: ImageInput): Promise<Anthropic.Beta.BetaImageBlockParam> {
+  const ext = image.media_type.split("/")[1];
+  const file = await client.files.upload({
+    file: await toFile(Buffer.from(image.data, "base64"), `photo.${ext}`, { type: image.media_type }),
+  });
+  return { type: "image", source: { type: "file", file_id: file.id } };
 }
 
 export type ChatEvent =
@@ -217,24 +231,26 @@ export async function runTurn(opts: {
   source: "text" | "voice" | "scheduled";
   emit: (e: ChatEvent) => void;
   timezone?: string;
+  images?: ImageInput[];
 }): Promise<string> {
   const { conversationId, text, source, emit } = opts;
   if (opts.timezone) await reminders.setTimezone(config.userId, opts.timezone);
   const timezone = await reminders.getTimezone(config.userId);
 
-  const userContent: Anthropic.Beta.BetaTextBlockParam[] = [];
+  const userContent: (Anthropic.Beta.BetaTextBlockParam | Anthropic.Beta.BetaImageBlockParam)[] = [];
   for (const update of await memory.takePendingTaskUpdates(conversationId)) {
     userContent.push({ type: "text", text: `[Background task update]\n${update}` });
   }
   // The time rides in the user turn, not the system prompt, so the cached prefix stays stable.
   userContent.push({ type: "text", text: `(User's local time: ${describeNow(timezone)}, ${timezone}.)` });
   if (source === "voice") userContent.push({ type: "text", text: "(Sent by voice.)" });
+  for (const image of opts.images ?? []) userContent.push(await uploadImage(image));
   userContent.push({ type: "text", text: source === "scheduled" ? `[Scheduled job] ${text}` : text });
   await memory.appendMessage(
     conversationId,
     "user",
     userContent,
-    source === "scheduled" ? `Scheduled: ${text}` : text,
+    source === "scheduled" ? `Scheduled: ${text}` : opts.images?.length ? `📷 ${text}` : text,
     source === "scheduled" ? "system" : source,
   );
 

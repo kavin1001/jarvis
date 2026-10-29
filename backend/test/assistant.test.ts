@@ -11,6 +11,7 @@ type Msg = Partial<Anthropic.Beta.BetaMessage> & Pick<Anthropic.Beta.BetaMessage
 function fakeClient(responses: Msg[]) {
   const requests: Anthropic.Beta.MessageCreateParams[] = [];
   const client = {
+    files: { upload: async () => ({ id: "file_123" }) },
     beta: {
       messages: {
         stream(params: Anthropic.Beta.MessageCreateParams) {
@@ -105,6 +106,22 @@ describe("runTurn", () => {
     const { listReminders } = await import("../src/reminders.js");
     const [r] = await listReminders("me");
     expect(r).toMatchObject({ text: "Stretch", repeat: "daily", action: "notify", timezone: "Europe/Paris" });
+  });
+
+  it("uploads photos and sends them as file references", async () => {
+    const requests = fakeClient([{ content: [{ type: "text", text: "A cat.", citations: null }], stop_reason: "end_turn" }]);
+    const id = await memory.createConversation("me");
+    await runTurn({
+      conversationId: id,
+      text: "what is this?",
+      source: "text",
+      emit: () => {},
+      images: [{ media_type: "image/jpeg", data: Buffer.from("fake").toString("base64") }],
+    });
+    const content = requests[0].messages[0].content as { type: string }[];
+    expect(content).toContainEqual({ type: "image", source: { type: "file", file_id: "file_123" } });
+    const rows = await memory.getMessages(id);
+    expect(rows[0].display_text).toBe("📷 what is this?");
   });
 
   it("does not store a refused turn", async () => {

@@ -99,7 +99,13 @@ export const api = {
 /** Sends one message and calls onEvent for each server-sent event as it streams in. */
 export async function streamChat(
   s: Settings,
-  body: { conversationId?: string; text: string; source: "text" | "voice"; timezone?: string },
+  body: {
+    conversationId?: string;
+    text: string;
+    source: "text" | "voice";
+    timezone?: string;
+    images?: { media_type: string; data: string }[];
+  },
   onEvent: (e: StreamEvent) => void,
 ) {
   const res = await fetch(`${s.url}/api/chat`, {
