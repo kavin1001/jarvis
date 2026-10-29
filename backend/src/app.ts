@@ -545,7 +545,7 @@ app.delete("/api/places/:name", async (c) => c.json({ deleted: await places.dele
 app.get("/api/place-reminders", async (c) => c.json(await places.listPlaceReminders(config.userId)));
 app.delete("/api/place-reminders/:id", async (c) => c.json({ cancelled: await places.cancelPlaceReminder(config.userId, c.req.param("id")) }));
 app.get("/api/mail-watches", async (c) =>
-  c.json((await mailWatch.listMailWatches(config.userId)).map(({ id, about, query, once, expires_at }) => ({ id, about, query, once, expires_at }))),
+  c.json((await mailWatch.listMailWatches(config.userId)).map(({ id, about, query, once, if_none, expires_at }) => ({ id, about, query, once, if_none, expires_at }))),
 );
 app.get("/api/mail-snoozes", async (c) =>
   c.json((await mailSnooze.listSnoozes(config.userId)).map(({ id, about, due_at, message_ids }) => ({ id, about, due_at, count: message_ids.length }))),

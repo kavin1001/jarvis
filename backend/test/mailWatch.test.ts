@@ -87,11 +87,56 @@ describe("email watches", () => {
     );
   });
 
+  it("nudges only if nothing arrives by the deadline, with one last look first", async () => {
+    const conv = await memory.createConversation("me");
+    const until = minutes(60);
+    const quiet = await mailWatch.createMailWatch({ userId: "me", conversationId: conv, query: "from:sam", about: "Sam's reply", once: false, days: 7, until, ifNone: true, seenIds: ["old"] });
+    const box = inbox();
+    box.mail.push(hit("old"));
+    await mailWatch.checkMailWatches(box.search, minutes(6));
+    expect(await memory.takePendingTaskUpdates(conv)).toEqual([]);
+    const [w] = await mailWatch.listMailWatches("me");
+    expect(w).toMatchObject({ once: true, if_none: true });
+    expect(mailWatch.describeMailWatch({ ...w, expires_at: "2026-11-06T22:00:00Z" }, "America/New_York")).toBe(
+      "waiting for Sam's reply (from:sam); a nudge if nothing arrives by Fri, Nov 6, 5:00 PM",
+    );
+
+    // Nothing by the deadline: the final search covers the whole wait, then the nudge.
+    await mailWatch.checkMailWatches(box.search, minutes(61));
+    expect(box.searches.at(-1)).toMatch(/^\(from:sam\) -from:me after:\d+$/);
+    expect(await memory.takePendingTaskUpdates(conv)).toEqual([expect.stringMatching(/^Still nothing for Sam's reply \(searched from:sam\) since \w{3}, \w{3} \d+\. Offer to draft a follow-up\.$/)]);
+    const [row] = await query<{ status: string }>("SELECT status FROM mail_watches WHERE id = $1", [quiet]);
+    expect(row.status).toBe("expired");
+    // Expired once, nudged once.
+    await mailWatch.checkMailWatches(box.search, minutes(70));
+    expect(await memory.takePendingTaskUpdates(conv)).toEqual([]);
+  });
+
+  it("ends a nudge quietly when the email comes, even in the last minutes", async () => {
+    const conv = await memory.createConversation("me");
+    const box = inbox();
+    const early = await mailWatch.createMailWatch({ userId: "me", conversationId: conv, query: "from:sam", about: "Sam", once: true, days: 7, ifNone: true });
+    box.mail.push(hit("r1"));
+    await mailWatch.checkMailWatches(box.search, minutes(6));
+    expect(await memory.takePendingTaskUpdates(conv)).toEqual(['Sam: it arrived (from Sam Lee <sam@example.com>: "Re: the lease" [r1]), so no nudge needed.']);
+    expect((await query<{ status: string }>("SELECT status FROM mail_watches WHERE id = $1", [early]))[0].status).toBe("done");
+
+    // A reply after the last regular check but before the deadline still counts.
+    box.mail.length = 0;
+    await mailWatch.createMailWatch({ userId: "me", conversationId: conv, query: "from:ana", about: "Ana", once: true, days: 7, until: minutes(30), ifNone: true });
+    await mailWatch.checkMailWatches(box.search, minutes(26));
+    box.mail.push(hit("r2", "Ana <ana@example.com>", "Sounds good"));
+    await mailWatch.checkMailWatches(box.search, minutes(31));
+    expect(await memory.takePendingTaskUpdates(conv)).toEqual([expect.stringMatching(/^Ana: it arrived/)]);
+
+    await expect(mailWatch.createMailWatch({ userId: "me", conversationId: conv, query: "x", about: "x", once: true, days: 7, until: minutes(5), ifNone: true })).rejects.toThrow(/10 minutes/);
+  });
+
   it("lists and cancels watches over the API", async () => {
     const id = await mailWatch.createMailWatch({ userId: "me", conversationId: null, query: "from:sam", about: "Sam", once: false, days: 7 });
     const listed = await (await app.request("/api/mail-watches", { headers: auth })).json();
     expect(listed).toMatchObject([{ id, about: "Sam", query: "from:sam", once: false }]);
-    expect(Object.keys(listed[0]).sort()).toEqual(["about", "expires_at", "id", "once", "query"]);
+    expect(Object.keys(listed[0]).sort()).toEqual(["about", "expires_at", "id", "if_none", "once", "query"]);
     expect(await (await app.request(`/api/mail-watches/${id}`, { method: "DELETE", headers: auth })).json()).toEqual({ cancelled: true });
     expect(await (await app.request("/api/mail-watches", { headers: auth })).json()).toEqual([]);
   });

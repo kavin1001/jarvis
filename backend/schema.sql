@@ -315,6 +315,8 @@ CREATE TABLE IF NOT EXISTS mail_watches (
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS mail_watches_active ON mail_watches (checked_at) WHERE status = 'active';
+-- "Remind me if Sam hasn't replied by Friday": notify only if nothing matched before expires_at.
+ALTER TABLE mail_watches ADD COLUMN IF NOT EXISTS if_none BOOLEAN NOT NULL DEFAULT false;
 
 -- "Tell me when tickets go on sale": a web page fetched every half hour, with a notification
 -- when the words appear (look_for) or, without them, when its text changes.

@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Follow-up nudges: "remind me if Sam hasn't replied by Friday". Jarvis watches your inbox and only notifies you if the email hasn't come by then, with an offer to draft a follow-up. If it does come, the nudge is dropped quietly. After drafting an email you're waiting on, Jarvis offers to set one. Nudges show in Tasks.
 - Meeting notes: tap **＋**, then **Record a meeting**. Jarvis transcribes as people talk, on the phone itself where it can, and when you tap **Stop and write up notes** it writes a summary, decisions and action items and saves them as a note. Keep the app open with the screen on while it records. Needs a new app build on iPhone (the web version has it now).
 - Double-booking heads-up: when Jarvis adds or moves an event, it checks your calendars (including shared ones) and tells you if the new time overlaps something else, like "that overlaps with Dinner, 7:30 to 8:30". Events marked free and invitations you declined don't count.
 - More kinds of events: "add gym every Monday and Wednesday at 7 until Christmas", "put Mom's visit on the calendar, Friday to Sunday", "set up a call with a Meet link". Jarvis can now add repeating events, all-day events and events with a Google Meet link. Still no invitations go out. Uses the calendar permission you already gave.

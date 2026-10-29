@@ -437,7 +437,7 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
   {
     name: "watch_email",
     description:
-      "Watch the user's inbox and notify them when a matching email arrives: \"tell me when Sam replies\", \"let me know when the passport office emails\", \"ping me about any email from my landlord this week\". Checked every few minutes. Cancel with cancel_reminder; list_reminders shows them.",
+      "Watch the user's inbox and notify them when a matching email arrives: \"tell me when Sam replies\", \"let me know when the passport office emails\", \"ping me about any email from my landlord this week\". Or, with if_none, the other way round: \"remind me if Sam hasn't replied by Friday\" notifies only if nothing matching arrives before the end. Checked every few minutes. Cancel with cancel_reminder; list_reminders shows them.",
     eager_input_streaming: true,
     input_schema: {
       type: "object",
@@ -446,6 +446,8 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
         about: { type: "string", description: "A few words for the notification, e.g. \"Sam's reply about the lease\"." },
         once: { type: "boolean", description: "Stop after the first match (default). False notifies for every match until it ends." },
         days: { type: "integer", description: "How long to watch, 1-30 days. Default 7." },
+        until: { type: "string", description: "When to stop instead of days: ISO 8601 with offset, e.g. Friday 5pm. Use it with if_none for a deadline." },
+        if_none: { type: "boolean", description: "Notify only if no matching email arrives before the end (a nudge to follow up). A match ends it quietly." },
       },
       required: ["query", "about"],
     },

@@ -95,6 +95,8 @@ export interface MailWatch {
   about: string;
   query: string;
   once: boolean;
+  /** Notifies only if nothing arrives by expires_at. */
+  if_none?: boolean;
   expires_at: string;
 }
 

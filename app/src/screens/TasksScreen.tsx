@@ -227,8 +227,9 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
                     ✉️ {w.about}
                   </Text>
                   <Text style={styles.rowMeta}>
-                    {w.once ? "Tells you about the first new email" : "Tells you about each new email"} · until{" "}
-                    {new Date(w.expires_at).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}
+                    {w.if_none
+                      ? `Nudges you if nothing arrives by ${new Date(w.expires_at).toLocaleString([], { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
+                      : `${w.once ? "Tells you about the first new email" : "Tells you about each new email"} · until ${new Date(w.expires_at).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}`}
                   </Text>
                 </Pressable>
               ))}
