@@ -20,6 +20,13 @@
           "speechRecognitionPermission": "Jarvis turns your voice into text to answer you."
         }
       ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Jarvis looks at photos you choose to share with it.",
+          "cameraPermission": "Jarvis uses the camera when you take a photo to ask about."
+        }
+      ],
       "expo-notifications",
       "expo-secure-store"
     ]

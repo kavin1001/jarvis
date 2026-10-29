@@ -19,6 +19,15 @@ const ChatBody = z.object({
   text: z.string().min(1).max(20_000),
   source: z.enum(["text", "voice"]).default("text"),
   timezone: z.string().max(64).optional(),
+  images: z
+    .array(
+      z.object({
+        media_type: z.enum(["image/jpeg", "image/png", "image/webp", "image/gif"]),
+        data: z.string().max(7_000_000), // ~5 MB decoded, the API's per-image limit
+      }),
+    )
+    .max(4)
+    .optional(),
 });
 
 // Streams the reply as server-sent events: conversation, text, task_started, done, error.
@@ -42,6 +51,7 @@ app.post("/api/chat", async (c) => {
         text: body.data.text,
         source: body.data.source,
         timezone: body.data.timezone,
+        images: body.data.images,
         emit: (e) => void send(e),
       });
     } catch (err) {

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   FlatList,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -10,6 +11,7 @@ import {
   View,
 } from "react-native";
 import { api, streamChat, type ChatMessage, type PendingApproval, type Settings } from "../api";
+import { choosePhotos, type Photo } from "../photos";
 import { askApproval } from "../usePush";
 import { createSpeaker, useVoice } from "../useVoice";
 
@@ -27,6 +29,7 @@ export default function ChatScreen({
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
+  const [photos, setPhotos] = useState<Photo[]>([]);
   const [busy, setBusy] = useState(false);
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const list = useRef<FlatList<ChatMessage>>(null);
@@ -42,14 +45,17 @@ export default function ChatScreen({
   }, [refresh, refreshKey]);
 
   async function send(text: string, source: "text" | "voice") {
-    if (!text.trim() || busy) return;
+    if ((!text.trim() && photos.length === 0) || busy) return;
+    if (!text.trim()) text = "What's in this photo?";
+    const images = photos.map(({ media_type, data }) => ({ media_type, data }));
     setBusy(true);
     setDraft("");
+    setPhotos([]);
     const speaker = source === "voice" ? createSpeaker() : null;
     const replyId = `pending-${Date.now()}`;
     setMessages((m) => [
       ...m,
-      { id: `local-${Date.now()}`, role: "user", kind: "turn", text, source },
+      { id: `local-${Date.now()}`, role: "user", kind: "turn", text: images.length ? `📷 ${text}` : text, source },
       { id: replyId, role: "assistant", kind: "turn", text: "", source: "text" },
     ]);
     const appendReply = (delta: string) =>
@@ -57,7 +63,7 @@ export default function ChatScreen({
 
     try {
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      await streamChat(settings, { conversationId, text, source, timezone }, (e) => {
+      await streamChat(settings, { conversationId, text, source, timezone, images }, (e) => {
         switch (e.type) {
           case "conversation":
             if (e.conversationId !== conversationId) onConversation(e.conversationId);
@@ -124,7 +130,25 @@ export default function ChatScreen({
 
       {voice.listening && <Text style={styles.partial}>{voice.partial || "Listening…"}</Text>}
 
+      {photos.length > 0 && (
+        <View style={styles.photos}>
+          {photos.map((p, i) => (
+            <Pressable key={p.uri} onPress={() => setPhotos((all) => all.filter((_, j) => j !== i))}>
+              <Image source={{ uri: p.uri }} style={styles.thumb} />
+            </Pressable>
+          ))}
+        </View>
+      )}
+
       <View style={styles.composer}>
+        <Pressable
+          style={styles.attach}
+          onPress={() => choosePhotos().then((p) => setPhotos((all) => [...all, ...p].slice(0, 4)))}
+          disabled={busy}
+          accessibilityLabel="Add a photo"
+        >
+          <Text style={styles.attachText}>＋</Text>
+        </Pressable>
         <TextInput
           style={styles.input}
           value={draft}
@@ -133,7 +157,7 @@ export default function ChatScreen({
           multiline
           editable={!busy}
         />
-        {draft ? (
+        {draft || photos.length ? (
           <Pressable style={styles.button} onPress={() => send(draft, "text")} disabled={busy}>
             <Text style={styles.buttonText}>Send</Text>
           </Pressable>
@@ -166,6 +190,10 @@ const styles = StyleSheet.create({
   assistant: { alignSelf: "flex-start", backgroundColor: "#f1f5f9" },
   taskUpdate: { borderWidth: 1, borderColor: "#94a3b8" },
   partial: { textAlign: "center", color: "#64748b", padding: 8 },
+  photos: { flexDirection: "row", gap: 8, paddingHorizontal: 12 },
+  thumb: { width: 56, height: 56, borderRadius: 8 },
+  attach: { paddingHorizontal: 6, paddingVertical: 8 },
+  attachText: { fontSize: 24, color: "#2563eb" },
   composer: { flexDirection: "row", padding: 12, gap: 8, alignItems: "flex-end" },
   input: { flex: 1, borderWidth: 1, borderColor: "#cbd5e1", borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, maxHeight: 120 },
   button: { backgroundColor: "#2563eb", borderRadius: 24, paddingHorizontal: 18, paddingVertical: 12 },
