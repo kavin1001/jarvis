@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { FlatList, Pressable, View } from "react-native";
+import { FlatList, Pressable, Share, View } from "react-native";
 import { ActionSheet, type SheetAction } from "../ActionSheet";
 import { api, type List, type ListItem, type Settings } from "../api";
 import { Alert } from "../dialog";
@@ -95,6 +95,12 @@ export default function ListsScreen({ settings }: { settings: Settings }) {
       Alert.alert("Couldn't remove that", String(err));
       load();
     });
+  }
+
+  // What's still to get, as text for Messages or Notes: "Shopping:\n- eggs\n- milk".
+  function share() {
+    const open = items.filter((i) => !i.done).map((i) => `- ${i.text}`);
+    Share.share({ message: `${current[0].toUpperCase() + current.slice(1)}:\n${open.join("\n")}` }).catch(() => {});
   }
 
   async function clear(all: boolean) {
@@ -216,6 +222,7 @@ export default function ListsScreen({ settings }: { settings: Settings }) {
           current !== NEW && items.length > 0 ? (
             <View style={{ flexDirection: "row", justifyContent: "space-between", padding: 16 }}>
               {doneCount > 0 ? <LinkButton label={`Clear ${doneCount} checked`} onPress={() => clear(false)} /> : <View />}
+              {items.length > doneCount ? <LinkButton label="Share" onPress={share} /> : null}
               <LinkButton
                 label="Delete list"
                 danger

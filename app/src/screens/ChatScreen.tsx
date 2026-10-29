@@ -13,6 +13,7 @@ import {
 import { api, streamChat, type AgendaEvent, type ChatMessage, type PendingApproval, type Reminder, type Settings, type Task } from "../api";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
+import { Alert } from "../dialog";
 import type { Command } from "../deepLink";
 import { useConnection } from "../connection";
 import { approximateLocation } from "../location";
@@ -239,6 +240,34 @@ export default function ChatScreen({
     () => setHandsFree(false),
   );
 
+  function remindActions(text: string): SheetAction[] {
+    const words = text.replace(/\s+/g, " ").trim();
+    const reminder = words.length > 160 ? `${words.slice(0, 157)}…` : words;
+    const at = (hour: number, dayOffset: number) => {
+      const d = new Date();
+      d.setDate(d.getDate() + dayOffset);
+      d.setHours(hour, 0, 0, 0);
+      return d;
+    };
+    const options: [string, Date][] = [
+      ["In 20 minutes", new Date(Date.now() + 20 * 60_000)],
+      ["In an hour", new Date(Date.now() + 3600_000)],
+      ...(new Date().getHours() < 17 ? [["This evening at 6", at(18, 0)] as [string, Date]] : []),
+      ["Tomorrow at 9 AM", at(9, 1)],
+    ];
+    return options.map(([label, when]) => ({
+      label,
+      onPress: () =>
+        api.addReminder(settings, { text: reminder, due_at: when.toISOString(), conversation_id: conversationId }).then(
+          () => {
+            if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            Alert.alert("Reminder set", `${whenLabel(when.toISOString())}: ${reminder}`);
+          },
+          (err) => Alert.alert("Couldn't set the reminder", String(err)),
+        ),
+    }));
+  }
+
   function messageActions(item: ChatMessage): SheetAction[] {
     const text = item.role === "assistant" ? plainText(item.text) : item.text;
     const actions: SheetAction[] = [
@@ -265,6 +294,7 @@ export default function ChatScreen({
       label: "Share",
       onPress: () => Share.share({ message: text }).catch(() => Clipboard.setStringAsync(text)),
     });
+    if (item.text.trim()) actions.push({ label: "Remind me about this", onPress: () => setSheet(remindActions(text)) });
     if (item.role === "user" && item.kind === "turn") {
       // Attachments aren't kept on the phone, so only the words are sent again.
       const words = item.text.replace(/^(📄 .*\n)+/, "").replace(/^📷 /, "");

@@ -278,6 +278,8 @@ export const api = {
     request<NotifySettings>(s, "/api/notifications", { method: "PATCH", body: change }),
   addRoutine: (s: Settings, body: { text: string; time: string; repeat: "daily" | "weekdays" | "weekly" | null; action?: "run" | "notify" }) =>
     request<{ id: string; due_at: string }>(s, "/api/reminders", { method: "POST", body }),
+  addReminder: (s: Settings, body: { text: string; due_at: string; conversation_id?: string }) =>
+    request<{ id: string; due_at: string }>(s, "/api/reminders/once", { method: "POST", body }),
   exportData: (s: Settings) => request<unknown>(s, "/api/export"),
   deleteAllData: (s: Settings) => request(s, "/api/data", { method: "DELETE", body: { confirm: "DELETE" } }),
   search: (s: Settings, q: string) => request<SearchHit[]>(s, `/api/search?q=${encodeURIComponent(q)}`),

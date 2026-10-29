@@ -391,6 +391,20 @@ app.post("/api/reminders", async (c) => {
   const id = await createReminder({ userId: config.userId, conversationId: null, ...body.data, dueAt });
   return c.json({ id, due_at: dueAt.toISOString() });
 });
+// A one-off reminder from the app ("remind me about this" on a message), in that message's chat.
+const NewReminder = z
+  .object({ text: z.string().trim().min(1).max(1000), due_at: z.string().datetime({ offset: true }), conversation_id: z.string().uuid().optional() })
+  .strict();
+app.post("/api/reminders/once", async (c) => {
+  const body = NewReminder.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) return c.json({ error: body.error.message }, 400);
+  const dueAt = new Date(body.data.due_at);
+  if (dueAt.getTime() < Date.now() - 60_000) return c.json({ error: "That time is in the past." }, 400);
+  const conversationId = body.data.conversation_id ?? null;
+  if (conversationId && !(await memory.conversationBelongsTo(conversationId, config.userId))) return c.json({ error: "Unknown conversation" }, 404);
+  const id = await createReminder({ userId: config.userId, conversationId, text: body.data.text, action: "notify", dueAt, repeat: null });
+  return c.json({ id, due_at: dueAt.toISOString() });
+});
 const SnoozeBody = z.object({ minutes: z.number().int().min(1).max(24 * 60) });
 app.post("/api/reminders/:id/snooze", async (c) => {
   const body = SnoozeBody.safeParse(await c.req.json());

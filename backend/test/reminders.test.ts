@@ -98,4 +98,17 @@ describe("reminders", () => {
     expect(await runReminderNow("someone-else", id, async () => "")).toBe(false);
     expect((await app.request("/api/reminders/00000000-0000-0000-0000-000000000000/run", { method: "POST", headers: auth })).status).toBe(404);
   });
+
+  it("adds a one-off reminder from the app, in the message's chat", async () => {
+    const json = { ...auth, "Content-Type": "application/json" };
+    const conv = await memory.createConversation("me");
+    const add = (body: unknown) => app.request("/api/reminders/once", { method: "POST", headers: json, body: JSON.stringify(body) });
+    const due = new Date(Date.now() + 3600_000).toISOString();
+    const res = await add({ text: "Book the flight Jarvis found", due_at: due, conversation_id: conv });
+    expect(await res.json()).toMatchObject({ due_at: due });
+    expect(await listReminders("me")).toMatchObject([{ text: "Book the flight Jarvis found", action: "notify", repeat: null, conversation_id: conv }]);
+    expect((await add({ text: "x", due_at: "2020-01-01T00:00:00Z" })).status).toBe(400);
+    expect((await add({ text: "x", due_at: due, conversation_id: "00000000-0000-0000-0000-000000000000" })).status).toBe(404);
+    expect((await add({ text: "", due_at: due })).status).toBe(400);
+  });
 });
