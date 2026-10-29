@@ -890,6 +890,25 @@ export function freeSlots(
 const CAL_API = "https://www.googleapis.com/calendar/v3/calendars";
 const eventsUrl = (calendarId: string) => `${CAL_API}/${encodeURIComponent(calendarId)}/events`;
 
+// What's copied from a deleted event to put it back: its content, not its id, guests or links.
+const RESTORED_FIELDS = ["summary", "description", "location", "start", "end", "recurrence", "colorId", "reminders", "transparency", "visibility"];
+const KEEP_COPIES_DAYS = 8;
+
+async function keepEventCopy(userId: string, calendarId: string, event: Record<string, unknown>) {
+  const data = Object.fromEntries(RESTORED_FIELDS.filter((k) => event[k] !== undefined).map((k) => [k, event[k]]));
+  await query(`DELETE FROM event_copies WHERE created_at < now() - interval '${KEEP_COPIES_DAYS} days'`);
+  const [row] = await query<{ id: string }>("INSERT INTO event_copies (user_id, calendar_id, data) VALUES ($1, $2, $3) RETURNING id", [userId, calendarId, data]);
+  return row.id;
+}
+
+/** Puts back an event Jarvis deleted (undo from Settings), as a new event with the same details. */
+export async function restoreEvent(userId: string, copyId: string) {
+  const [copy] = await query<{ calendar_id: string; data: Record<string, unknown> }>("SELECT calendar_id, data FROM event_copies WHERE id = $1 AND user_id = $2", [copyId, userId]);
+  if (!copy) throw new Error("The copy of that event is gone, so it can't be put back.");
+  await google(userId, `${eventsUrl(copy.calendar_id)}?sendUpdates=none`, { method: "POST", body: copy.data });
+  await query("DELETE FROM event_copies WHERE id = $1", [copyId]);
+}
+
 interface Calendar {
   id: string;
   name: string;
@@ -1272,8 +1291,12 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
     }
     case "calendar_delete_event": {
       const { event_id } = inputs.calendar_delete_event.parse(raw);
-      await google(userId, `${parseEventRef(event_id).url}?sendUpdates=none`, { method: "DELETE" });
-      return "Event deleted.";
+      const { url } = parseEventRef(event_id);
+      // A copy first, so Settings can put it back. A failed read doesn't stop the delete.
+      const copy = await google<Record<string, unknown>>(userId, url).catch(() => null);
+      await google(userId, `${url}?sendUpdates=none`, { method: "DELETE" });
+      const kept = copy?.start ? await keepEventCopy(userId, event_id.includes("|") ? event_id.slice(0, event_id.indexOf("|")) : "primary", copy) : null;
+      return kept ? `Event deleted (undo ${kept}).` : "Event deleted.";
     }
     case "drive_search":
     case "drive_read": {

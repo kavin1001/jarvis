@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import { app } from "../src/app.js";
 import { decrypt, encrypt } from "../src/crypto.js";
 import { query, pool } from "../src/db.js";
-import { deleteContact, deleteDraft, freeSlots, googleStatus, nextBirthdays, runGoogleTool, startGoogleAuth, unsubscribeLink } from "../src/google.js";
+import { deleteContact, deleteDraft, freeSlots, googleStatus, nextBirthdays, restoreEvent, runGoogleTool, startGoogleAuth, unsubscribeLink } from "../src/google.js";
 import { auth, resetDb } from "./helpers.js";
 
 const SECRET = "test-connector-secret";
@@ -308,8 +308,19 @@ describe("Google tools", () => {
     await expect(runGoogleTool("me", "calendar_update_event", { event_id: "ev1" })).rejects.toThrow(/Nothing to change/);
     await expect(runGoogleTool("me", "calendar_update_event", { event_id: "ev1", end: "2026-10-29T14:00:00Z" })).rejects.toThrow(/after the start/);
 
-    expect(await runGoogleTool("me", "calendar_delete_event", { event_id: "ev1" })).toBe("Event deleted.");
+    const deleted = await runGoogleTool("me", "calendar_delete_event", { event_id: "ev1" });
+    expect(deleted).toMatch(/^Event deleted \(undo [0-9a-f-]{36}\)\.$/);
     expect(calls.at(-1)!.init?.method).toBe("DELETE");
+
+    // Undo puts the kept copy back, without inviting anyone again, and only once.
+    const copyId = String(deleted).match(/undo ([0-9a-f-]{36})/)![1];
+    await expect(restoreEvent("someone-else", copyId)).rejects.toThrow(/gone/);
+    await restoreEvent("me", copyId);
+    const post = calls.at(-1)!;
+    expect(post.init?.method).toBe("POST");
+    expect(post.url).toMatch(/calendars\/primary\/events\?sendUpdates=none$/);
+    expect(JSON.parse(post.init!.body as string)).toEqual({ start: { dateTime: "2026-10-29T15:00:00Z" }, end: { dateTime: "2026-10-29T15:30:00Z" } });
+    await expect(restoreEvent("me", copyId)).rejects.toThrow(/gone/);
   });
 
   it("marks invitations in the list and replies to them", async () => {

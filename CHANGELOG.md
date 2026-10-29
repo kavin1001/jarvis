@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Deleted an event by mistake? **Undo** in Settings now puts back an event Jarvis deleted (for 8 days), with its title, time, place, notes and repeats. Guests aren't emailed again.
 - Ask what Jarvis costs: "how much have you cost me this week?" gets today's, this week's and this month's Claude spend, and how close you are to the daily cap. The same estimates as Settings.
 - The app icon shows how many approvals are waiting for you, like the Tasks tab does, and clears when you've answered them. Needs a new app build.
 - Save contacts: "save Ana's number, 555 0101", "add Sam's work email to his contact", "Mum's birthday is March 15, add it". Jarvis adds to what's there and never removes anything, and a new contact can be undone from Settings. Add the `contacts` scope to the consent screen (see `docs/DEPLOY.md`), then tap **Connect again** in Settings.

@@ -318,6 +318,15 @@ CREATE INDEX IF NOT EXISTS mail_watches_active ON mail_watches (checked_at) WHER
 -- "Remind me if Sam hasn't replied by Friday": notify only if nothing matched before expires_at.
 ALTER TABLE mail_watches ADD COLUMN IF NOT EXISTS if_none BOOLEAN NOT NULL DEFAULT false;
 
+-- A copy of each calendar event Jarvis deletes, so Settings can put it back for a week.
+CREATE TABLE IF NOT EXISTS event_copies (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id      TEXT NOT NULL,
+  calendar_id  TEXT NOT NULL,
+  data         JSONB NOT NULL,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
 -- "Tell me when tickets go on sale": a web page fetched every half hour, with a notification
 -- when the words appear (look_for) or, without them, when its text changes.
 CREATE TABLE IF NOT EXISTS page_watches (

@@ -62,6 +62,7 @@ describe("activity log", () => {
     const snooze = "0b6f5a1e-2c3d-4e5f-8a9b-0c1d2e3f4a5b";
     expect(undoFor("gmail_snooze", {}, `Snoozed ${snooze}: archived 1 email, back Monday.`)).toEqual({ tool: "unsnooze", snooze_id: snooze });
     expect(undoFor("calendar_delete_event", { event_id: "e" }, "Event deleted.")).toBeNull();
+    expect(undoFor("calendar_delete_event", { event_id: "e" }, `Event deleted (undo ${snooze}).`)).toEqual({ tool: "restore_event", copy_id: snooze });
     expect(undoFor("contacts_save", { name: "Ana" }, "Saved a new contact (id people/c9): Ana.")).toEqual({ tool: "delete_contact", contact_id: "people/c9" });
     expect(undoFor("contacts_save", { contact_id: "people/c1", phone: "1" }, "Updated Sam: added phone 1.")).toBeNull();
     expect(describeAction("contacts_save", { name: "Ana Ruiz" })).toBe("Saved Ana Ruiz to your contacts");

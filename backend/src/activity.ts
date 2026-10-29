@@ -23,7 +23,8 @@ export type Undo =
   | { tool: "calendar_update_event"; event_id: string; start: string; end: string }
   | { tool: "unsnooze"; snooze_id: string }
   | { tool: "gmail_delete_draft"; draft_id: string }
-  | { tool: "delete_contact"; contact_id: string };
+  | { tool: "delete_contact"; contact_id: string }
+  | { tool: "restore_event"; copy_id: string };
 
 const KEEP_DAYS = 90;
 // Undo is offered for a week; after that the mail or event has likely moved on.
@@ -118,6 +119,10 @@ export function undoFor(name: string, input: Input, result: string): Undo | null
       if (!ids.length || !action) return null;
       if (!action.endsWith("_label")) return { tool: "gmail_organize", message_ids: ids, action };
       return typeof input.label === "string" ? { tool: "gmail_organize", message_ids: ids, action, label: input.label } : null;
+    }
+    case "calendar_delete_event": {
+      const id = result.match(/^Event deleted \(undo ([0-9a-f-]{36})\)/)?.[1];
+      return id ? { tool: "restore_event", copy_id: id } : null;
     }
     case "contacts_save": {
       const id = result.match(/^Saved a new contact \(id (people\/c?\d+)\)/)?.[1];

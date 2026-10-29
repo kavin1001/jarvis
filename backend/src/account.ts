@@ -64,6 +64,7 @@ export async function deleteAllData(userId: string) {
   await query("DELETE FROM mail_watches WHERE user_id = $1", [userId]);
   await query("DELETE FROM page_watches WHERE user_id = $1", [userId]);
   await query("DELETE FROM mail_snoozes WHERE user_id = $1", [userId]);
+  await query("DELETE FROM event_copies WHERE user_id = $1", [userId]);
   await query("DELETE FROM places WHERE user_id = $1", [userId]);
   await query("DELETE FROM mcp_servers WHERE user_id = $1", [userId]);
   await query("DELETE FROM connectors WHERE user_id = $1", [userId]);
