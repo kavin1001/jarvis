@@ -248,14 +248,18 @@ app.get("/api/conversations/:id/messages", async (c) => {
   );
 });
 
-const RenameBody = z.object({ title: z.string().trim().min(1).max(80) });
+const ConversationChange = z
+  .object({ title: z.string().trim().min(1).max(80).optional(), pinned: z.boolean().optional() })
+  .refine((b) => b.title !== undefined || b.pinned !== undefined, "Send a title or pinned");
 app.patch("/api/conversations/:id", async (c) => {
   const id = c.req.param("id");
-  const body = RenameBody.safeParse(await c.req.json());
+  const body = ConversationChange.safeParse(await c.req.json());
   if (!body.success) return c.json({ error: body.error.message }, 400);
   if (!(await memory.conversationBelongsTo(id, config.userId))) return c.json({ error: "Not found" }, 404);
-  await memory.setTitle(id, body.data.title);
-  return c.json({ id, title: body.data.title });
+  const { title, pinned } = body.data;
+  if (title !== undefined) await memory.setTitle(id, title);
+  if (pinned !== undefined) await memory.setPinned(id, pinned);
+  return c.json({ id, ...body.data });
 });
 
 app.delete("/api/conversations/:id", async (c) =>

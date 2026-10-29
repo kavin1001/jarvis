@@ -46,6 +46,15 @@ export default function HistoryScreen({
     }
   }
 
+  async function pin(item: Conversation, pinned: boolean) {
+    try {
+      await api.pinConversation(settings, item.id, pinned);
+      load();
+    } catch (err) {
+      Alert.alert(pinned ? "Couldn't pin" : "Couldn't unpin", String(err));
+    }
+  }
+
   // Debounced search; an empty box shows the conversation list again.
   useEffect(() => {
     const term = q.trim();
@@ -160,6 +169,7 @@ export default function HistoryScreen({
               onPress={() => onOpen(item.id)}
               onLongPress={() =>
                 setSheet([
+                  { label: item.pinned ? "Unpin" : "Pin to top", onPress: () => pin(item, !item.pinned) },
                   { label: "Rename", onPress: () => setRenaming({ id: item.id, title: item.title ?? "" }) },
                   { label: "Share transcript", onPress: () => shareTranscript(item) },
                   { label: "Delete", danger: true, onPress: () => confirmDelete(item) },
@@ -184,6 +194,7 @@ export default function HistoryScreen({
                 </View>
               ) : (
                 <Text style={[styles.rowTitle, item.id === current && { fontWeight: "700" }]} numberOfLines={1}>
+                  {item.pinned ? "📌 " : ""}
                   {item.title || "Untitled"}
                 </Text>
               )}

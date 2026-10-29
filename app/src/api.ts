@@ -38,6 +38,7 @@ export interface Conversation {
   id: string;
   title: string | null;
   updated_at: string;
+  pinned: boolean;
 }
 
 export interface Reminder {
@@ -239,6 +240,8 @@ export const api = {
   disconnectGoogle: (s: Settings) => request(s, "/api/connectors/google", { method: "DELETE" }),
   conversations: (s: Settings) => request<Conversation[]>(s, "/api/conversations"),
   deleteConversation: (s: Settings, id: string) => request(s, `/api/conversations/${id}`, { method: "DELETE" }),
+  pinConversation: (s: Settings, id: string, pinned: boolean) =>
+    request(s, `/api/conversations/${id}`, { method: "PATCH", body: { pinned } }),
   renameConversation: (s: Settings, id: string, title: string) =>
     request(s, `/api/conversations/${id}`, { method: "PATCH", body: { title } }),
   usage: (s: Settings) => request<Usage>(s, "/api/usage"),

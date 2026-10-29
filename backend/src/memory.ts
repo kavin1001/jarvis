@@ -24,14 +24,18 @@ export async function createConversation(userId: string): Promise<string> {
 }
 
 export async function listConversations(userId: string) {
-  return query<{ id: string; title: string | null; updated_at: string }>(
-    "SELECT id, title, updated_at FROM conversations WHERE user_id = $1 ORDER BY updated_at DESC LIMIT 50",
+  return query<{ id: string; title: string | null; updated_at: string; pinned: boolean }>(
+    "SELECT id, title, updated_at, pinned FROM conversations WHERE user_id = $1 ORDER BY pinned DESC, updated_at DESC LIMIT 50",
     [userId],
   );
 }
 
 export async function setTitle(conversationId: string, title: string) {
   await query("UPDATE conversations SET title = $2 WHERE id = $1", [conversationId, title]);
+}
+
+export async function setPinned(conversationId: string, pinned: boolean) {
+  await query("UPDATE conversations SET pinned = $2 WHERE id = $1", [conversationId, pinned]);
 }
 
 export async function conversationBelongsTo(conversationId: string, userId: string) {

@@ -103,6 +103,20 @@ describe("renaming a conversation", () => {
     expect((await rename(id, "   ")).status).toBe(400);
     expect((await rename("00000000-0000-0000-0000-000000000000", "x")).status).toBe(404);
   });
+
+  it("pins a chat to the top of the list", async () => {
+    const { createConversation, listConversations } = await import("../src/memory.js");
+    const older = await createConversation("me");
+    await createConversation("me");
+    const change = (body: unknown) =>
+      app.request(`/api/conversations/${older}`, { method: "PATCH", headers: json, body: JSON.stringify(body) });
+    expect((await listConversations("me"))[0].id).not.toBe(older);
+    expect((await change({ pinned: true })).status).toBe(200);
+    expect((await listConversations("me"))[0]).toMatchObject({ id: older, pinned: true });
+    expect((await change({})).status).toBe(400);
+    await change({ pinned: false });
+    expect((await listConversations("me"))[1]).toMatchObject({ id: older, pinned: false });
+  });
 });
 
 describe("MCP servers API", () => {

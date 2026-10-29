@@ -175,3 +175,6 @@ ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS data TEXT;
 ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_status_check;
 ALTER TABLE tasks ADD CONSTRAINT tasks_status_check
   CHECK (status IN ('queued', 'running', 'waiting_approval', 'done', 'failed', 'cancelled'));
+
+-- Chats pinned to the top of History.
+ALTER TABLE conversations ADD COLUMN IF NOT EXISTS pinned BOOLEAN NOT NULL DEFAULT false;
