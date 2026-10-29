@@ -2,7 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { pool, query } from "../src/db.js";
 import * as memory from "../src/memory.js";
-import { estimateCost, overDailyBudget, recordMessageUsage, summarize } from "../src/usage.js";
+import { estimateCost, overDailyBudget, recordMessageUsage, summarize, warnNearBudget } from "../src/usage.js";
 import { resetDb } from "./helpers.js";
 
 beforeEach(resetDb);
@@ -34,5 +34,18 @@ describe("usage", () => {
     expect(await overDailyBudget("me", "UTC", 2)).toBe(false);
     expect(await overDailyBudget("me", "UTC", 1.5)).toBe(true);
     expect(await overDailyBudget("me", "UTC", null)).toBe(false);
+  });
+
+  it("warns once a day when spend passes 80% of the cap", async () => {
+    const pushes: string[] = [];
+    const push = async (_user: string, title: string) => void pushes.push(title);
+    await query("INSERT INTO usage_events (user_id, model, cost_usd) VALUES ('me', 'm', 0.7)");
+    expect(await warnNearBudget("me", "UTC", 1, push)).toBe(false);
+    await query("INSERT INTO usage_events (user_id, model, cost_usd) VALUES ('me', 'm', 0.15)");
+    expect(await warnNearBudget("me", "UTC", 1, push)).toBe(true);
+    await query("INSERT INTO usage_events (user_id, model, cost_usd) VALUES ('me', 'm', 0.5)");
+    expect(await warnNearBudget("me", "UTC", 1, push)).toBe(false);
+    expect(pushes).toEqual(["Jarvis is near today's cap"]);
+    expect(await warnNearBudget("me", "UTC", null, push)).toBe(false);
   });
 });

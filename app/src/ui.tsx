@@ -1,17 +1,9 @@
 import type { ReactNode } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
-
-export const colors = {
-  accent: "#2563eb",
-  danger: "#dc2626",
-  muted: "#64748b",
-  border: "#e2e8f0",
-  surface: "#f1f5f9",
-  warning: "#fef3c7",
-  warningText: "#92400e",
-};
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text, useColors, useStyles, type Palette } from "./theme";
 
 export function Header({ title, right }: { title: string; right?: ReactNode }) {
+  const styles = useShared();
   return (
     <View style={styles.header}>
       <Text style={styles.title}>{title}</Text>
@@ -21,14 +13,54 @@ export function Header({ title, right }: { title: string; right?: ReactNode }) {
 }
 
 export function LinkButton({ label, onPress, danger }: { label: string; onPress: () => void; danger?: boolean }) {
+  const styles = useShared();
+  const colors = useColors();
   return (
-    <Pressable onPress={onPress} hitSlop={8}>
+    <Pressable accessibilityRole="button" onPress={onPress} hitSlop={8}>
       <Text style={[styles.link, danger && { color: colors.danger }]}>{label}</Text>
     </Pressable>
   );
 }
 
+/** A row of pill buttons, one of which is selected. */
+export function Choices<T extends string | number>({ options, value, onChange }: { options: [T, string][]; value: T; onChange: (v: T) => void }) {
+  const colors = useColors();
+  return (
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, paddingTop: 4 }}>
+      {options.map(([v, label]) => (
+        <Pressable
+          key={String(v)}
+          onPress={() => onChange(v)}
+          accessibilityRole="radio"
+          accessibilityState={{ selected: value === v }}
+          style={{
+            borderWidth: 1,
+            borderColor: colors.accent,
+            backgroundColor: value === v ? colors.accent : undefined,
+            borderRadius: 14,
+            paddingHorizontal: 12,
+            paddingVertical: 4,
+          }}
+        >
+          <Text style={{ color: value === v ? colors.onAccent : colors.accent }}>{label}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
+/** A small heading that groups the rows below it, as in iOS Settings. */
+export function Section({ title }: { title: string }) {
+  const styles = useShared();
+  return (
+    <Text style={styles.section} accessibilityRole="header">
+      {title.toUpperCase()}
+    </Text>
+  );
+}
+
 export function Empty({ text }: { text: string }) {
+  const styles = useShared();
   return <Text style={styles.empty}>{text}</Text>;
 }
 
@@ -41,18 +73,24 @@ export function relativeTime(iso: string) {
   return new Date(iso).toLocaleDateString();
 }
 
-export const styles = StyleSheet.create({
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16 },
-  title: { fontSize: 22, fontWeight: "700" },
-  link: { color: colors.accent, fontSize: 16 },
-  empty: { color: colors.muted, textAlign: "center", padding: 32 },
-  row: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-    gap: 4,
-  },
-  rowTitle: { fontSize: 16, fontWeight: "500" },
-  rowMeta: { fontSize: 13, color: colors.muted },
-});
+const makeShared = (colors: Palette) =>
+  StyleSheet.create({
+    header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16 },
+    title: { fontSize: 22, fontWeight: "700" },
+    link: { color: colors.accent, fontSize: 16 },
+    empty: { color: colors.muted, textAlign: "center", padding: 32 },
+    section: { color: colors.muted, fontSize: 12, fontWeight: "600", letterSpacing: 0.5, paddingHorizontal: 16, paddingTop: 28, paddingBottom: 6 },
+    row: {
+      paddingHorizontal: 16,
+      paddingVertical: 14,
+      borderBottomWidth: StyleSheet.hairlineWidth,
+      borderBottomColor: colors.border,
+      gap: 4,
+    },
+    rowTitle: { fontSize: 16, fontWeight: "500" },
+    rowMeta: { fontSize: 13, color: colors.muted },
+    input: { borderWidth: 1, borderColor: colors.inputBorder, borderRadius: 8, padding: 10 },
+  });
+
+/** Styles shared by every screen, in the current theme. */
+export const useShared = () => useStyles(makeShared);

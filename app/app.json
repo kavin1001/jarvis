@@ -3,6 +3,9 @@
     "name": "Jarvis",
     "slug": "jarvis",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "ios": {
@@ -10,7 +13,11 @@
       "supportsTablet": false
     },
     "android": {
-      "package": "com.kavin.jarvis"
+      "package": "com.kavin.jarvis",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#2563eb"
+      }
     },
     "plugins": [
       [
@@ -28,7 +35,39 @@
         }
       ],
       "expo-notifications",
-      "expo-secure-store"
-    ]
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Jarvis uses your approximate location for questions like \"what's open near me\", only when you turn it on in Settings.",
+          "locationAlwaysAndWhenInUsePermission": "With place reminders on, Jarvis watches the places you saved so it can remind you when you arrive or leave, even while it's closed.",
+          "isAndroidBackgroundLocationEnabled": true
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 160,
+          "backgroundColor": "#2563eb"
+        }
+      ],
+      "expo-system-ui",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "Jarvis uses Face ID to unlock, if you turn on the lock in Settings."
+        }
+      ]
+    ],
+    "scheme": "jarvis",
+    "icon": "./assets/icon.png",
+    "web": {
+      "favicon": "./public/favicon.png",
+      "name": "Jarvis",
+      "shortName": "Jarvis",
+      "themeColor": "#2563eb",
+      "backgroundColor": "#ffffff"
+    }
   }
 }

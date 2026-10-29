@@ -1,6 +1,8 @@
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
-import { ActionSheetIOS, Alert, Platform } from "react-native";
+import { ActionSheetIOS, Platform } from "react-native";
+import { Alert } from "./dialog";
+import { chooseDocuments, type Doc } from "./documents";
 
 export interface Photo {
   uri: string; // for the preview
@@ -35,17 +37,38 @@ async function pick(source: "camera" | "library"): Promise<Photo[]> {
   return Promise.all(result.assets.slice(0, 4).map(prepare));
 }
 
-/** Asks camera or library, then returns resized JPEGs ready to send. */
-export function choosePhotos(): Promise<Photo[]> {
+export interface Attachments {
+  photos: Photo[];
+  docs: Doc[];
+  /** The user chose to record a meeting instead. */
+  meeting?: boolean;
+}
+
+/** Asks camera, library, file or meeting recording, then returns resized JPEGs or documents ready to send. */
+export function chooseAttachments(): Promise<Attachments> {
   return new Promise((resolve) => {
-    const choose = (i: number) => resolve(i === 0 ? pick("camera") : i === 1 ? pick("library") : Promise.resolve([]));
+    const choose = (i: number) =>
+      resolve(
+        i === 0
+          ? pick("camera").then((photos) => ({ photos, docs: [] }))
+          : i === 1
+            ? pick("library").then((photos) => ({ photos, docs: [] }))
+            : i === 2
+              ? chooseDocuments().then((docs) => ({ photos: [], docs }))
+              : Promise.resolve({ photos: [], docs: [], meeting: i === 3 }),
+      );
     if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions({ options: ["Take photo", "Choose from library", "Cancel"], cancelButtonIndex: 2 }, choose);
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ["Take photo", "Choose from library", "Choose a file (PDF or text)", "Record a meeting", "Cancel"], cancelButtonIndex: 4 },
+        choose,
+      );
     } else {
-      Alert.alert("Add a photo", undefined, [
+      Alert.alert("Add an attachment", undefined, [
         { text: "Take photo", onPress: () => choose(0) },
         { text: "Choose from library", onPress: () => choose(1) },
-        { text: "Cancel", style: "cancel", onPress: () => choose(2) },
+        { text: "Choose a file (PDF or text)", onPress: () => choose(2) },
+        { text: "Record a meeting", onPress: () => choose(3) },
+        { text: "Cancel", style: "cancel", onPress: () => choose(4) },
       ]);
     }
   });

@@ -28,6 +28,8 @@ Jarvis app (Expo)  ──►  backend (Hono + Postgres)  ──►  Fast lane: C
 
 ## Run it
 
+To put Jarvis on your phone for real, follow [docs/DEPLOY.md](docs/DEPLOY.md). The steps below are for running it locally.
+
 ### Backend
 
 1. Get an API key from the [Claude Console](https://platform.claude.com). A Pro/Max subscription login won't work here.
@@ -65,6 +67,6 @@ Speech recognition and push notifications need a development build, not Expo Go.
 
 ## Known limits (MVP)
 
-- Single user, protected by one shared bearer token. Swap in Sign in with Apple/Google before sharing it.
+- Single user. The master `JARVIS_APP_TOKEN` is only used once per device: the app trades it, or a pairing code, for its own revocable device token. You can manage devices in Settings. Multi-user accounts are not built yet.
 - Voice uses on-device speech recognition and the phone's built-in voice. A streaming speech provider would sound better.
 - The fast lane defaults to `claude-opus-5-5` at low effort. Set `FAST_MODEL=claude-sonnet-5-5` if replies feel slow.

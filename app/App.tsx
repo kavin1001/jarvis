@@ -1,34 +1,65 @@
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "./src/storage";
+import * as Notifications from "expo-notifications";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useState } from "react";
-import { Button, SafeAreaView, StyleSheet, Text, TextInput, View } from "react-native";
-import { api, loadSettings, saveSettings, type Settings } from "./src/api";
+import { ActivityIndicator, AppState, Button, Platform, SafeAreaView, StyleSheet, View } from "react-native";
+import { AppLock } from "./src/appLock";
+import { api, loadSettings, saveSettings, signIn, upgradeToDeviceToken, type Settings } from "./src/api";
+import { ConnectionProvider, OfflineBanner } from "./src/connection";
+import { installGlobalErrorReporting } from "./src/crashReport";
+import { ErrorBoundary } from "./src/ErrorBoundary";
+import { useDeepLinkCommand, type Command } from "./src/deepLink";
+import { syncPlaceReminders } from "./src/geofence";
+import { askCommand } from "./src/links";
 import ChatScreen from "./src/screens/ChatScreen";
 import HistoryScreen from "./src/screens/HistoryScreen";
+import ListsScreen from "./src/screens/ListsScreen";
 import MemoryScreen from "./src/screens/MemoryScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import TasksScreen from "./src/screens/TasksScreen";
 import { TabBar, type Tab } from "./src/TabBar";
+import { Text, TextInput, ThemeProvider, useColors, useTheme } from "./src/theme";
 import { usePush } from "./src/usePush";
 
 const CONVERSATION_KEY = "jarvis-conversation";
 
+installGlobalErrorReporting();
+
 export default function App() {
+  return (
+    <ThemeProvider>
+      <ErrorBoundary>
+        <Root />
+      </ErrorBoundary>
+    </ThemeProvider>
+  );
+}
+
+const TAB_NAMES: Record<Tab, string> = { chat: "Chat", history: "History", tasks: "Tasks", lists: "Lists", memory: "Memory", settings: "Settings" };
+
+function Root() {
+  const { colors, scheme } = useTheme();
   const [settings, setSettings] = useState<Settings | null | undefined>(undefined);
 
   useEffect(() => {
-    loadSettings().then(setSettings);
+    loadSettings().then(async (s) => {
+      setSettings(s);
+      // Best effort: if the backend is unreachable, keep the old token and retry next launch.
+      if (s) upgradeToDeviceToken(s).then(setSettings, () => {});
+    });
   }, []);
 
   if (settings === undefined) return null;
   return (
-    <SafeAreaView style={styles.root}>
-      <StatusBar style="auto" />
+    <SafeAreaView style={[styles.root, { backgroundColor: colors.background }]}>
+      <StatusBar style={scheme === "dark" ? "light" : "dark"} />
       {settings ? (
-        <Main settings={settings} onSignOut={() => setSettings(null)} />
+        <AppLock>
+          <Main settings={settings} onSignOut={() => setSettings(null)} />
+        </AppLock>
       ) : (
         <Setup
-          onSave={async (s) => {
+          onSignedIn={async (s) => {
             await saveSettings(s);
             setSettings(s);
           }}
@@ -53,9 +84,32 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
       .then((tasks) => setPendingApprovals(tasks.reduce((n, t) => n + t.pending_approvals.length, 0)))
       .catch(() => {});
   }, [settings, refreshKey, tab]);
+  // The number on the app icon: approvals still waiting. Approval notifications set it too.
+  useEffect(() => {
+    if (Platform.OS !== "web") Notifications.setBadgeCountAsync(pendingApprovals).catch(() => {});
+  }, [pendingApprovals]);
+
+  // Pick up place reminders set in chat (or cancelled) so the phone watches the right places.
+  useEffect(() => {
+    const sync = () => syncPlaceReminders(settings).catch((err) => console.warn("place reminders", err));
+    sync();
+    const sub = AppState.addEventListener("change", (state) => state === "active" && sync());
+    return () => sub.remove();
+  }, [settings, refreshKey, tab]);
+
+  const linkCommand = useDeepLinkCommand();
+  // A reply typed into a notification, sent in that notification's chat.
+  const [pushCommand, setPushCommand] = useState<Command | null>(null);
+  const command = [linkCommand, pushCommand].reduce<Command | null>((a, b) => (b && (!a || b.id > a.id) ? b : a), null);
+  useEffect(() => {
+    if (command) setTab("chat");
+  }, [command]);
 
   const bump = useCallback(() => setRefreshKey((k) => k + 1), []);
-  usePush(settings, bump);
+  usePush(settings, bump, openConversation, (id, text) => {
+    openConversation(id);
+    setPushCommand(askCommand(text));
+  });
 
   function openConversation(id: string | undefined) {
     setConversationId(id);
@@ -65,41 +119,69 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
   }
 
   return (
-    <View style={styles.root}>
+    <ConnectionProvider settings={settings}>
       <View style={styles.root}>
-        {tab === "chat" && (
-          <ChatScreen
-            settings={settings}
-            conversationId={conversationId}
-            onConversation={(id) => {
-              setConversationId(id);
-              if (id) SecureStore.setItemAsync(CONVERSATION_KEY, id);
-              else SecureStore.deleteItemAsync(CONVERSATION_KEY);
-            }}
-            refreshKey={refreshKey}
-          />
-        )}
-        {tab === "history" && <HistoryScreen settings={settings} current={conversationId} onOpen={openConversation} />}
-        {tab === "tasks" && <TasksScreen settings={settings} refreshKey={refreshKey} />}
-        {tab === "memory" && <MemoryScreen settings={settings} />}
-        {tab === "settings" && <SettingsScreen settings={settings} onSignOut={onSignOut} />}
+        <OfflineBanner />
+        {/* Keyed by tab: a crash in one tab leaves the tab bar working, and switching tabs clears it. */}
+        <ErrorBoundary key={tab} label={TAB_NAMES[tab]}>
+          <View style={styles.root}>
+            {tab === "chat" && (
+              <ChatScreen
+                settings={settings}
+                conversationId={conversationId}
+                onConversation={(id) => {
+                  setConversationId(id);
+                  if (id) SecureStore.setItemAsync(CONVERSATION_KEY, id);
+                  else SecureStore.deleteItemAsync(CONVERSATION_KEY);
+                }}
+                refreshKey={refreshKey}
+                command={command}
+              />
+            )}
+            {tab === "history" && <HistoryScreen settings={settings} current={conversationId} onOpen={openConversation} />}
+            {tab === "tasks" && <TasksScreen settings={settings} refreshKey={refreshKey} />}
+            {tab === "lists" && <ListsScreen settings={settings} />}
+            {tab === "memory" && <MemoryScreen settings={settings} />}
+            {tab === "settings" && <SettingsScreen settings={settings} onSignOut={onSignOut} onErased={() => openConversation(undefined)} />}
+          </View>
+        </ErrorBoundary>
+        <TabBar tab={tab} onChange={setTab} badges={{ tasks: pendingApprovals }} />
       </View>
-      <TabBar tab={tab} onChange={setTab} badges={{ tasks: pendingApprovals }} />
-    </View>
+    </ConnectionProvider>
   );
 }
 
-function Setup({ onSave }: { onSave: (s: Settings) => void }) {
-  const [url, setUrl] = useState(process.env.EXPO_PUBLIC_JARVIS_API_URL ?? "");
-  const [token, setToken] = useState("");
+function Setup({ onSignedIn }: { onSignedIn: (s: Settings) => void }) {
+  // The web build is served by the backend itself, so its own origin is the default.
+  const [url, setUrl] = useState(
+    process.env.EXPO_PUBLIC_JARVIS_API_URL ?? (Platform.OS === "web" ? globalThis.location?.origin ?? "" : ""),
+  );
+  const [secret, setSecret] = useState("");
+  const colors = useColors();
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    setBusy(true);
+    setError(null);
+    try {
+      onSignedIn(await signIn(url, secret));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <View style={styles.setup}>
       <Text style={styles.title}>Connect Jarvis</Text>
       <Text>Backend URL</Text>
-      <TextInput style={styles.input} value={url} onChangeText={setUrl} autoCapitalize="none" placeholder="https://jarvis.example.com" />
-      <Text>App token (JARVIS_APP_TOKEN from the backend)</Text>
-      <TextInput style={styles.input} value={token} onChangeText={setToken} autoCapitalize="none" secureTextEntry />
-      <Button title="Save" disabled={!url || !token} onPress={() => onSave({ url: url.replace(/\/$/, ""), token })} />
+      <TextInput style={[styles.input, { borderColor: colors.inputBorder }]} value={url} onChangeText={setUrl} autoCapitalize="none" keyboardType="url" placeholder="https://jarvis.example.com" />
+      <Text>Pairing code from another device, or your JARVIS_APP_TOKEN</Text>
+      <TextInput style={[styles.input, { borderColor: colors.inputBorder }]} value={secret} onChangeText={setSecret} autoCapitalize="none" autoCorrect={false} secureTextEntry />
+      {error ? <Text style={{ color: colors.danger }}>{error}</Text> : null}
+      {busy ? <ActivityIndicator /> : <Button title="Connect" disabled={!url || !secret} onPress={submit} />}
     </View>
   );
 }
@@ -108,5 +190,5 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   setup: { flex: 1, padding: 24, gap: 12, justifyContent: "center" },
   title: { fontSize: 28, fontWeight: "700", marginBottom: 12 },
-  input: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 12 },
+  input: { borderWidth: 1, borderRadius: 8, padding: 12 },
 });

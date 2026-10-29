@@ -1,9 +1,22 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { pool, query } from "../src/db.js";
+import { addServer } from "../src/mcp.js";
 import * as memory from "../src/memory.js";
-import { decideApproval, expireApprovals, listTasks, resumeTasks, setTaskClient, startTask } from "../src/tasks.js";
-import { resetDb } from "./helpers.js";
+import { deleteAllData } from "../src/account.js";
+import { app } from "../src/app.js";
+import {
+  cancelTask,
+  continueTask,
+  decideApproval,
+  expireApprovals,
+  listTasks,
+  resumeTasks,
+  setOutputRetryMs,
+  setTaskClient,
+  startTask,
+} from "../src/tasks.js";
+import { auth, resetDb } from "./helpers.js";
 
 /** An async queue standing in for a session's live event stream. */
 function liveStream() {
@@ -23,13 +36,44 @@ function liveStream() {
   };
 }
 
-function fakeTaskClient(opts: { history?: unknown[]; status?: string } = {}) {
+type OutputFile = { id: string; filename: string; mime_type: string; size_bytes: number };
+function fakeTaskClient(opts: { history?: unknown[]; status?: string; files?: OutputFile[] } = {}) {
   const stream = liveStream();
   const sent: unknown[] = [];
+  const created: Record<string, unknown>[] = [];
+  const vaults = { credentials: [] as unknown[], deleted: [] as string[] };
+  const archived: string[] = [];
+  const fileLists: unknown[] = [];
+  const deletedFiles: string[] = [];
   const client = {
     beta: {
+      files: {
+        list: async function* (params: unknown) {
+          fileLists.push(params);
+          yield* opts.files ?? [];
+        },
+        download: async (id: string) => new Response(`contents of ${id}`),
+        delete: async (id: string) => void deletedFiles.push(id),
+      },
+      agents: {
+        retrieve: async (id: string) => ({
+          id,
+          version: 3,
+          tools: [{ type: "agent_toolset_20260401" }],
+          mcp_servers: [{ type: "url", name: "github", url: "https://gh.example/mcp" }],
+        }),
+      },
+      vaults: {
+        create: async () => ({ id: "vlt_task" }),
+        delete: async (id: string) => void vaults.deleted.push(id),
+        credentials: { create: async (_v: string, body: unknown) => void vaults.credentials.push(body) },
+      },
       sessions: {
-        create: async () => ({ id: "sesn_1" }),
+        archive: async (id: string) => void archived.push(id),
+        create: async (params: Record<string, unknown>) => {
+          created.push(params);
+          return { id: "sesn_1" };
+        },
         retrieve: async () => ({ id: "sesn_1", status: opts.status ?? "running" }),
         events: {
           stream: async () => stream,
@@ -42,7 +86,7 @@ function fakeTaskClient(opts: { history?: unknown[]; status?: string } = {}) {
     },
   };
   setTaskClient(client as unknown as Anthropic);
-  return { stream, sent };
+  return { stream, sent, created, vaults, archived, fileLists, deletedFiles };
 }
 
 const until = async (check: () => Promise<boolean>) => {
@@ -56,7 +100,10 @@ const until = async (check: () => Promise<boolean>) => {
 const taskStatus = async (id: string) =>
   (await query<{ status: string }>("SELECT status FROM tasks WHERE id = $1", [id]))[0].status;
 
-beforeEach(resetDb);
+beforeEach(async () => {
+  await resetDb();
+  setOutputRetryMs(0);
+});
 afterAll(() => pool.end());
 
 describe("task lane", () => {
@@ -79,8 +126,138 @@ describe("task lane", () => {
     stream.push({ type: "agent.message", id: "evt_msg", content: [{ type: "text", text: "Booked for 7pm." }] });
     stream.push({ type: "session.status_idle", id: "evt_idle", stop_reason: { type: "end_turn" } });
     await until(async () => (await taskStatus(taskId)) === "done");
+    // The status flips just before the update message is written.
+    await until(async () => (await memory.getMessages(conv)).some((m) => m.kind === "task_update"));
 
     expect(await memory.takePendingTaskUpdates(conv)).toEqual(['Task "Book dinner" finished.\n\nBooked for 7pm.']);
+  });
+
+  it("sends a follow-up to a finished task in the same session", async () => {
+    // The first run's idle event, as the session history would list it.
+    const { stream, sent } = fakeTaskClient({ history: [{ type: "session.status_idle", id: "evt_2", stop_reason: { type: "end_turn" } }] });
+    const conv = await memory.createConversation("me");
+    const taskId = await startTask("me", conv, "Find flights to Denver", "Flights");
+    await until(async () => sent.length === 1);
+    expect(await continueTask("me", taskId, "Book the cheapest")).toBe(false); // still running
+    stream.push({ type: "agent.message", id: "evt_1", content: [{ type: "text", text: "Cheapest is $254." }] });
+    stream.push({ type: "session.status_idle", id: "evt_2", stop_reason: { type: "end_turn" } });
+    await until(async () => (await memory.getMessages(conv)).some((m) => m.kind === "task_update"));
+    await memory.takePendingTaskUpdates(conv);
+
+    expect(await continueTask("me", taskId, "Book the cheapest")).toBe(true);
+    stream.push({ type: "session.status_idle", id: "evt_2", stop_reason: { type: "end_turn" } }); // replayed: ignored
+    await new Promise((r) => setTimeout(r, 50));
+    expect(await taskStatus(taskId)).toBe("running");
+    expect(JSON.stringify(sent.at(-1))).toContain("Book the cheapest");
+    stream.push({ type: "agent.message", id: "evt_3", content: [{ type: "text", text: "Booked." }] });
+    stream.push({ type: "session.status_idle", id: "evt_4", stop_reason: { type: "end_turn" } });
+    await until(async () => (await memory.getMessages(conv)).filter((m) => m.kind === "task_update").length === 2);
+    expect(await memory.takePendingTaskUpdates(conv)).toEqual(['Task "Flights" finished.\n\nBooked.']);
+    const [task] = (await listTasks("me")) as { instructions: string }[];
+    expect(task.instructions).toBe("Find flights to Denver\n\nFollow-up: Book the cheapest");
+    expect(await continueTask("other-user", taskId, "x")).toBe(false);
+  });
+
+  it("keeps the files the agent saved and serves them to the app", async () => {
+    const files = [{ id: "file_1", filename: "flights.csv", mime_type: "text/csv", size_bytes: 120 }];
+    const { stream, sent, fileLists, deletedFiles } = fakeTaskClient({ files });
+    const conv = await memory.createConversation("me");
+    const taskId = await startTask("me", conv, "Compare flights", "Flights");
+    await until(async () => sent.length === 1);
+    stream.push({ type: "agent.message", id: "evt_msg", content: [{ type: "text", text: "Saved a comparison." }] });
+    stream.push({ type: "session.status_idle", id: "evt_idle", stop_reason: { type: "end_turn" } });
+    // The status flips before the files are listed and the update is written, so wait for the update.
+    await until(async () => (await memory.getMessages(conv)).some((m) => m.kind === "task_update"));
+
+    expect(fileLists[0]).toMatchObject({ scope_id: "sesn_1" });
+    const [update] = await memory.takePendingTaskUpdates(conv);
+    expect(update).toContain("Files: flights.csv");
+    const [task] = (await listTasks("me")) as { files: unknown[] }[];
+    expect(task.files).toEqual([{ id: "file_1", filename: "flights.csv", mime_type: "text/csv", size_bytes: 120 }]);
+
+    const res = await app.request(`/api/tasks/${taskId}/files/file_1`, { headers: auth });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-disposition")).toBe("attachment; filename*=UTF-8''flights.csv");
+    expect(await res.text()).toBe("contents of file_1");
+    expect((await app.request(`/api/tasks/${taskId}/files/file_other`, { headers: auth })).status).toBe(404);
+
+    // "Erase everything" removes them from the Files API as well.
+    await deleteAllData("me");
+    expect(deletedFiles).toEqual(["file_1"]);
+  });
+
+  it("gives the task the user's MCP servers, with tokens in a vault it deletes afterwards", async () => {
+    process.env.CONNECTOR_SECRET = "s";
+    await addServer("me", { name: "notion", url: "https://notion.example/mcp", token: "tok-123" });
+    await addServer("me", { name: "github", url: "https://other.example/mcp" }); // the agent already has a "github"
+    const { stream, sent, created, vaults } = fakeTaskClient();
+    const conv = await memory.createConversation("me");
+    const taskId = await startTask("me", conv, "File my notes", "Notes");
+    await until(async () => sent.length === 1);
+
+    expect(created[0].vault_ids).toEqual(["vlt_task"]);
+    expect(created[0].agent).toMatchObject({
+      type: "agent_with_overrides",
+      version: 3,
+      tools: [{ type: "agent_toolset_20260401" }, { type: "mcp_toolset", mcp_server_name: "notion" }],
+      mcp_servers: [
+        { type: "url", name: "github", url: "https://gh.example/mcp" },
+        { type: "url", name: "notion", url: "https://notion.example/mcp" },
+      ],
+    });
+    expect(JSON.stringify(created[0])).not.toContain("tok-123");
+    expect(vaults.credentials).toEqual([
+      { display_name: "notion", auth: { type: "static_bearer", mcp_server_url: "https://notion.example/mcp", token: "tok-123" } },
+    ]);
+
+    stream.push({
+      type: "agent.mcp_tool_use",
+      id: "evt_mcp",
+      mcp_server_name: "notion",
+      name: "create_page",
+      input: { title: "Notes" },
+      evaluated_permission: "ask",
+    });
+    await until(async () => (await taskStatus(taskId)) === "waiting_approval");
+    const [task] = (await listTasks("me")) as { pending_approvals: { summary: string }[] }[];
+    expect(task.pending_approvals[0].summary).toMatch(/^Allow notion create_page\?/);
+
+    stream.push({ type: "session.status_idle", id: "evt_idle", stop_reason: { type: "end_turn" } });
+    await until(async () => (await taskStatus(taskId)) === "done");
+    expect(vaults.deleted).toEqual(["vlt_task"]);
+  });
+
+  it("uses the agent as is when the user has no MCP servers", async () => {
+    const { sent, created } = fakeTaskClient();
+    const conv = await memory.createConversation("me");
+    await startTask("me", conv, "Look something up", "Lookup");
+    await until(async () => sent.length === 1);
+    expect(typeof created[0].agent).not.toBe("object");
+    expect(created[0].vault_ids).toBeUndefined();
+  });
+
+  it("cancels a task waiting for approval: interrupts, archives, closes the ask, and notes it", async () => {
+    const { stream, sent, archived } = fakeTaskClient();
+    const conv = await memory.createConversation("me");
+    const taskId = await startTask("me", conv, "Buy the tickets", "Tickets");
+    await until(async () => sent.length === 1);
+    stream.push({ type: "agent.custom_tool_use", id: "evt_ask", name: "request_approval", input: { summary: "Pay $80" } });
+    await until(async () => (await taskStatus(taskId)) === "waiting_approval");
+
+    expect(await cancelTask("someone-else", taskId)).toBe(false);
+    expect(await cancelTask("me", taskId)).toBe(true);
+    expect(await taskStatus(taskId)).toBe("cancelled");
+    expect(sent.at(-1)).toEqual({ type: "user.interrupt" });
+    expect(archived).toEqual(["sesn_1"]);
+    const [task] = (await listTasks("me")) as { pending_approvals: unknown[] }[];
+    expect(task.pending_approvals).toEqual([]);
+    expect(await memory.takePendingTaskUpdates(conv)).toEqual(['Task "Tickets" was cancelled by the user.']);
+
+    // The session winding down afterwards doesn't reopen or report it.
+    stream.push({ type: "session.status_idle", id: "evt_idle", stop_reason: { type: "end_turn" } });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(await taskStatus(taskId)).toBe("cancelled");
+    expect(await cancelTask("me", taskId)).toBe(false);
   });
 
   it("forwards tool confirmations and denies stale approvals", async () => {
