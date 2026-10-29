@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Settings, Privacy, **Keep chats**: forever (as before), 1 year, 90 days or 30 days. Chats you haven't used for longer are deleted with their messages, checked hourly. Pinned chats, and chats with a background task still running, are kept. Before deleting anything straight away, Jarvis says how many chats will go. `GET/PATCH /api/privacy`.
 - Email attachments: "what's the total on the invoice Acme sent?", "when is the flight on that booking confirmation?". Jarvis can now open PDFs, images and text files attached to your email (up to 10 MB) and read them, not just the email body. Other file types are listed but not opened.
 - Tasks, **Add routine** has four more ready-made routines: an inbox catch-up on weekday afternoons, an evening journal that asks how your day went and keeps your answers in a "Journal" note, a Sunday-evening plan for the week ahead, and weekend ideas that fit the weather. `POST /api/reminders` takes `weekday` (0 is Sunday) so a weekly routine starts on the right day.
 - Bring your Claude.ai history: Settings, **Import from Claude.ai** takes the `conversations.json` from Claude's data export (claude.ai, Settings, Privacy, Export data). Your chats show up in History with their titles and dates, Jarvis can find them when you mention an earlier conversation, and you can carry on any of them. Only the text comes across (no attachments or artifacts). Importing again skips chats already imported. `POST /api/import/claude`.

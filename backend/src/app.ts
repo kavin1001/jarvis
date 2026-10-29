@@ -19,6 +19,7 @@ import { handleMcpCallback, startMcpOAuth } from "./mcpOAuth.js";
 import * as lists from "./lists.js";
 import * as notes from "./notes.js";
 import { recentActivity } from "./activity.js";
+import { countOldChats, getChatRetention, RETENTION_CHOICES, setChatRetention, sweepOldChats } from "./retention.js";
 import { ClaudeExport, importClaudeChats } from "./importClaude.js";
 import * as memory from "./memory.js";
 import * as places from "./places.js";
@@ -378,6 +379,25 @@ app.post("/api/import/claude", async (c) => {
   const body = ClaudeExport.safeParse(await c.req.json().catch(() => null));
   if (!body.success) return c.json({ error: "That isn't a Claude.ai conversations.json. Unzip the export and pick conversations.json." }, 400);
   return c.json(await importClaudeChats(config.userId, body.data));
+});
+// ?preview=90: how many chats that setting would delete right away.
+app.get("/api/privacy", async (c) => {
+  const preview = Number(c.req.query("preview"));
+  return c.json({
+    chat_retention_days: await getChatRetention(config.userId),
+    ...((RETENTION_CHOICES as readonly number[]).includes(preview) ? { would_delete: await countOldChats(config.userId, preview) } : {}),
+  });
+});
+const PrivacyChange = z
+  .object({ chat_retention_days: z.union([z.null(), ...RETENTION_CHOICES.map((d) => z.literal(d))] as [z.ZodNull, z.ZodLiteral<number>, ...z.ZodLiteral<number>[]]) })
+  .strict();
+app.patch("/api/privacy", async (c) => {
+  const body = PrivacyChange.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) return c.json({ error: `chat_retention_days must be null or one of ${RETENTION_CHOICES.join(", ")}` }, 400);
+  await setChatRetention(config.userId, body.data.chat_retention_days);
+  // Apply it now rather than at the next hourly sweep.
+  const deleted = await sweepOldChats();
+  return c.json({ chat_retention_days: body.data.chat_retention_days, deleted });
 });
 app.get("/api/activity", async (c) => c.json(await recentActivity(config.userId, Math.min(200, Number(c.req.query("limit")) || 50))));
 app.get("/api/notes", async (c) => c.json(await notes.findNotes(config.userId, (c.req.query("q") ?? "").slice(0, 200))));

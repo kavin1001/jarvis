@@ -381,6 +381,10 @@ export const api = {
     request<{ removed: number }>(s, `/api/lists/${encodeURIComponent(list)}${all ? "?all=1" : ""}`, { method: "DELETE" }),
   importClaude: (s: Settings, chats: unknown) =>
     request<{ imported: number; skipped: number; messages: number }>(s, "/api/import/claude", { method: "POST", body: chats }),
+  privacy: (s: Settings, preview?: number) =>
+    request<{ chat_retention_days: number | null; would_delete?: number }>(s, `/api/privacy${preview ? `?preview=${preview}` : ""}`),
+  setChatRetention: (s: Settings, days: number | null) =>
+    request<{ chat_retention_days: number | null; deleted: number }>(s, "/api/privacy", { method: "PATCH", body: { chat_retention_days: days } }),
   activity: (s: Settings) => request<Activity[]>(s, "/api/activity?limit=50"),
   notes: (s: Settings, search = "") => request<Note[]>(s, `/api/notes${search ? `?q=${encodeURIComponent(search)}` : ""}`),
   createNote: (s: Settings, body: string, title?: string) => request<Note>(s, "/api/notes", { method: "POST", body: { body, title } }),

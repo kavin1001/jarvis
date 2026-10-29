@@ -8,6 +8,7 @@ import { clearCache } from "../cache";
 import { api, clearSettings, type Connectors, type Settings, type Usage } from "../api";
 import { locationSharingEnabled, setLocationSharing } from "../location";
 import { Activity } from "./Activity";
+import { ChatRetention } from "./ChatRetention";
 import { Devices } from "./Devices";
 import { SetupStatus } from "./SetupStatus";
 import { YourData } from "./YourData";
@@ -200,6 +201,8 @@ export default function SettingsScreen({
           }}
         />
       </View>
+
+      <ChatRetention settings={settings} />
 
       {canLock && (
         <View style={[styles.row, { flexDirection: "row", alignItems: "center" }]}>

@@ -286,3 +286,6 @@ CREATE INDEX IF NOT EXISTS activity_user_created ON activity (user_id, created_a
 -- Chats imported from a Claude.ai data export keep the export's id, so importing again skips them.
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS import_ref TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS conversations_import_ref ON conversations (user_id, import_ref) WHERE import_ref IS NOT NULL;
+
+-- How long to keep chats, in days since they were last used. NULL keeps them for good.
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS chat_retention_days INTEGER CHECK (chat_retention_days > 0);

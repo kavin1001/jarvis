@@ -5,6 +5,7 @@ import { config } from "./config.js";
 import { pool } from "./db.js";
 import { migrate } from "./migrate.js";
 import { fireDueReminders } from "./reminders.js";
+import { sweepOldChats } from "./retention.js";
 import { expireApprovals, resumeTasks, taskLaneConfigured } from "./tasks.js";
 
 await migrate();
@@ -28,6 +29,15 @@ const runScheduled = (conversationId: string, text: string) =>
 // Every 5 seconds, so a "10 minute timer" goes off on time. Each reminder is claimed
 // in one UPDATE, so overlapping sweeps can't fire it twice.
 timers.push(setInterval(() => fireDueReminders(runScheduled).catch((err) => console.error("reminder sweep failed", err)), 5_000));
+
+// Chats past the user's "keep chats for" setting, once at boot and then hourly.
+const sweep = () =>
+  sweepOldChats().then(
+    (n) => n > 0 && console.log(`Deleted ${n} chat(s) past their retention`),
+    (err) => console.error("chat retention sweep failed", err),
+  );
+sweep();
+timers.push(setInterval(sweep, 3600_000));
 
 // Hosts send SIGTERM before replacing the instance; in-flight tasks resume on the next boot.
 // One background job failing (a task, a push, a title) shouldn't take every chat down with it.
