@@ -2,11 +2,20 @@ import { useCallback, useEffect, useState } from "react";
 import { FlatList, Pressable, RefreshControl, View } from "react-native";
 import { ActionSheet, type SheetAction } from "../ActionSheet";
 import { Alert } from "../dialog";
-import { api, type PlaceReminder, type Reminder, type Settings, type Task } from "../api";
+import { api, type PlaceReminder, type Reminder, type Repeat, type Settings, type Task } from "../api";
 import { askApproval } from "../usePush";
 import { Empty, Header, LinkButton, relativeTime, useShared } from "../ui";
 import { Text, useColors } from "../theme";
 import { fileSize, openTaskFile } from "../taskFiles";
+
+const REPEAT_LABELS: Record<Repeat, string> = {
+  daily: "every day",
+  weekdays: "weekdays",
+  weekends: "weekends",
+  weekly: "every week",
+  biweekly: "every two weeks",
+  monthly: "every month",
+};
 
 const ROUTINES: { label: string; text: string; time: string; repeat: "daily" | "weekdays" }[] = [
   {
@@ -141,7 +150,7 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
                   </Text>
                   <Text style={styles.rowMeta}>
                     {new Date(r.due_at).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit", month: "short", day: "numeric" })}
-                    {r.repeat ? ` · ${r.repeat}` : ""}
+                    {r.repeat ? ` · ${REPEAT_LABELS[r.repeat]}` : ""}
                   </Text>
                 </Pressable>
               ))}

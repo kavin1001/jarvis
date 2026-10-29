@@ -88,13 +88,22 @@ CREATE TABLE IF NOT EXISTS reminders (
   text            TEXT NOT NULL,
   action          TEXT NOT NULL DEFAULT 'notify' CHECK (action IN ('notify', 'run')),
   due_at          TIMESTAMPTZ NOT NULL,
-  repeat          TEXT CHECK (repeat IN ('daily', 'weekdays', 'weekly')),
+  repeat          TEXT CHECK (repeat IN ('daily', 'weekdays', 'weekends', 'weekly', 'biweekly', 'monthly')),
   timezone        TEXT NOT NULL DEFAULT 'UTC',
   status          TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'done', 'cancelled')),
   last_fired_at   TIMESTAMPTZ,
   created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS reminders_due_idx ON reminders (due_at) WHERE status = 'scheduled';
+-- Weekends, every two weeks and monthly. A monthly reminder keeps its day of the month
+-- in month_day, so one on the 31st comes back to the 31st after a shorter month.
+ALTER TABLE reminders ADD COLUMN IF NOT EXISTS month_day SMALLINT;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'reminders_repeat_check' AND pg_get_constraintdef(oid) LIKE '%monthly%') THEN
+    ALTER TABLE reminders DROP CONSTRAINT IF EXISTS reminders_repeat_check;
+    ALTER TABLE reminders ADD CONSTRAINT reminders_repeat_check CHECK (repeat IN ('daily', 'weekdays', 'weekends', 'weekly', 'biweekly', 'monthly'));
+  END IF;
+END $$;
 
 -- 0.4: usage and cost tracking.
 CREATE TABLE IF NOT EXISTS usage_events (

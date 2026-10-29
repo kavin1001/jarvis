@@ -44,18 +44,34 @@ export function zonedToUtc(
   return new Date(utc);
 }
 
-/** Next time a repeating reminder fires, keeping the same local wall-clock time. */
-export function nextOccurrence(previous: Date, repeat: "daily" | "weekdays" | "weekly", timeZone: string): Date {
+export type Repeat = "daily" | "weekdays" | "weekends" | "weekly" | "biweekly" | "monthly";
+
+/**
+ * Next time a repeating reminder fires, keeping the same local wall-clock time.
+ * Monthly ones land on monthDay (default: previous's day), or the month's last day when it's shorter.
+ */
+export function nextOccurrence(previous: Date, repeat: Repeat, timeZone: string, monthDay?: number | null): Date {
   const p = zonedParts(previous, timeZone);
-  const step = repeat === "weekly" ? 7 : 1;
+  if (repeat === "monthly") {
+    const day = monthDay ?? p.day;
+    // Day 0 of the month after next is the last day of next month.
+    const lastDay = new Date(Date.UTC(p.year, p.month + 1, 0)).getUTCDate();
+    const next = new Date(Date.UTC(p.year, p.month, Math.min(day, lastDay)));
+    return zonedToUtc(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate(), p.hour, p.minute, p.second, timeZone);
+  }
+  const step = repeat === "weekly" ? 7 : repeat === "biweekly" ? 14 : 1;
   for (let add = step; ; add += step) {
     // Date.UTC normalises day overflow (Jan 32 -> Feb 1).
     const local = new Date(Date.UTC(p.year, p.month - 1, p.day + add));
     const weekday = local.getUTCDay();
-    if (repeat === "weekdays" && (weekday === 0 || weekday === 6)) continue;
+    const weekend = weekday === 0 || weekday === 6;
+    if ((repeat === "weekdays" && weekend) || (repeat === "weekends" && !weekend)) continue;
     return zonedToUtc(local.getUTCFullYear(), local.getUTCMonth() + 1, local.getUTCDate(), p.hour, p.minute, p.second, timeZone);
   }
 }
+
+/** The local day of the month a monthly reminder keeps, or null for other repeats. */
+export const monthDayFor = (dueAt: Date, repeat: Repeat | null, timeZone: string) => (repeat === "monthly" ? zonedParts(dueAt, timeZone).day : null);
 
 /** "Thursday, October 29, 2026, 9:30 AM" in the user's zone, for the model's context. */
 export function describeNow(timeZone: string, now = new Date()) {
@@ -79,14 +95,14 @@ export function isValidTimeZone(tz: string) {
 export function firstOccurrence(
   hour: number,
   minute: number,
-  repeat: "daily" | "weekdays" | "weekly" | null,
+  repeat: Repeat | null,
   timeZone: string,
   now = new Date(),
 ): Date {
   const p = zonedParts(now, timeZone);
   let candidate = zonedToUtc(p.year, p.month, p.day, hour, minute, 0, timeZone);
   const isWeekend = (d: Date) => ["Sat", "Sun"].includes(zonedParts(d, timeZone).weekday);
-  while (candidate <= now || (repeat === "weekdays" && isWeekend(candidate))) {
+  while (candidate <= now || (repeat === "weekdays" && isWeekend(candidate)) || (repeat === "weekends" && !isWeekend(candidate))) {
     candidate = nextOccurrence(candidate, "daily", timeZone);
   }
   return candidate;

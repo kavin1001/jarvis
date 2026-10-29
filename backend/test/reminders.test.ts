@@ -76,6 +76,22 @@ describe("reminders", () => {
     expect((await patch("nope", { due_at: later })).status).toBe(404);
   });
 
+  it("keeps a monthly reminder on its day of the month, also after a move", async () => {
+    await setTimezone("me", "America/New_York");
+    // Rent on the 31st at 9am New York time.
+    const id = await createReminder({ userId: "me", conversationId: null, text: "Pay rent", action: "notify", dueAt: new Date("2027-01-31T14:00:00Z"), repeat: "monthly" });
+    await fireDueReminders(async () => "", new Date("2027-01-31T14:00:10Z"));
+    expect(new Date((await listReminders("me"))[0].due_at).toISOString()).toBe("2027-02-28T14:00:00.000Z");
+    await fireDueReminders(async () => "", new Date("2027-02-28T14:00:10Z"));
+    expect(new Date((await listReminders("me"))[0].due_at).toISOString()).toBe("2027-03-31T13:00:00.000Z");
+
+    // Moved to the 15th (in New York: 11pm UTC on the 15th is still the 15th there), it stays on the 15th.
+    await rescheduleReminder("me", id, new Date("2027-04-15T23:00:00Z"));
+    expect((await query<{ month_day: number }>("SELECT month_day FROM reminders WHERE id = $1", [id]))[0].month_day).toBe(15);
+    await fireDueReminders(async () => "", new Date("2027-04-15T23:00:10Z"));
+    expect(new Date((await listReminders("me"))[0].due_at).toISOString()).toBe("2027-05-15T23:00:00.000Z");
+  });
+
   it("skips the next run of a routine, and only of repeating ones", async () => {
     await setTimezone("me", "America/New_York");
     // Friday 8am EDT; the next weekday is Monday.

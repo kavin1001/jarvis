@@ -4,6 +4,8 @@ import * as SecureStore from "./storage";
 import { Platform } from "react-native";
 import { clearCache } from "./cache";
 
+export type Repeat = "daily" | "weekdays" | "weekends" | "weekly" | "biweekly" | "monthly";
+
 export interface Settings {
   url: string;
   token: string;
@@ -56,7 +58,7 @@ export interface Reminder {
   text: string;
   action: "notify" | "run";
   due_at: string;
-  repeat: "daily" | "weekdays" | "weekly" | null;
+  repeat: Repeat | null;
 }
 
 export interface Place {
@@ -306,7 +308,7 @@ export const api = {
   notifySettings: (s: Settings) => request<NotifySettings>(s, "/api/notifications"),
   setNotifySettings: (s: Settings, change: Partial<NotifySettings>) =>
     request<NotifySettings>(s, "/api/notifications", { method: "PATCH", body: change }),
-  addRoutine: (s: Settings, body: { text: string; time: string; repeat: "daily" | "weekdays" | "weekly" | null; action?: "run" | "notify" }) =>
+  addRoutine: (s: Settings, body: { text: string; time: string; repeat: Repeat | null; action?: "run" | "notify" }) =>
     request<{ id: string; due_at: string }>(s, "/api/reminders", { method: "POST", body }),
   addReminder: (s: Settings, body: { text: string; due_at: string; conversation_id?: string }) =>
     request<{ id: string; due_at: string }>(s, "/api/reminders/once", { method: "POST", body }),

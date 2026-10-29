@@ -405,7 +405,7 @@ const NewRoutine = z.object({
   text: z.string().trim().min(1).max(1000),
   action: z.enum(["notify", "run"]).default("run"),
   time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "HH:MM, 24-hour"),
-  repeat: z.enum(["daily", "weekdays", "weekly"]).nullable().default("daily"),
+  repeat: z.enum(["daily", "weekdays", "weekends", "weekly", "biweekly", "monthly"]).nullable().default("daily"),
 });
 app.post("/api/reminders", async (c) => {
   const body = NewRoutine.safeParse(await c.req.json().catch(() => null));

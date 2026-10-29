@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Reminders and routines can now repeat on weekends, every two weeks, or monthly: "remind me to pay rent on the 1st of every month", "every other Friday, remind me it's payday", "Saturday and Sunday mornings at 9, suggest something to do". A monthly reminder on the 31st goes off on the last day of shorter months and returns to the 31st after. Tasks shows the repeat in words ("every two weeks").
 - Lists and notes work without signal: the phone keeps a copy, so your shopping list opens in a supermarket basement and a saved gate code is there on a dead-zone doorstep. Items you tick off while offline stay ticked and are sent when the connection is back. The copies are deleted when you sign out or erase everything.
 - Settings, **What Jarvis did on your accounts**: a log of the drafts it saved, mail it archived or marked, calendar events it added, moved or deleted, background tasks it started or stopped, and every call to your connected apps (Notion, Linear…). Reads such as searching your mail aren't listed, and neither are calls that failed. Kept for 90 days, and included in export and erase. `GET /api/activity`.
 - Calendar: "when am I free Thursday afternoon?", "find me an hour next week for a haircut". Jarvis works out the open slots from your Google Calendar within your day (9 to 6 on weekdays unless you say otherwise), in your time zone. Events marked free, all-day events and invitations you declined don't count as busy. No new Google permission is needed.

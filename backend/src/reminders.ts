@@ -1,9 +1,9 @@
 import { query } from "./db.js";
 import * as memory from "./memory.js";
 import { sendPush } from "./push.js";
-import { isValidTimeZone, nextOccurrence } from "./time.js";
+import { isValidTimeZone, monthDayFor, nextOccurrence, type Repeat } from "./time.js";
 
-export type Repeat = "daily" | "weekdays" | "weekly";
+export type { Repeat };
 
 export interface Reminder {
   id: string;
@@ -13,6 +13,7 @@ export interface Reminder {
   action: "notify" | "run";
   due_at: Date;
   repeat: Repeat | null;
+  month_day: number | null;
   timezone: string;
   status: "scheduled" | "done" | "cancelled";
 }
@@ -41,9 +42,9 @@ export async function createReminder(r: {
 }) {
   const timezone = await getTimezone(r.userId);
   const [row] = await query<{ id: string }>(
-    `INSERT INTO reminders (user_id, conversation_id, text, action, due_at, repeat, timezone)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-    [r.userId, r.conversationId, r.text, r.action, r.dueAt, r.repeat, timezone],
+    `INSERT INTO reminders (user_id, conversation_id, text, action, due_at, repeat, timezone, month_day)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
+    [r.userId, r.conversationId, r.text, r.action, r.dueAt, r.repeat, timezone, monthDayFor(r.dueAt, r.repeat, timezone)],
   );
   return row.id;
 }
@@ -81,8 +82,11 @@ export async function snoozeReminder(userId: string, id: string, minutes: number
 /** Runs a scheduled prompt as a Jarvis turn and returns the answer. Injected to avoid an import cycle. */
 /** Moves an upcoming reminder. A repeating one keeps repeating from its new time. */
 export async function rescheduleReminder(userId: string, id: string, dueAt: Date) {
+  // A monthly reminder moved to the 15th repeats on the 15th from then on.
   const rows = await query(
-    "UPDATE reminders SET due_at = $3 WHERE id = $1 AND user_id = $2 AND status = 'scheduled' RETURNING id",
+    `UPDATE reminders SET due_at = $3,
+       month_day = CASE WHEN repeat = 'monthly' THEN extract(day FROM $3::timestamptz AT TIME ZONE timezone)::smallint END
+     WHERE id = $1 AND user_id = $2 AND status = 'scheduled' RETURNING id`,
     [id, userId, dueAt],
   );
   return rows.length > 0;
@@ -92,7 +96,7 @@ export async function rescheduleReminder(userId: string, id: string, dueAt: Date
 export async function skipReminder(userId: string, id: string): Promise<Date | null> {
   const [r] = await query<Reminder>("SELECT * FROM reminders WHERE id = $1 AND user_id = $2 AND status = 'scheduled' AND repeat IS NOT NULL", [id, userId]);
   if (!r) return null;
-  const next = nextOccurrence(new Date(r.due_at), r.repeat!, r.timezone);
+  const next = nextOccurrence(new Date(r.due_at), r.repeat!, r.timezone, r.month_day);
   const rows = await query("UPDATE reminders SET due_at = $3 WHERE id = $1 AND due_at = $2 AND status = 'scheduled' RETURNING id", [id, r.due_at, next]);
   return rows.length > 0 ? next : null;
 }
@@ -121,10 +125,10 @@ export async function fireDueReminders(runPrompt: RunPrompt, now = new Date()) {
     [now],
   );
   for (const r of due) {
-    const next = r.repeat ? nextOccurrence(new Date(r.due_at), r.repeat, r.timezone) : null;
+    const next = r.repeat ? nextOccurrence(new Date(r.due_at), r.repeat, r.timezone, r.month_day) : null;
     // A long outage shouldn't fire a daily reminder once per missed day.
     let upcoming = next;
-    while (upcoming && upcoming <= now) upcoming = nextOccurrence(upcoming, r.repeat!, r.timezone);
+    while (upcoming && upcoming <= now) upcoming = nextOccurrence(upcoming, r.repeat!, r.timezone, r.month_day);
     const claimed = await query(
       `UPDATE reminders SET last_fired_at = now(), due_at = COALESCE($3, due_at), status = CASE WHEN $3::timestamptz IS NULL THEN 'done' ELSE status END
        WHERE id = $1 AND due_at = $2 AND status = 'scheduled' RETURNING id`,

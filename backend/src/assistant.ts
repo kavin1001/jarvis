@@ -141,7 +141,7 @@ const SetReminderInput = z
     due_at: z.string().refine((v) => !Number.isNaN(Date.parse(v)), "must be an ISO 8601 date-time").optional(),
     in_seconds: z.number().int().min(1).max(7 * 24 * 3600).optional(),
     action: z.enum(["notify", "run"]).default("notify"),
-    repeat: z.enum(["daily", "weekdays", "weekly"]).nullish(),
+    repeat: z.enum(["daily", "weekdays", "weekends", "weekly", "biweekly", "monthly"]).nullish(),
   })
   .refine((r) => r.due_at || r.in_seconds, "Give due_at or in_seconds");
 const SearchChatsInput = z.object({ query: z.string().min(1).max(200), limit: z.number().int().min(1).max(15).default(8) });
@@ -232,7 +232,7 @@ const tools: Anthropic.Beta.BetaToolUnion[] = [
         due_at: { type: "string", description: "ISO 8601 date-time with the user's UTC offset, e.g. 2026-10-29T17:00:00-07:00." },
         in_seconds: { type: "integer", description: "Instead of due_at, for timers and \"in 20 minutes\": seconds from now." },
         action: { type: "string", enum: ["notify", "run"] },
-        repeat: { type: "string", enum: ["daily", "weekdays", "weekly"], description: "Omit for a one-off." },
+        repeat: { type: "string", enum: ["daily", "weekdays", "weekends", "weekly", "biweekly", "monthly"], description: "Omit for a one-off. biweekly is every two weeks; monthly keeps the day of the month (the 31st falls on the last day of shorter months)." },
       },
       required: ["text"],
     },
