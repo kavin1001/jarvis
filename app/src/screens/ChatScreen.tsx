@@ -9,7 +9,7 @@ import {
   StyleSheet,
   View,
 } from "react-native";
-import { api, streamChat, type ChatMessage, type PendingApproval, type Settings } from "../api";
+import { api, streamChat, type ChatMessage, type PendingApproval, type Reminder, type Settings, type Task } from "../api";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import type { Command } from "../deepLink";
@@ -30,6 +30,13 @@ const SUGGESTIONS = [
   "Remind me to call Mom at 6pm",
   "What did we talk about yesterday?",
 ];
+
+/** "Today 6:00 PM" or "Tomorrow 8:00 AM", for the next day of reminders. */
+function whenLabel(iso: string) {
+  const due = new Date(iso);
+  const time = due.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return due.toDateString() === new Date().toDateString() ? `Today ${time}` : `Tomorrow ${time}`;
+}
 
 export default function ChatScreen({
   settings,
@@ -64,10 +71,21 @@ export default function ChatScreen({
     setHandsFreeState(on);
   };
 
+  // What's coming up, shown on an empty chat.
+  const [upcoming, setUpcoming] = useState<{ reminders: Reminder[]; working: Task[] }>({ reminders: [], working: [] });
+
   const refresh = useCallback(async () => {
     const tasks = await api.tasks(settings).catch(() => []);
     setApprovals(tasks.flatMap((t) => t.pending_approvals));
     setMessages(conversationId ? await api.messages(settings, conversationId) : []);
+    if (!conversationId) {
+      const dayAhead = Date.now() + 24 * 3600_000;
+      const reminders = await api.reminders(settings).catch(() => []);
+      setUpcoming({
+        reminders: reminders.filter((r) => Date.parse(r.due_at) <= dayAhead).slice(0, 3),
+        working: tasks.filter((t) => t.status === "queued" || t.status === "running" || t.status === "waiting_approval").slice(0, 3),
+      });
+    }
   }, [settings, conversationId]);
 
   useEffect(() => {
@@ -234,6 +252,20 @@ export default function ChatScreen({
         onContentSizeChange={() => list.current?.scrollToEnd({ animated: true })}
         ListEmptyComponent={
           <View style={styles.empty}>
+            {upcoming.reminders.length > 0 || upcoming.working.length > 0 ? (
+              <View style={styles.today}>
+                {upcoming.reminders.map((r) => (
+                  <Text key={r.id} style={styles.todayLine} numberOfLines={1}>
+                    ⏰ {whenLabel(r.due_at)} · {r.text}
+                  </Text>
+                ))}
+                {upcoming.working.map((t) => (
+                  <Text key={t.id} style={styles.todayLine} numberOfLines={1}>
+                    {t.status === "waiting_approval" ? "✋ Needs your OK" : "⏳ Working"} · {t.summary ?? t.instructions}
+                  </Text>
+                ))}
+              </View>
+            ) : null}
             <Text style={styles.emptyTitle}>How can I help?</Text>
             {SUGGESTIONS.map((s) => (
               <Pressable key={s} style={styles.suggestion} onPress={() => send(s, "text")} disabled={busy}>
@@ -378,4 +410,6 @@ const makeStyles = (colors: Palette) =>
     emptyTitle: { fontSize: 18, fontWeight: "600", color: colors.subtle, marginBottom: 6 },
     suggestion: { borderWidth: 1, borderColor: colors.inputBorder, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 8 },
     suggestionText: { color: colors.subtle },
+    today: { alignSelf: "stretch", backgroundColor: colors.surface, borderRadius: 12, padding: 12, gap: 6, marginBottom: 24 },
+    todayLine: { color: colors.subtle },
   });

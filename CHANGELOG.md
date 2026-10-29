@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- A new chat shows what's coming up: reminders in the next 24 hours, and background tasks that are working or waiting for your OK.
 - Reminder notifications have **Snooze 10 min** and **Snooze 1 hour** buttons. A snooze makes a one-off copy, so a daily reminder keeps its usual time. `POST /api/reminders/:id/snooze` takes `{ minutes }`.
 - Settings, **Setup** shows what the server has ready and what's left, with the fix for each item: a working API key, a daily spending cap, background tasks, token encryption, Google, and notifications. A rejected API key is shown straight away. `GET /api/status` returns the same checks, as booleans only.
 - Hold a message for **Copy**, **Read aloud** and **Share**. Your own messages also get **Send again**. Hold a chat in History to **Rename** or **Delete** it. `PATCH /api/conversations/:id` sets a title.
