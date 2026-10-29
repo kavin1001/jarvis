@@ -120,6 +120,9 @@ export async function warnNearBudget(userId: string, timezone: string, dailyBudg
     userId,
     over ? "Jarvis reached today's cap" : "Jarvis is near today's cap",
     `$${today_usd.toFixed(2)} of $${dailyBudget.toFixed(2)} used today. ${over ? "Chat pauses until midnight" : "At the cap, chat pauses until midnight"}; raise DAILY_BUDGET_USD to allow more.`,
+    {},
+    undefined,
+    "spending",
   );
   return true;
 }

@@ -10,6 +10,7 @@ import { Devices } from "./Devices";
 import { SetupStatus } from "./SetupStatus";
 import { YourData } from "./YourData";
 import { McpServers } from "./McpServers";
+import { NotifySettings } from "./NotifySettings";
 import { Header, LinkButton, useShared } from "../ui";
 import { Text, useColors, useTheme, type Appearance } from "../theme";
 import { createSpeaker } from "../useVoice";
@@ -221,6 +222,8 @@ export default function SettingsScreen({
           <Switch value={lock.on} onValueChange={(on) => void lock.setOn(on)} accessibilityLabel="Lock Jarvis" />
         </View>
       )}
+
+      <NotifySettings settings={settings} />
 
       <McpServers settings={settings} />
 

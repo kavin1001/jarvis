@@ -195,3 +195,11 @@ CREATE TABLE IF NOT EXISTS task_files (
   size_bytes  BIGINT NOT NULL,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Which optional notifications the user wants. Approvals and reminders always notify.
+CREATE TABLE IF NOT EXISTS notify_settings (
+  user_id   TEXT PRIMARY KEY,
+  replies   BOOLEAN NOT NULL DEFAULT true,
+  tasks     BOOLEAN NOT NULL DEFAULT true,
+  spending  BOOLEAN NOT NULL DEFAULT true
+);

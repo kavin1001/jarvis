@@ -17,7 +17,7 @@ import { disconnectGoogle, googleStatus, handleGoogleCallback, startGoogleAuth, 
 import { addServer, deleteServer, listServers, NewServer, setServerEnabled } from "./mcp.js";
 import { handleMcpCallback, startMcpOAuth } from "./mcpOAuth.js";
 import * as memory from "./memory.js";
-import { savePushToken, sendPush } from "./push.js";
+import { getNotifySettings, savePushToken, sendPush, setNotifySettings } from "./push.js";
 import { cancelReminder, createReminder, getTimezone, listReminders, snoozeReminder } from "./reminders.js";
 import { serverStatus } from "./status.js";
 import { firstOccurrence } from "./time.js";
@@ -205,7 +205,7 @@ app.post("/api/chat", async (c) => {
     }
     if (detached && !stop.signal.aborted && reply.trim()) {
       const preview = reply.length > 180 ? `${reply.slice(0, 177)}…` : reply;
-      await sendPush(config.userId, "Jarvis replied", preview, { conversationId: id }, "reply").catch((err) => console.warn("reply push failed", err));
+      await sendPush(config.userId, "Jarvis replied", preview, { conversationId: id }, "reply", "replies").catch((err) => console.warn("reply push failed", err));
     }
   });
 });
@@ -363,6 +363,14 @@ app.post("/api/push-token", async (c) => {
   if (!body.success) return c.json({ error: body.error.message }, 400);
   await savePushToken(config.userId, body.data.token);
   return c.json({ ok: true });
+});
+
+app.get("/api/notifications", async (c) => c.json(await getNotifySettings(config.userId)));
+const NotifyChange = z.object({ replies: z.boolean(), tasks: z.boolean(), spending: z.boolean() }).partial().strict();
+app.patch("/api/notifications", async (c) => {
+  const body = NotifyChange.safeParse(await c.req.json());
+  if (!body.success) return c.json({ error: body.error.message }, 400);
+  return c.json(await setNotifySettings(config.userId, body.data));
 });
 
 app.get("/api/connectors", async (c) => c.json({ google: await googleStatus(config.userId) }));

@@ -228,7 +228,16 @@ export interface Connectors {
   google: { available: boolean; connected: boolean; email: string | null; can_organize: boolean };
 }
 
+export interface NotifySettings {
+  replies: boolean;
+  tasks: boolean;
+  spending: boolean;
+}
+
 export const api = {
+  notifySettings: (s: Settings) => request<NotifySettings>(s, "/api/notifications"),
+  setNotifySettings: (s: Settings, change: Partial<NotifySettings>) =>
+    request<NotifySettings>(s, "/api/notifications", { method: "PATCH", body: change }),
   addRoutine: (s: Settings, body: { text: string; time: string; repeat: "daily" | "weekdays" | "weekly" | null; action?: "run" | "notify" }) =>
     request<{ id: string; due_at: string }>(s, "/api/reminders", { method: "POST", body }),
   exportData: (s: Settings) => request<unknown>(s, "/api/export"),

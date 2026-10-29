@@ -355,7 +355,7 @@ async function report(task: TaskRow, status: "done" | "failed", result: string) 
   await sendPush(task.user_id, status === "done" ? "Jarvis finished a task" : "Jarvis task failed", `${summary}: ${result}`, {
     taskId: task.id,
     conversationId: task.conversation_id,
-  }, "reply");
+  }, "reply", "tasks");
 }
 
 /**
