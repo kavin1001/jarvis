@@ -182,6 +182,47 @@ describe("Google tools", () => {
     expect(raw).toContain("In-Reply-To: <abc@mail>");
   });
 
+  it("drafts a reply-all with cc, and encodes non-English headers and body", async () => {
+    await connect({ access_token: "at", expires_at: Date.now() + 3600_000 });
+    const calls = mockFetch({
+      "messages/m3": () => ({
+        id: "m3",
+        threadId: "t3",
+        payload: {
+          headers: [
+            { name: "Message-ID", value: "<m3@mail>" },
+            { name: "To", value: "Kavin <K@example.com>, Ana <ana@example.com>" },
+            { name: "Cc", value: '"Lee, Sam" <sam@example.com>, x@example.com' },
+          ],
+        },
+      }),
+      drafts: () => ({ id: "d3" }),
+    });
+    const out = await runGoogleTool("me", "gmail_create_draft", {
+      to: "x@example.com",
+      cc: "José Núñez <jose@example.com>",
+      subject: "Re: Café plans",
+      body: "Ça va? Friday works.",
+      reply_to_message_id: "m3",
+      reply_all: true,
+    });
+    expect(calls[0].url).toContain("metadataHeaders=To&metadataHeaders=Cc");
+    expect(out).toBe('Draft d3 saved in Gmail, copying José Núñez <jose@example.com>, Ana <ana@example.com>, "Lee, Sam" <sam@example.com>. It has not been sent; the user can review and send it from Gmail.');
+    const raw = Buffer.from(JSON.parse(calls[1].init!.body as string).message.raw, "base64url").toString();
+    const [head, encoded] = raw.split("\r\n\r\n");
+    expect(head.split("\r\n")).toEqual([
+      "To: x@example.com",
+      "In-Reply-To: <m3@mail>",
+      "References: <m3@mail>",
+      `Cc: =?UTF-8?B?${Buffer.from("José Núñez").toString("base64")}?= <jose@example.com>, Ana <ana@example.com>, "Lee, Sam" <sam@example.com>`,
+      `Subject: =?UTF-8?B?${Buffer.from("Re: Café plans").toString("base64")}?=`,
+      "MIME-Version: 1.0",
+      "Content-Type: text/plain; charset=UTF-8",
+      "Content-Transfer-Encoding: base64",
+    ]);
+    expect(Buffer.from(encoded, "base64").toString()).toBe("Ça va? Friday works.");
+  });
+
   it("adds repeating, all-day and Meet events", async () => {
     await connect({ access_token: "at", expires_at: Date.now() + 3600_000 });
     const calls = mockFetch({

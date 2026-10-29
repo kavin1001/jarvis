@@ -283,15 +283,17 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
   {
     name: "gmail_create_draft",
     description:
-      "Save an email draft in the user's Gmail. It is NOT sent; the user reviews and sends it from Gmail. Pass reply_to_message_id to draft a reply in the same thread.",
+      "Save an email draft in the user's Gmail. It is NOT sent; the user reviews and sends it from Gmail. Pass reply_to_message_id to draft a reply in the same thread, and reply_all to copy everyone else who was on that email.",
     eager_input_streaming: true,
     input_schema: {
       type: "object",
       properties: {
-        to: { type: "string" },
+        to: { type: "string", description: "One or more addresses, comma-separated, e.g. \"Sam Lee <sam@example.com>\"" },
+        cc: { type: "string", description: "Addresses to copy, comma-separated" },
         subject: { type: "string" },
         body: { type: "string", description: "Plain text." },
         reply_to_message_id: { type: "string" },
+        reply_all: { type: "boolean", description: "With reply_to_message_id: also copy everyone else on the original email" },
       },
       required: ["to", "subject", "body"],
     },
@@ -480,9 +482,11 @@ const inputs = {
   gmail_read_attachment: z.object({ message_id: z.string().min(1), attachment_id: z.string().min(1) }),
   gmail_create_draft: z.object({
     to: z.string().min(3),
+    cc: z.string().optional(),
     subject: z.string(),
     body: z.string(),
     reply_to_message_id: z.string().optional(),
+    reply_all: z.boolean().default(false),
   }),
   gmail_organize: z.object({
     message_ids: z.array(z.string().min(1)).min(1).max(50),
@@ -622,6 +626,29 @@ const ORGANIZE: Record<z.infer<typeof inputs.gmail_organize>["action"], [string[
 
 // Header values must not carry line breaks (header injection).
 const oneLine = (s: string) => s.replace(/[\r\n]+/g, " ");
+const ascii = (s: string) => /^[\x20-\x7e]*$/.test(s);
+/** A header value on one line, RFC 2047-encoded when it isn't plain ASCII ("Café plans" would arrive garbled otherwise). */
+const mimeWord = (s: string) => (ascii(s) ? s : `=?UTF-8?B?${Buffer.from(s).toString("base64")}?=`);
+
+/** Splits "Sam <sam@x.com>, \"Lee, Ana\" <ana@x.com>" into addresses, keeping commas inside quotes. */
+export function splitAddresses(list: string) {
+  return list
+    .split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/)
+    .map((a) => a.trim())
+    .filter(Boolean);
+}
+const addressOf = (entry: string) => (entry.match(/<([^>]+)>/)?.[1] ?? entry).trim().toLowerCase();
+
+/** An address list for a header: one line, with non-ASCII display names encoded and the address left readable. */
+export function addressHeader(list: string) {
+  return splitAddresses(oneLine(list))
+    .map((entry) => {
+      const m = entry.match(/^"?(.*?)"?\s*<([^>]+)>$/);
+      if (!m || ascii(m[1])) return entry;
+      return `${mimeWord(m[1].trim())} <${m[2].trim()}>`;
+    })
+    .join(", ");
+}
 
 interface Person {
   names?: { displayName?: string }[];
@@ -979,24 +1006,40 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
       return { attachment: { filename: file.filename, media_type: type, data: Buffer.from(data, "base64url").toString("base64") } };
     }
     case "gmail_create_draft": {
-      const { to, subject, body, reply_to_message_id } = inputs.gmail_create_draft.parse(raw);
-      const lines = [`To: ${oneLine(to)}`, `Subject: ${oneLine(subject)}`, "Content-Type: text/plain; charset=UTF-8"];
+      const { to, cc, subject, body, reply_to_message_id, reply_all } = inputs.gmail_create_draft.parse(raw);
+      const lines = [`To: ${addressHeader(to)}`];
+      let copied = cc ? splitAddresses(oneLine(cc)) : [];
       let threadId: string | undefined;
       if (reply_to_message_id) {
         const original = await google<GmailMessage>(
           userId,
-          `${GMAIL}/messages/${encodeURIComponent(reply_to_message_id)}?format=metadata&metadataHeaders=Message-ID`,
+          `${GMAIL}/messages/${encodeURIComponent(reply_to_message_id)}?format=metadata&metadataHeaders=Message-ID&metadataHeaders=To&metadataHeaders=Cc`,
         );
         threadId = original.threadId;
         const messageId = header(original, "Message-ID");
         if (messageId) lines.push(`In-Reply-To: ${messageId}`, `References: ${messageId}`);
+        if (reply_all) {
+          // Everyone else on the original, minus the user and whoever is already addressed.
+          const skip = new Set([...splitAddresses(to), ...copied].map(addressOf));
+          const me = (await googleStatus(userId)).email?.toLowerCase();
+          if (me) skip.add(me);
+          for (const entry of splitAddresses(`${header(original, "To")}, ${header(original, "Cc")}`)) {
+            if (skip.has(addressOf(entry))) continue;
+            skip.add(addressOf(entry));
+            copied.push(entry);
+          }
+        }
       }
-      const rawMessage = Buffer.from(`${lines.join("\r\n")}\r\n\r\n${body}`).toString("base64url");
+      copied = copied.slice(0, 50);
+      if (copied.length) lines.push(`Cc: ${addressHeader(copied.join(", "))}`);
+      lines.push(`Subject: ${mimeWord(oneLine(subject))}`, "MIME-Version: 1.0", "Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: base64");
+      const encodedBody = Buffer.from(body).toString("base64").replace(/.{76}/g, "$&\r\n");
+      const rawMessage = Buffer.from(`${lines.join("\r\n")}\r\n\r\n${encodedBody}`).toString("base64url");
       const draft = await google<{ id: string }>(userId, `${GMAIL}/drafts`, {
         method: "POST",
         body: { message: { raw: rawMessage, ...(threadId ? { threadId } : {}) } },
       });
-      return `Draft ${draft.id} saved in Gmail. It has not been sent; the user can review and send it from Gmail.`;
+      return `Draft ${draft.id} saved in Gmail${copied.length ? `, copying ${copied.join(", ")}` : ""}. It has not been sent; the user can review and send it from Gmail.`;
     }
     case "gmail_organize": {
       const { message_ids, action } = inputs.gmail_organize.parse(raw);
