@@ -47,6 +47,8 @@ function dayLabel(date: string) {
   return new Date(y, m - 1, d).toDateString() === new Date().toDateString() ? "Today" : "Tomorrow";
 }
 
+type Queued = { id: number; text: string; source: "text" | "voice"; photos: Photo[]; docs: Doc[] };
+
 export default function ChatScreen({
   settings,
   conversationId,
@@ -68,6 +70,8 @@ export default function ChatScreen({
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [docs, setDocs] = useState<Doc[]>([]);
   const [busy, setBusy] = useState(false);
+  // Messages written while the server can't be reached, sent in order once it answers again.
+  const [queue, setQueue] = useState<Queued[]>([]);
   const [status, setStatus] = useState<string | null>(null);
   const connection = useConnection();
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
@@ -124,11 +128,21 @@ export default function ChatScreen({
     return () => sub.remove();
   }, [refresh, busy]);
 
-  async function send(text: string, source: "text" | "voice") {
-    if ((!text.trim() && photos.length === 0 && docs.length === 0) || busy) return;
-    if (!text.trim()) text = docs.length ? "Summarize this." : "What's in this photo?";
-    const images = photos.map(({ media_type, data }) => ({ media_type, data }));
-    const documents = docs;
+  async function send(text: string, source: "text" | "voice", attached = { photos, docs }) {
+    const { photos: sentPhotos, docs: documents } = attached;
+    if (!text.trim() && sentPhotos.length === 0 && documents.length === 0) return;
+    if (busy || !connection.online) {
+      // Offline, or already waiting on a reply: hold it and send it when possible.
+      if (!connection.online || queue.length > 0) {
+        setQueue((q) => [...q, { id: Date.now(), text, source, photos: sentPhotos, docs: documents }]);
+        setDraft("");
+        setPhotos([]);
+        setDocs([]);
+      }
+      return;
+    }
+    if (!text.trim()) text = documents.length ? "Summarize this." : "What's in this photo?";
+    const images = sentPhotos.map(({ media_type, data }) => ({ media_type, data }));
     setBusy(true);
     setDraft("");
     setPhotos([]);
@@ -176,11 +190,9 @@ export default function ChatScreen({
     } catch (err) {
       if (controller.signal.aborted) appendReply(" …(stopped)");
       else if (!heard && !(await connection.check())) {
-        // Never reached the server: take the message back so it can be sent again.
+        // Never reached the server: hold the message and send it once the server is back.
         setMessages((m) => m.slice(0, -2));
-        setDraft(text);
-        setPhotos(photos);
-        setDocs(documents);
+        setQueue((q) => [{ id: Date.now(), text, source, photos: sentPhotos, docs: documents }, ...q]);
       } else if (heard) {
         // The connection dropped mid-reply (often the app going to the background). The
         // server finishes the reply anyway, so show what it has instead of an error.
@@ -235,6 +247,22 @@ export default function ChatScreen({
       if (words.trim()) actions.push({ label: "Send again", onPress: () => send(words, "text") });
     }
     return actions;
+  }
+
+  // Back online: send what was held, oldest first, one reply at a time.
+  useEffect(() => {
+    if (!connection.online || busy || queue.length === 0) return;
+    const [next, ...rest] = queue;
+    setQueue(rest);
+    send(next.text, next.source, next);
+  }, [connection.online, busy, queue]);
+
+  /** Takes a held message back into the message box. */
+  function unqueue(item: Queued) {
+    setQueue((q) => q.filter((x) => x.id !== item.id));
+    setDraft(item.text);
+    setPhotos(item.photos);
+    setDocs(item.docs);
   }
 
   // Each command runs once, after the screen is ready.
@@ -369,6 +397,22 @@ export default function ChatScreen({
 
       <ActionSheet actions={sheet} onClose={() => setSheet(null)} />
 
+      {queue.map((item) => (
+        <Pressable
+          key={item.id}
+          style={styles.queued}
+          onPress={() => unqueue(item)}
+          accessibilityRole="button"
+          accessibilityHint="Puts it back in the message box"
+        >
+          <Text style={styles.queuedText} numberOfLines={1}>
+            🕓 {item.photos.length || item.docs.length ? "📎 " : ""}
+            {item.text || "Attachment"}
+          </Text>
+          <Text style={styles.queuedMeta}>{connection.online ? "Sending next · tap to edit" : "Sends when you're back online · tap to edit"}</Text>
+        </Pressable>
+      ))}
+
       {busy && status && !voice.listening && <Text style={styles.partial}>{status}</Text>}
       {voice.listening && <Text style={styles.partial}>{voice.partial || "Listening…"}</Text>}
 
@@ -476,6 +520,9 @@ const makeStyles = (colors: Palette) =>
     assistant: { alignSelf: "flex-start", backgroundColor: colors.surface },
     taskUpdate: { borderWidth: 1, borderColor: colors.muted },
     partial: { textAlign: "center", color: colors.muted, padding: 8 },
+    queued: { alignSelf: "flex-end", maxWidth: "85%", marginHorizontal: 12, marginBottom: 6, padding: 10, borderRadius: 16, borderWidth: 1, borderStyle: "dashed", borderColor: colors.accent },
+    queuedText: { color: colors.text },
+    queuedMeta: { color: colors.muted, fontSize: 12, marginTop: 2 },
     photos: { flexDirection: "row", gap: 8, paddingHorizontal: 12 },
     docChip: { backgroundColor: colors.surface, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6, maxWidth: 220 },
     thumb: { width: 56, height: 56, borderRadius: 8 },
