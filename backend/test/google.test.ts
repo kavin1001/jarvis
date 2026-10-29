@@ -82,7 +82,7 @@ describe("Google OAuth", () => {
 
   it("exposes status, start and disconnect to the app", async () => {
     const status = await app.request("/api/connectors", { headers: auth });
-    expect(await status.json()).toEqual({ google: { available: true, connected: false, email: null, can_organize: false } });
+    expect(await status.json()).toEqual({ google: { available: true, connected: false, email: null, can_organize: false, can_search_contacts: false } });
     const start = await app.request("/api/connectors/google/start", { method: "POST", headers: auth });
     expect((await start.json()).url).toMatch(/^https:\/\/accounts\.google\.com\//);
 
@@ -193,6 +193,43 @@ describe("Google tools", () => {
     await runGoogleTool("me", "gmail_organize", { message_ids: ["m3"], action: "mark_read" });
     expect(JSON.parse(calls[1].init!.body as string)).toMatchObject({ removeLabelIds: ["UNREAD"] });
     await expect(runGoogleTool("me", "gmail_organize", { message_ids: [], action: "archive" })).rejects.toThrow();
+  });
+
+  it("looks up contacts and people the user has emailed, after one warm-up search", async () => {
+    const scopes = "email https://www.googleapis.com/auth/contacts.readonly https://www.googleapis.com/auth/contacts.other.readonly";
+    await connect({ access_token: "at", expires_at: Date.now() + 3600_000 }, "email");
+    await expect(runGoogleTool("me", "contacts_search", { query: "Sam" })).rejects.toThrow(/Connect again/);
+    await query("UPDATE connectors SET scopes = $1", [scopes]);
+
+    const calls = mockFetch({
+      "people:searchContacts": (url) =>
+        new URL(url).searchParams.get("query")
+          ? {
+              results: [
+                { person: { names: [{ displayName: "Sam Lee" }], phoneNumbers: [{ value: "+1 555 0100", type: "mobile" }], emailAddresses: [{ value: "sam@example.com" }] } },
+                { person: { names: [{ displayName: "Sam No Details" }] } },
+              ],
+            }
+          : {},
+      "otherContacts:search": (url) =>
+        new URL(url).searchParams.get("query")
+          ? {
+              results: [
+                { person: { names: [{ displayName: "Sam Lee" }], emailAddresses: [{ value: "sam@example.com" }] } },
+                { person: { emailAddresses: [{ value: "samantha@work.example" }] } },
+              ],
+            }
+          : {},
+    });
+    expect(await runGoogleTool("me", "contacts_search", { query: "Sam" })).toBe(
+      // A saved contact also found among people emailed shows once; one with no number or email is left out.
+      "- Sam Lee: mobile +1 555 0100, sam@example.com\n- samantha@work.example (emailed, not a saved contact): samantha@work.example",
+    );
+    expect(calls.filter((c) => new URL(c.url).searchParams.get("query") === "")).toHaveLength(2);
+    await runGoogleTool("me", "contacts_search", { query: "Ana" });
+    // No second warm-up.
+    expect(calls.filter((c) => new URL(c.url).searchParams.get("query") === "")).toHaveLength(2);
+    expect(new URL(calls.at(-1)!.url).searchParams.get("readMask")).toBe("names,phoneNumbers,emailAddresses");
   });
 
   it("asks to connect when Google is not linked", async () => {

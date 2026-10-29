@@ -122,11 +122,13 @@ export default function SettingsScreen({
 
       {google?.available ? (
         <View style={styles.row}>
-          <Text style={styles.rowMeta}>Gmail and Google Calendar</Text>
+          <Text style={styles.rowMeta}>Gmail, Google Calendar and Contacts</Text>
           <Text>{google.connected ? `Connected${google.email ? ` as ${google.email}` : ""}` : "Not connected"}</Text>
-          {google.connected && !google.can_organize ? (
+          {google.connected && (!google.can_organize || !google.can_search_contacts) ? (
             <View style={{ alignItems: "flex-start" }}>
-              <Text style={styles.rowMeta}>Connect again to let Jarvis archive and mark email.</Text>
+              <Text style={styles.rowMeta}>
+                Connect again to let Jarvis {!google.can_organize ? "archive and mark email, and " : ""}look up your contacts.
+              </Text>
               <LinkButton label="Connect again" onPress={connectGoogle} />
             </View>
           ) : null}

@@ -4,8 +4,10 @@ import { z } from "zod";
 import { decrypt, encrypt } from "./crypto.js";
 import { query } from "./db.js";
 
-// Read mail, save drafts (never send), archive and mark mail, read and change calendar events.
+// Read mail, save drafts (never send), archive and mark mail, read and change calendar events,
+// and look up contacts (saved ones, and "other contacts": people the user has emailed).
 const MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify";
+const CONTACTS_SCOPES = ["https://www.googleapis.com/auth/contacts.readonly", "https://www.googleapis.com/auth/contacts.other.readonly"];
 const SCOPES = [
   "openid",
   "email",
@@ -13,6 +15,7 @@ const SCOPES = [
   "https://www.googleapis.com/auth/gmail.compose",
   MODIFY_SCOPE,
   "https://www.googleapis.com/auth/calendar.events",
+  ...CONTACTS_SCOPES,
 ];
 
 interface Tokens {
@@ -47,6 +50,7 @@ export async function googleStatus(userId: string) {
     email: row?.account_email ?? null,
     // Connections made before archiving was added lack the scope until reconnected.
     can_organize: Boolean(row?.scopes.split(" ").includes(MODIFY_SCOPE)),
+    can_search_contacts: Boolean(row && CONTACTS_SCOPES.every((sc) => row.scopes.split(" ").includes(sc))),
   };
 }
 
@@ -169,6 +173,17 @@ async function google<T>(userId: string, url: string, init: { method?: string; b
 
 export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
   {
+    name: "contacts_search",
+    description:
+      "Look up people in the user's Google Contacts, and people they've emailed, by name, email or phone number. Returns names, phone numbers and email addresses. Use it before offering a call, text or email link, or drafting an email to someone by name.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: { query: { type: "string", description: "A name or part of one, an email address or a phone number." } },
+      required: ["query"],
+    },
+  },
+  {
     name: "gmail_search",
     description:
       "Search the user's Gmail with Gmail search syntax (from:, subject:, newer_than:2d, is:unread, ...). Returns sender, subject, date, snippet and id for each match.",
@@ -278,6 +293,7 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
 
 const isoDate = z.string().refine((v) => !Number.isNaN(Date.parse(v)), "must be an ISO 8601 date-time");
 const inputs = {
+  contacts_search: z.object({ query: z.string().trim().min(1).max(100) }),
   gmail_search: z.object({ query: z.string(), max_results: z.number().int().min(1).max(10).default(5) }),
   gmail_read: z.object({ message_id: z.string() }),
   gmail_create_draft: z.object({
@@ -359,10 +375,55 @@ const ORGANIZE: Record<z.infer<typeof inputs.gmail_organize>["action"], [string[
 // Header values must not carry line breaks (header injection).
 const oneLine = (s: string) => s.replace(/[\r\n]+/g, " ");
 
+interface Person {
+  names?: { displayName?: string }[];
+  phoneNumbers?: { value?: string; type?: string }[];
+  emailAddresses?: { value?: string }[];
+}
+
+// The People API asks for one empty search first to load its cache; once per process is enough.
+const warmedUp = new Set<string>();
+
+async function searchContacts(userId: string, q: string): Promise<string> {
+  const PEOPLE = "https://people.googleapis.com/v1";
+  const search = (path: string, readMask: string, query: string) =>
+    google<{ results?: { person: Person }[] }>(userId, `${PEOPLE}/${path}?${new URLSearchParams({ query, readMask, pageSize: "10" })}`);
+  const saved = "people:searchContacts";
+  const other = "otherContacts:search";
+  if (!warmedUp.has(userId)) {
+    await Promise.all([search(saved, "names", ""), search(other, "names", "")]).catch(() => {});
+    warmedUp.add(userId);
+  }
+  const [mine, emailed] = await Promise.all([
+    search(saved, "names,phoneNumbers,emailAddresses", q),
+    search(other, "names,phoneNumbers,emailAddresses", q),
+  ]);
+  const seen = new Set<string>();
+  const lines: string[] = [];
+  for (const [results, from] of [[mine.results, ""], [emailed.results, " (emailed, not a saved contact)"]] as const) {
+    for (const { person: p } of results ?? []) {
+      const name = p.names?.[0]?.displayName ?? p.emailAddresses?.[0]?.value ?? "(no name)";
+      const phones = (p.phoneNumbers ?? []).filter((n) => n.value).map((n) => `${n.type ? `${n.type} ` : ""}${n.value}`);
+      const emails = (p.emailAddresses ?? []).map((e) => e.value).filter(Boolean) as string[];
+      const key = `${name}|${emails[0] ?? phones[0] ?? ""}`.toLowerCase();
+      if (seen.has(key) || (phones.length === 0 && emails.length === 0)) continue;
+      seen.add(key);
+      lines.push(`- ${name}${from}: ${[...phones, ...emails].join(", ")}`);
+    }
+  }
+  return lines.length ? lines.join("\n") : `No contacts match "${q}".`;
+}
+
 export async function runGoogleTool(userId: string, name: keyof typeof inputs, raw: unknown): Promise<string> {
   const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
   const CAL = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
   switch (name) {
+    case "contacts_search": {
+      const { query: q } = inputs.contacts_search.parse(raw);
+      if (!(await googleStatus(userId)).can_search_contacts)
+        throw new Error("Jarvis needs permission to look up contacts. In Settings, tap Connect again next to Google.");
+      return searchContacts(userId, q);
+    }
     case "gmail_search": {
       const { query: q, max_results } = inputs.gmail_search.parse(raw);
       const list = await google<{ messages?: { id: string }[] }>(

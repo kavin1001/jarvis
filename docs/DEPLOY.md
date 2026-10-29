@@ -56,12 +56,12 @@ EAS walks you through certificates and push keys. Install the build from the lin
 
 For day-to-day development: `npx eas build --profile development --platform ios` once, then `npx expo start` and open the dev build.
 
-## 5. Gmail and Google Calendar (optional, free Google Cloud account)
+## 5. Gmail, Google Calendar and Contacts (optional, free Google Cloud account)
 
-Lets Jarvis search and read your mail, save drafts (it never sends), and read or add calendar events.
+Lets Jarvis search and read your mail, save drafts (it never sends), read or add calendar events, and look up phone numbers and email addresses in your contacts.
 
-1. In the [Google Cloud console](https://console.cloud.google.com/), create a project and enable the **Gmail API** and **Google Calendar API**.
-2. Under **Google Auth Platform**, set up the consent screen as **External**, leave it in **Testing**, and add your own Gmail address as a test user. Add the scopes `gmail.readonly`, `gmail.compose`, `gmail.modify` and `calendar.events`. (`gmail.modify` lets Jarvis archive and mark email. It can't delete mail permanently.)
+1. In the [Google Cloud console](https://console.cloud.google.com/), create a project and enable the **Gmail API**, **Google Calendar API** and **People API**.
+2. Under **Google Auth Platform**, set up the consent screen as **External**, leave it in **Testing**, and add your own Gmail address as a test user. Add the scopes `gmail.readonly`, `gmail.compose`, `gmail.modify`, `calendar.events`, `contacts.readonly` and `contacts.other.readonly`. (`gmail.modify` lets Jarvis archive and mark email. It can't delete mail permanently. The contacts scopes are read-only: saved contacts, and people you've emailed.)
 3. Create an **OAuth client ID** of type **Web application** with the authorized redirect URI `https://<your-backend>/oauth/google/callback`.
 4. In Render, set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `PUBLIC_URL` (your backend's https URL, no trailing path). `CONNECTOR_SECRET` is generated for you; changing it later disconnects Google.
 5. In the app: Settings, Connect Google.
