@@ -159,3 +159,7 @@ CREATE TABLE IF NOT EXISTS pairing_codes (
   user_id     TEXT NOT NULL,
   expires_at  TIMESTAMPTZ NOT NULL
 );
+
+-- 0.8: full-text search over past chats (the search_past_chats tool and the History search box).
+CREATE INDEX IF NOT EXISTS messages_display_text_fts_idx
+  ON messages USING GIN (to_tsvector('english', coalesce(display_text, '')));

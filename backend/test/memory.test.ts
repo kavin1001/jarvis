@@ -43,3 +43,22 @@ describe("memory", () => {
     expect(await memory.listFacts("me")).toEqual([]);
   });
 });
+
+describe("searchMessages", () => {
+  it("finds past messages by keyword and can skip the current chat", async () => {
+    const old = await memory.createConversation("me");
+    const current = await memory.createConversation("me");
+    await memory.appendMessage(old, "user", [{ type: "text", text: "x" }], "Find me a sushi restaurant in Austin", "text");
+    await memory.appendMessage(old, "assistant", [{ type: "text", text: "x" }], "Uchi on South Lamar is a great sushi spot.", "text");
+    await memory.appendMessage(current, "user", [{ type: "text", text: "x" }], "what was that sushi place?", "text");
+    await memory.appendMessage(old, "user", [{ type: "text", text: "x" }], null, "system"); // tool plumbing is skipped
+
+    const all = await memory.searchMessages("me", "sushi");
+    expect(all).toHaveLength(3);
+    const elsewhere = await memory.searchMessages("me", "sushi", { excludeConversationId: current });
+    expect(elsewhere.map((h) => h.conversation_id)).toEqual([old, old]);
+    expect(elsewhere.some((h) => h.snippet.includes("«sushi»"))).toBe(true);
+    expect(await memory.searchMessages("me", "pizza")).toEqual([]);
+    expect(await memory.searchMessages("someone-else", "sushi")).toEqual([]);
+  });
+});

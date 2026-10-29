@@ -81,6 +81,14 @@ export async function clearSettings() {
   await SecureStore.deleteItemAsync(KEY);
 }
 
+export interface SearchHit {
+  conversation_id: string;
+  title: string | null;
+  role: "user" | "assistant";
+  created_at: string;
+  snippet: string;
+}
+
 export interface Device {
   id: string;
   name: string;
@@ -145,6 +153,7 @@ export interface Connectors {
 }
 
 export const api = {
+  search: (s: Settings, q: string) => request<SearchHit[]>(s, `/api/search?q=${encodeURIComponent(q)}`),
   devices: (s: Settings) => request<Device[]>(s, "/api/devices"),
   revokeDevice: (s: Settings, id: string) => request(s, `/api/devices/${id}`, { method: "DELETE" }),
   pairingCode: (s: Settings) => request<{ code: string; expires_at: string }>(s, "/api/devices/pair-codes", { method: "POST" }),

@@ -107,6 +107,12 @@ app.post("/api/chat", async (c) => {
 
 app.get("/api/conversations", async (c) => c.json(await memory.listConversations(config.userId)));
 
+app.get("/api/search", async (c) => {
+  const q = c.req.query("q")?.trim();
+  if (!q) return c.json([]);
+  return c.json(await memory.searchMessages(config.userId, q.slice(0, 200), { limit: 25 }));
+});
+
 // What the app renders: user and assistant text plus task updates, no tool plumbing.
 app.get("/api/conversations/:id/messages", async (c) => {
   const id = c.req.param("id");

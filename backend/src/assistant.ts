@@ -45,6 +45,7 @@ How to work:
 - Answer directly when you can. Use web_search and web_fetch for anything current or factual you are unsure of.
 - When a request needs real work on the web — logging into an account, filling forms, booking, comparing many pages, scraping, or anything that takes more than a minute — call start_task with complete, self-contained instructions, then tell the user in one short sentence that you are on it and they will get a notification.
 - Never ask the user for passwords or card numbers in chat. Logins live in a secure vault the background agent can use.
+- When the user refers to an earlier conversation that isn't in this chat, look it up with search_past_chats before saying you don't remember.
 - When the user tells you a lasting preference or fact about themselves, save it with remember. Remove facts with forget when asked.
 - For reminders and recurring jobs ("remind me at 5", "every weekday at 8 brief me on my day") use set_reminder. Use action "run" when Jarvis should do something at that time and send the result; "notify" for a plain reminder. Times are in the user's local time zone, given in each message.
 - Messages that start with [Scheduled job] were sent by a reminder the user set, not typed live. Answer them as a short notification-sized briefing.
@@ -61,6 +62,7 @@ const SetReminderInput = z.object({
   action: z.enum(["notify", "run"]).default("notify"),
   repeat: z.enum(["daily", "weekdays", "weekly"]).nullish(),
 });
+const SearchChatsInput = z.object({ query: z.string().min(1).max(200), limit: z.number().int().min(1).max(15).default(8) });
 const CancelReminderInput = z.object({ reminder_id: z.string() });
 const StartTaskInput = z.object({
   instructions: z.string().min(1),
@@ -117,6 +119,20 @@ const tools: Anthropic.Beta.BetaToolUnion[] = [
     description: "Cancel a reminder or scheduled job by id.",
     eager_input_streaming: true,
     input_schema: { type: "object", properties: { reminder_id: { type: "string" } }, required: ["reminder_id"] },
+  },
+  {
+    name: "search_past_chats",
+    description:
+      "Search earlier conversations with the user (not this one) by keywords. Use when they refer to something discussed before (\"what was that restaurant you found last week?\") that isn't in this chat or saved facts.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Keywords; supports \"quoted phrases\" and -exclusions." },
+        limit: { type: "integer", description: "1-15, default 8" },
+      },
+      required: ["query"],
+    },
   },
   {
     name: "start_task",
@@ -203,6 +219,17 @@ async function runClientTool(
         const { reminder_id } = CancelReminderInput.parse(block.input);
         const ok = await reminders.cancelReminder(config.userId, reminder_id);
         return result(ok ? "Cancelled." : "No upcoming reminder with that id.", !ok);
+      }
+      case "search_past_chats": {
+        const { query: q, limit } = SearchChatsInput.parse(block.input);
+        const tz = await reminders.getTimezone(config.userId);
+        const hits = await memory.searchMessages(config.userId, q, { limit, excludeConversationId: conversationId });
+        if (hits.length === 0) return result("No earlier messages match.");
+        return result(
+          hits
+            .map((h) => `${describeNow(tz, new Date(h.created_at))} · ${h.role === "user" ? "User" : "Jarvis"}${h.title ? ` · "${h.title}"` : ""}\n${h.snippet}`)
+            .join("\n\n"),
+        );
       }
       case "start_task": {
         if (!taskLaneConfigured()) {

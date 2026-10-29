@@ -118,3 +118,34 @@ export async function deleteFact(userId: string, factId: string) {
   ]);
   return rows.length > 0;
 }
+
+export interface SearchHit {
+  conversation_id: string;
+  title: string | null;
+  role: "user" | "assistant";
+  created_at: string;
+  snippet: string;
+}
+
+/** Full-text search over what the user and Jarvis said, newest and best matches first. */
+export async function searchMessages(
+  userId: string,
+  q: string,
+  opts: { limit?: number; excludeConversationId?: string } = {},
+): Promise<SearchHit[]> {
+  return query<SearchHit>(
+    `WITH q AS (SELECT websearch_to_tsquery('english', $2) AS query)
+     SELECT m.conversation_id, c.title, m.role, m.created_at,
+            ts_headline('english', m.display_text, q.query,
+                        'MaxWords=30, MinWords=10, MaxFragments=2, StartSel=«, StopSel=»') AS snippet
+     FROM messages m JOIN conversations c ON c.id = m.conversation_id, q
+     WHERE c.user_id = $1
+       AND m.display_text IS NOT NULL
+       AND to_tsvector('english', coalesce(m.display_text, '')) @@ q.query
+       AND ($4::uuid IS NULL OR m.conversation_id <> $4::uuid)
+     ORDER BY ts_rank(to_tsvector('english', coalesce(m.display_text, '')), q.query) * 0.5
+              + 1.0 / (1 + extract(epoch FROM now() - m.created_at) / 86400 / 30) DESC
+     LIMIT $3`,
+    [userId, q, Math.min(opts.limit ?? 8, 25), opts.excludeConversationId ?? null],
+  );
+}

@@ -57,7 +57,7 @@ describe("Google OAuth", () => {
     const state = url.searchParams.get("state")!;
 
     mockFetch({
-      "oauth2.googleapis.com/token": () => ({ access_token: "at", refresh_token: "rt", expires_in: 3600, scope: "email" }),
+      "oauth2.googleapis.com/token": () => ({ access_token: "at", refresh_token: "refresh-token-123", expires_in: 3600, scope: "email" }),
       userinfo: () => ({ email: "k@example.com" }),
     });
     const res = await app.request(`/oauth/google/callback?code=abc&state=${state}`);
@@ -65,8 +65,8 @@ describe("Google OAuth", () => {
     expect(await res.text()).toContain("k@example.com");
 
     const [row] = await query<{ tokens: string }>("SELECT tokens FROM connectors");
-    expect(row.tokens).not.toContain("rt");
-    expect(JSON.parse(decrypt(row.tokens, SECRET)).refresh_token).toBe("rt");
+    expect(row.tokens).not.toContain("refresh-token-123");
+    expect(JSON.parse(decrypt(row.tokens, SECRET)).refresh_token).toBe("refresh-token-123");
     expect(await googleStatus("me")).toMatchObject({ available: true, connected: true, email: "k@example.com" });
 
     // The state is single use.
