@@ -102,7 +102,35 @@ export interface Device {
 
 const isDeviceToken = (token: string) => token.startsWith("jvd_");
 const PAIRING_CODE = /^[2-9a-z]{4}[-\s]?[2-9a-z]{4}$/i;
-export const deviceName = () => Constants.deviceName ?? `Jarvis on ${Platform.OS}`;
+export const deviceName = () =>
+  Platform.OS === "web" ? browserName(globalThis.navigator?.userAgent ?? "") : Constants.deviceName ?? `Jarvis on ${Platform.OS}`;
+
+/** "Chrome on Mac", so a browser sign-in is recognisable in Settings, Signed-in devices. */
+export function browserName(ua: string) {
+  const browser = /Edg\//.test(ua)
+    ? "Edge"
+    : /Firefox\/|FxiOS/.test(ua)
+      ? "Firefox"
+      : /Chrome\/|CriOS/.test(ua)
+        ? "Chrome"
+        : /Safari\//.test(ua)
+          ? "Safari"
+          : "Browser";
+  const os = /iPhone/.test(ua)
+    ? "iPhone"
+    : /iPad/.test(ua)
+      ? "iPad"
+      : /Android/.test(ua)
+        ? "Android"
+        : /Mac OS X/.test(ua)
+          ? "Mac"
+          : /Windows/.test(ua)
+            ? "Windows"
+            : /Linux/.test(ua)
+              ? "Linux"
+              : null;
+  return os ? `${browser} on ${os}` : browser;
+}
 
 /**
  * Signs this phone in. A pairing code from another device, or the master app
