@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Find a time with someone: "when can Sam and I meet next week?" checks both calendars and lists times you're both free. It works for people whose calendar you can see, usually colleagues on the same Google Workspace, and Jarvis says when it couldn't see someone's. Add the `calendar.freebusy` scope to the consent screen (see `docs/DEPLOY.md`), then tap **Connect again** in Settings.
 - Quiet hours: in Settings, **Notifications**, pick when Jarvis should stay quiet (10 PM to 7 AM by default). Replies, finished tasks, email alerts and page changes still arrive, just without a sound. Reminders and routines you set still ring. The Android part needs a new app build.
 - Attach files to calendar events: "make an agenda for my 3pm and attach it", "add the budget sheet to Friday's meeting". Guests can open it from the invite. No updates are emailed to them.
 - Forward email as a draft: "forward the invoice to my accountant". The draft includes the original message and its attachments (up to Gmail's 25 MB), ready for you to send from Gmail. Jarvis still never sends.

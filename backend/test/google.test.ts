@@ -83,7 +83,7 @@ describe("Google OAuth", () => {
 
   it("exposes status, start and disconnect to the app", async () => {
     const status = await app.request("/api/connectors", { headers: auth });
-    expect(await status.json()).toEqual({ google: { available: true, connected: false, email: null, can_organize: false, can_search_contacts: false, can_see_all_calendars: false, can_read_drive: false, can_edit_contacts: false, can_create_docs: false } });
+    expect(await status.json()).toEqual({ google: { available: true, connected: false, email: null, can_organize: false, can_search_contacts: false, can_see_all_calendars: false, can_read_drive: false, can_edit_contacts: false, can_create_docs: false, can_check_others: false } });
     const start = await app.request("/api/connectors/google/start", { method: "POST", headers: auth });
     expect((await start.json()).url).toMatch(/^https:\/\/accounts\.google\.com\//);
 
@@ -809,6 +809,32 @@ describe("free time", () => {
     expect(text).toContain("5:00 PM to 6:00 PM");
     expect(calls[0].url).toContain("singleEvents=true");
     await expect(runGoogleTool("me", "calendar_find_free_time", { time_min: "2026-10-29T13:00:00Z", time_max: "2026-12-29T13:00:00Z" })).rejects.toThrow(/31 days/);
+  });
+
+  it("finds times everyone is free, saying whose calendar it couldn't see", async () => {
+    await connect({ access_token: "at", expires_at: Date.now() + 3600_000 });
+    const args = { time_min: "2026-10-29T13:00:00Z", time_max: "2026-10-29T23:00:00Z", with: ["sam@example.com", "ana@example.com"] };
+    await expect(runGoogleTool("me", "calendar_find_free_time", args, NY)).rejects.toThrow(/other people's free time/);
+    await query("UPDATE connectors SET scopes = 'https://www.googleapis.com/auth/calendar.freebusy'");
+    const calls = mockFetch({
+      freeBusy: () => ({
+        calendars: {
+          "sam@example.com": { busy: [{ start: "2026-10-29T13:00:00Z", end: "2026-10-29T13:30:00Z" }] },
+          "ana@example.com": { errors: [{ reason: "notFound" }] },
+        },
+      }),
+      "calendar/v3": () => ({ items: [{ start: { dateTime: "2026-10-29T14:00:00Z" }, end: { dateTime: "2026-10-29T21:00:00Z" } }] }),
+    });
+    const text = await runGoogleTool("me", "calendar_find_free_time", args, NY);
+    expect(text).toContain("Thu, Oct 29, 9:30 AM to 10:00 AM");
+    expect(text).not.toContain("9:00 AM to");
+    expect(text).toMatch(/Couldn't see the calendar of ana@example\.com/);
+    const fb = calls.find((c) => c.url.includes("freeBusy"))!;
+    expect(JSON.parse(fb.init!.body as string)).toEqual({
+      timeMin: "2026-10-29T13:00:00.000Z",
+      timeMax: "2026-10-29T23:00:00.000Z",
+      items: [{ id: "sam@example.com" }, { id: "ana@example.com" }],
+    });
   });
 });
 

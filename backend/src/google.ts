@@ -15,6 +15,7 @@ const CALENDAR_LIST_SCOPE = "https://www.googleapis.com/auth/calendar.calendarli
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.readonly";
 const CONTACTS_WRITE_SCOPE = "https://www.googleapis.com/auth/contacts";
 const DRIVE_FILE_SCOPE = "https://www.googleapis.com/auth/drive.file";
+const FREEBUSY_SCOPE = "https://www.googleapis.com/auth/calendar.freebusy";
 const SCOPES = [
   "openid",
   "email",
@@ -27,6 +28,7 @@ const SCOPES = [
   DRIVE_SCOPE,
   CONTACTS_WRITE_SCOPE,
   DRIVE_FILE_SCOPE,
+  FREEBUSY_SCOPE,
 ];
 
 interface Tokens {
@@ -66,6 +68,7 @@ export async function googleStatus(userId: string) {
     can_read_drive: Boolean(row?.scopes.split(" ").includes(DRIVE_SCOPE)),
     can_edit_contacts: Boolean(row?.scopes.split(" ").includes(CONTACTS_WRITE_SCOPE)),
     can_create_docs: Boolean(row?.scopes.split(" ").includes(DRIVE_FILE_SCOPE)),
+    can_check_others: Boolean(row?.scopes.split(" ").includes(FREEBUSY_SCOPE)),
   };
 }
 
@@ -375,7 +378,7 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
   {
     name: "calendar_find_free_time",
     description:
-      "Find open slots on the user's calendar between two ISO 8601 times, within their day (default 9:00 to 18:00 local, weekdays). Use it for \"when am I free\" and before suggesting a time to meet.",
+      "Find open slots on the user's calendar between two ISO 8601 times, within their day (default 9:00 to 18:00 local, weekdays). Use it for \"when am I free\" and before suggesting a time to meet. Pass with (email addresses) to find times everyone is free (\"when can Sam and I meet?\"); that works for people whose calendar the user can see, usually colleagues in the same Google Workspace.",
     eager_input_streaming: true,
     input_schema: {
       type: "object",
@@ -386,6 +389,7 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
         day_start: { type: "string", description: "Local HH:MM. Default 09:00." },
         day_end: { type: "string", description: "Local HH:MM. Default 18:00." },
         include_weekends: { type: "boolean" },
+        with: { type: "array", items: { type: "string" }, description: "Other people's email addresses, to find times everyone is free" },
       },
       required: ["time_min", "time_max"],
     },
@@ -615,6 +619,7 @@ const inputs = {
     day_start: hhmm.default("09:00"),
     day_end: hhmm.default("18:00"),
     include_weekends: z.boolean().default(false),
+    with: z.array(z.string().trim().email()).max(20).default([]),
   }),
   calendar_create_event: z
     .object({
@@ -1445,6 +1450,8 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
       const to = new Date(f.time_max);
       if (to <= from) throw new Error("time_max must be after time_min");
       if (to.getTime() - from.getTime() > 31 * 24 * 3600_000) throw new Error("Look at most 31 days ahead at a time");
+      if (f.with.length && !(await googleStatus(userId)).can_check_others)
+        throw new Error("Jarvis needs permission to check other people's free time. In Settings, tap Connect again next to Google.");
       // From the events themselves rather than the freeBusy endpoint, which the calendar.events scope doesn't cover.
       const params = new URLSearchParams({ timeMin: from.toISOString(), timeMax: to.toISOString(), singleEvents: "true", maxResults: "250" });
       const events = (await eventsAcross<CalEvent>(userId, params)).map((e) => e.event);
@@ -1452,15 +1459,31 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
       const busy = events
         .filter(blocksTime)
         .map((ev) => ({ start: ev.start.dateTime!, end: ev.end.dateTime! }));
+      let unseen = "";
+      if (f.with.length) {
+        const fb = await google<{ calendars: Record<string, { busy?: { start: string; end: string }[]; errors?: { reason: string }[] }> }>(
+          userId,
+          "https://www.googleapis.com/calendar/v3/freeBusy",
+          { method: "POST", body: { timeMin: from.toISOString(), timeMax: to.toISOString(), items: f.with.map((id) => ({ id })) } },
+        );
+        const hidden: string[] = [];
+        for (const email of f.with) {
+          const cal = fb.calendars[email];
+          if (!cal || cal.errors?.length) hidden.push(email);
+          else busy.push(...(cal.busy ?? []));
+        }
+        if (hidden.length) unseen = `\nCouldn't see the calendar of ${hidden.join(", ")}, so these times only fit the others.`;
+      }
       const slots = freeSlots(busy, from, to, { minMinutes: f.duration_minutes, dayStart: f.day_start, dayEnd: f.day_end, weekends: f.include_weekends }, timeZone);
-      if (slots.length === 0) return `No free ${f.duration_minutes}-minute slots between ${f.day_start} and ${f.day_end} in that range.`;
+      if (slots.length === 0) return `No free ${f.duration_minutes}-minute slots between ${f.day_start} and ${f.day_end} in that range.${unseen}`;
       const day = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short", month: "short", day: "numeric" });
       const time = new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit" });
       const shown = slots.slice(0, 15);
       return (
         `Free (${timeZone}):\n` +
         shown.map((s) => `- ${day.format(s.start)}, ${time.format(s.start)} to ${time.format(s.end)} (${s.start.toISOString()} to ${s.end.toISOString()})`).join("\n") +
-        (slots.length > shown.length ? `\n…and ${slots.length - shown.length} more.` : "")
+        (slots.length > shown.length ? `\n…and ${slots.length - shown.length} more.` : "") +
+        unseen
       );
     }
     case "calendar_create_event": {
