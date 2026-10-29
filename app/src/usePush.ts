@@ -31,6 +31,16 @@ if (pushSupported) Notifications.setNotificationCategoryAsync("reminder", [
   { identifier: "snooze60", buttonTitle: "Snooze 1 hour", options: { opensAppToForeground: true } },
 ]).catch(() => {});
 
+// Reply from the notification of an answer or a finished task, without opening the chat first.
+if (pushSupported) Notifications.setNotificationCategoryAsync("reply", [
+  {
+    identifier: "reply",
+    buttonTitle: "Reply",
+    textInput: { submitButtonTitle: "Send", placeholder: "Reply to Jarvis" },
+    options: { opensAppToForeground: true },
+  },
+]).catch(() => {});
+
 export function askApproval(settings: Settings, approvalId: string, summary: string, onDecided?: () => void) {
   const decide = (decision: "allow" | "deny") =>
     api.decide(settings, approvalId, decision).then(onDecided, (err) => Alert.alert("Could not send", String(err)));
@@ -45,10 +55,15 @@ const handled = new Set<string>();
 
 /**
  * Registers this device for notifications and handles taps: Approve/Deny
- * and Snooze buttons act right away, a plain tap on an approval asks, and
- * anything tied to a conversation opens it.
+ * and Snooze buttons act right away, a typed Reply is sent in its chat, a
+ * plain tap on an approval asks, and anything tied to a conversation opens it.
  */
-export function usePush(settings: Settings | null, onTaskUpdate: () => void, onOpenConversation?: (id: string) => void) {
+export function usePush(
+  settings: Settings | null,
+  onTaskUpdate: () => void,
+  onOpenConversation?: (id: string) => void,
+  onReply?: (conversationId: string, text: string) => void,
+) {
   useEffect(() => {
     if (!settings || !pushSupported) return;
     (async () => {
@@ -67,6 +82,10 @@ export function usePush(settings: Settings | null, onTaskUpdate: () => void, onO
       if (handled.has(key)) return;
       handled.add(key);
       const data = response.notification.request.content.data as { approvalId?: string; conversationId?: string; reminderId?: string };
+      if (response.actionIdentifier === "reply" && data.conversationId && response.userText?.trim()) {
+        onReply?.(data.conversationId, response.userText.trim());
+        return;
+      }
       const snooze = SNOOZE[response.actionIdentifier];
       if (data.reminderId && snooze) {
         api.snoozeReminder(settings, data.reminderId, snooze).then(onTaskUpdate, (err) => Alert.alert("Could not snooze", String(err)));

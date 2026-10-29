@@ -119,5 +119,5 @@ async function fire(r: Reminder, runPrompt: RunPrompt) {
     return;
   }
   const answer = await runPrompt(conversationId, r.text);
-  await sendPush(r.user_id, "Jarvis", answer || r.text, { conversationId, reminderId: r.id });
+  await sendPush(r.user_id, "Jarvis", answer || r.text, { conversationId, reminderId: r.id }, "reply");
 }

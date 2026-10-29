@@ -98,7 +98,10 @@ export default function ChatScreen({
   const refresh = useCallback(async () => {
     const tasks = await api.tasks(settings).catch(() => []);
     setApprovals(tasks.flatMap((t) => t.pending_approvals));
-    setMessages(conversationId ? await api.messages(settings, conversationId) : []);
+    const loaded = conversationId ? await api.messages(settings, conversationId) : [];
+    // A message sent while this was loading (a link or notification reply) shows its own bubbles.
+    if (inFlight.current) return;
+    setMessages(loaded);
     if (!conversationId) {
       const dayAhead = Date.now() + 24 * 3600_000;
       const [reminders, agenda] = await Promise.all([

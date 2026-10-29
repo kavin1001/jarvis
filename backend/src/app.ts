@@ -205,7 +205,7 @@ app.post("/api/chat", async (c) => {
     }
     if (detached && !stop.signal.aborted && reply.trim()) {
       const preview = reply.length > 180 ? `${reply.slice(0, 177)}…` : reply;
-      await sendPush(config.userId, "Jarvis replied", preview, { conversationId: id }).catch((err) => console.warn("reply push failed", err));
+      await sendPush(config.userId, "Jarvis replied", preview, { conversationId: id }, "reply").catch((err) => console.warn("reply push failed", err));
     }
   });
 });

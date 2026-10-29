@@ -95,7 +95,7 @@ describe("chat stream", () => {
     await res.body!.cancel(); // the phone locked and dropped the connection
     model.release();
     await until(async () => pushes.length === 1);
-    expect(pushes[0]).toMatchObject({ title: "Jarvis replied", body: "The answer is 42.", data: { conversationId: id } });
+    expect(pushes[0]).toMatchObject({ title: "Jarvis replied", body: "The answer is 42.", data: { conversationId: id }, categoryId: "reply" });
     expect((await memory.getMessages(id)).at(-1)?.display_text).toBe("The answer is 42.");
     expect(await stop(id)).toBe(false);
   });

@@ -16,6 +16,9 @@ export type Command =
 
 let nextId = 1;
 
+/** Ask Jarvis something from outside the chat screen, such as a notification reply. */
+export const askCommand = (text: string): Command => ({ id: nextId++, kind: "ask", text: text.slice(0, 20_000), voice: false });
+
 export function parseLink(url: string): Command | null {
   const match = url.match(/^(?:jarvis:\/\/\/?|https?:\/\/[^/?#]+\/)([^?#]*)(?:\?([^#]*))?/i);
   if (!match) return null;

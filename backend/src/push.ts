@@ -13,7 +13,10 @@ export async function sendPush(
   title: string,
   body: string,
   data: Record<string, unknown> = {},
-  /** An app-registered category, e.g. "approval" for Approve/Deny buttons on the lock screen. */
+  /**
+   * An app-registered category: "approval" (Approve/Deny), "reminder" (Snooze) or
+   * "reply" (answer Jarvis from the notification).
+   */
   categoryId?: string,
 ) {
   const tokens = await query<{ token: string }>("SELECT token FROM push_tokens WHERE user_id = $1", [

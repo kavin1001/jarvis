@@ -5,7 +5,8 @@ import { ActivityIndicator, Button, Platform, SafeAreaView, StyleSheet, View } f
 import { AppLock } from "./src/appLock";
 import { api, loadSettings, saveSettings, signIn, upgradeToDeviceToken, type Settings } from "./src/api";
 import { ConnectionProvider, OfflineBanner } from "./src/connection";
-import { useDeepLinkCommand } from "./src/deepLink";
+import { useDeepLinkCommand, type Command } from "./src/deepLink";
+import { askCommand } from "./src/links";
 import ChatScreen from "./src/screens/ChatScreen";
 import HistoryScreen from "./src/screens/HistoryScreen";
 import MemoryScreen from "./src/screens/MemoryScreen";
@@ -73,13 +74,19 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
       .catch(() => {});
   }, [settings, refreshKey, tab]);
 
-  const command = useDeepLinkCommand();
+  const linkCommand = useDeepLinkCommand();
+  // A reply typed into a notification, sent in that notification's chat.
+  const [pushCommand, setPushCommand] = useState<Command | null>(null);
+  const command = [linkCommand, pushCommand].reduce<Command | null>((a, b) => (b && (!a || b.id > a.id) ? b : a), null);
   useEffect(() => {
     if (command) setTab("chat");
   }, [command]);
 
   const bump = useCallback(() => setRefreshKey((k) => k + 1), []);
-  usePush(settings, bump, openConversation);
+  usePush(settings, bump, openConversation, (id, text) => {
+    openConversation(id);
+    setPushCommand(askCommand(text));
+  });
 
   function openConversation(id: string | undefined) {
     setConversationId(id);
