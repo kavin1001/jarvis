@@ -20,7 +20,7 @@ afterEach(() => vi.unstubAllGlobals());
 afterAll(() => pool.end());
 
 type Handler = (url: string, init?: RequestInit) => unknown;
-/** Stubs fetch; each handler returns a JSON body for URLs containing its key. */
+/** Stubs fetch; each handler returns a JSON body (or a whole Response) for URLs containing its key. */
 function mockFetch(routes: Record<string, Handler>) {
   const calls: { url: string; init?: RequestInit }[] = [];
   vi.stubGlobal(
@@ -29,7 +29,8 @@ function mockFetch(routes: Record<string, Handler>) {
       calls.push({ url, init });
       const key = Object.keys(routes).find((k) => url.includes(k));
       if (!key) return new Response("not mocked", { status: 500 });
-      return Response.json(routes[key](url, init));
+      const out = routes[key](url, init);
+      return out instanceof Response ? out : Response.json(out);
     }),
   );
   return calls;
@@ -82,7 +83,7 @@ describe("Google OAuth", () => {
 
   it("exposes status, start and disconnect to the app", async () => {
     const status = await app.request("/api/connectors", { headers: auth });
-    expect(await status.json()).toEqual({ google: { available: true, connected: false, email: null, can_organize: false, can_search_contacts: false, can_see_all_calendars: false } });
+    expect(await status.json()).toEqual({ google: { available: true, connected: false, email: null, can_organize: false, can_search_contacts: false, can_see_all_calendars: false, can_read_drive: false } });
     const start = await app.request("/api/connectors/google/start", { method: "POST", headers: auth });
     expect((await start.json()).url).toMatch(/^https:\/\/accounts\.google\.com\//);
 
@@ -444,6 +445,59 @@ describe("all calendars", () => {
 
     expect(await runGoogleTool("me", "calendar_delete_event", { event_id: `${family}|ev2` })).toBe("Event deleted.");
     expect(calls.at(-1)!.url).toContain(`calendars/${encodeURIComponent(family)}/events/ev2?sendUpdates=none`);
+  });
+});
+
+describe("Google Drive", () => {
+  const DRIVE_SCOPE = "email https://www.googleapis.com/auth/drive.readonly";
+  const files: Record<string, object> = {
+    doc1234567890: { id: "doc1234567890", name: "Lease", mimeType: "application/vnd.google-apps.document" },
+    sheet123456789: { id: "sheet123456789", name: "Budget", mimeType: "application/vnd.google-apps.spreadsheet" },
+    pdf12345678901: { id: "pdf12345678901", name: "Scan.pdf", mimeType: "application/pdf", size: "2048" },
+    big12345678901: { id: "big12345678901", name: "Video.mp4", mimeType: "video/mp4", size: "90000000" },
+    form1234567890: { id: "form1234567890", name: "Survey", mimeType: "application/vnd.google-apps.form" },
+  };
+  const drive = () =>
+    mockFetch({
+      "/export?": (url) => new Response(url.includes("text%2Fcsv") ? "month,amount\nOct,1200" : "Rent is due on the 1st."),
+      "?alt=media": () => new Response(Buffer.from("%PDF-1.4 scan")),
+      "drive/v3/files?": () => ({
+        files: [
+          { id: "doc1234567890", name: "Lease", mimeType: "application/vnd.google-apps.document", modifiedTime: "2026-09-01T10:00:00Z", owners: [{ displayName: "Me", me: true }] },
+          { id: "pdf12345678901", name: "Scan.pdf", mimeType: "application/pdf", owners: [{ displayName: "Ana Ruiz", me: false }] },
+        ],
+      }),
+      "drive/v3/files/": (url) => files[url.split("/files/")[1].split("?")[0]] ?? new Response("{}", { status: 404 }),
+    });
+
+  it("asks to reconnect without the Drive permission", async () => {
+    await connect({ access_token: "at", expires_at: Date.now() + 3600_000 }, "email");
+    await expect(runGoogleTool("me", "drive_search", { query: "lease" })).rejects.toThrow(/Connect again/);
+    expect((await googleStatus("me")).can_read_drive).toBe(false);
+  });
+
+  it("searches by name or contents, escaping quotes", async () => {
+    await connect({ access_token: "at", expires_at: Date.now() + 3600_000 }, DRIVE_SCOPE);
+    const calls = drive();
+    const found = (await runGoogleTool("me", "drive_search", { query: "Kavin's lease" })) as string;
+    expect(found.split("\n")).toEqual(["[doc1234567890] Lease (Google Doc, changed 2026-09-01)", "[pdf12345678901] Scan.pdf (PDF, owned by Ana Ruiz)"]);
+    const q = new URL(calls[0].url).searchParams.get("q");
+    expect(q).toBe("trashed = false and (name contains 'Kavin\\'s lease' or fullText contains 'Kavin\\'s lease')");
+  });
+
+  it("reads Docs and Sheets as text, PDFs as attachments, and refuses what it can't open", async () => {
+    await connect({ access_token: "at", expires_at: Date.now() + 3600_000 }, DRIVE_SCOPE);
+    drive();
+    expect(await runGoogleTool("me", "drive_read", { file_id: "doc1234567890" })).toBe(
+      'Lease (Google Doc):\n<file_content untrusted="true">\nRent is due on the 1st.\n</file_content>',
+    );
+    expect(await runGoogleTool("me", "drive_read", { file_id: "sheet123456789" })).toContain("month,amount\nOct,1200");
+    expect(await runGoogleTool("me", "drive_read", { file_id: "pdf12345678901" })).toEqual({
+      attachment: { filename: "Scan.pdf", media_type: "application/pdf", data: Buffer.from("%PDF-1.4 scan").toString("base64") },
+    });
+    expect(await runGoogleTool("me", "drive_read", { file_id: "big12345678901" })).toMatch(/too large/);
+    expect(await runGoogleTool("me", "drive_read", { file_id: "form1234567890" })).toMatch(/can't open Survey/);
+    await expect(runGoogleTool("me", "drive_read", { file_id: "../../etc" })).rejects.toThrow();
   });
 });
 

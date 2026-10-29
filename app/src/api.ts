@@ -296,7 +296,7 @@ export interface McpServer {
 }
 
 export interface Connectors {
-  google: { available: boolean; connected: boolean; email: string | null; can_organize: boolean; can_search_contacts: boolean; can_see_all_calendars: boolean };
+  google: { available: boolean; connected: boolean; email: string | null; can_organize: boolean; can_search_contacts: boolean; can_see_all_calendars: boolean; can_read_drive: boolean };
 }
 
 export interface NotifySettings {
