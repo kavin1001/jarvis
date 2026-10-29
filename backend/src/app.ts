@@ -400,6 +400,13 @@ app.patch("/api/privacy", async (c) => {
   const deleted = await sweepOldChats();
   return c.json({ chat_retention_days: body.data.chat_retention_days, deleted });
 });
+app.get("/api/instructions", async (c) => c.json({ instructions: await memory.getInstructions(config.userId) }));
+const InstructionsBody = z.object({ instructions: z.string().max(memory.MAX_INSTRUCTIONS).nullable() }).strict();
+app.put("/api/instructions", async (c) => {
+  const body = InstructionsBody.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) return c.json({ error: `instructions must be text up to ${memory.MAX_INSTRUCTIONS} characters, or null` }, 400);
+  return c.json({ instructions: await memory.setInstructions(config.userId, body.data.instructions) });
+});
 app.get("/api/activity", async (c) => c.json(await recentActivity(config.userId, Math.min(200, Number(c.req.query("limit")) || 50))));
 app.get("/api/notes", async (c) => c.json(await notes.findNotes(config.userId, (c.req.query("q") ?? "").slice(0, 200))));
 const NewNote = z.object({ body: z.string().trim().min(1).max(notes.MAX_BODY), title: z.string().trim().max(120).optional() }).strict();

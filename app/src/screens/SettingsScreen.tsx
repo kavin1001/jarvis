@@ -9,6 +9,7 @@ import { api, clearSettings, type Connectors, type Settings, type Usage } from "
 import { locationSharingEnabled, setLocationSharing } from "../location";
 import { Activity } from "./Activity";
 import { ChatRetention } from "./ChatRetention";
+import { ReplyStyle } from "./ReplyStyle";
 import { Devices } from "./Devices";
 import { SetupStatus } from "./SetupStatus";
 import { YourData } from "./YourData";
@@ -169,7 +170,8 @@ export default function SettingsScreen({
       <McpServers settings={settings} />
       <Activity settings={settings} refreshKey={statusKey} />
 
-      <Section title="Voice and appearance" />
+      <Section title="Replies, voice and appearance" />
+      <ReplyStyle settings={settings} />
       <View style={styles.row}>
         <Text style={styles.rowMeta}>Appearance</Text>
         <Choices options={APPEARANCES} value={appearance} onChange={setAppearance} />

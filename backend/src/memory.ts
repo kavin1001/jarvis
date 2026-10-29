@@ -185,3 +185,20 @@ export async function searchMessages(
     [userId, q, Math.min(opts.limit ?? 8, 25), opts.excludeConversationId ?? null],
   );
 }
+
+/** The user's own "how to reply" instructions ("keep it short", "metric units"), or null. */
+export const MAX_INSTRUCTIONS = 1500;
+export async function getInstructions(userId: string): Promise<string | null> {
+  const [row] = await query<{ custom_instructions: string | null }>("SELECT custom_instructions FROM user_settings WHERE user_id = $1", [userId]);
+  return row?.custom_instructions ?? null;
+}
+
+export async function setInstructions(userId: string, text: string | null) {
+  const value = text?.trim() ? text.trim().slice(0, MAX_INSTRUCTIONS) : null;
+  await query(
+    `INSERT INTO user_settings (user_id, custom_instructions) VALUES ($1, $2)
+     ON CONFLICT (user_id) DO UPDATE SET custom_instructions = $2, updated_at = now()`,
+    [userId, value],
+  );
+  return value;
+}

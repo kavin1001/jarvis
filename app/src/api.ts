@@ -396,6 +396,9 @@ export const api = {
     request<{ removed: number }>(s, `/api/lists/${encodeURIComponent(list)}${all ? "?all=1" : ""}`, { method: "DELETE" }),
   importClaude: (s: Settings, chats: unknown) =>
     request<{ imported: number; skipped: number; messages: number }>(s, "/api/import/claude", { method: "POST", body: chats }),
+  instructions: (s: Settings) => request<{ instructions: string | null }>(s, "/api/instructions"),
+  setInstructions: (s: Settings, instructions: string | null) =>
+    request<{ instructions: string | null }>(s, "/api/instructions", { method: "PUT", body: { instructions } }),
   privacy: (s: Settings, preview?: number) =>
     request<{ chat_retention_days: number | null; would_delete?: number }>(s, `/api/privacy${preview ? `?preview=${preview}` : ""}`),
   setChatRetention: (s: Settings, days: number | null) =>

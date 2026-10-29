@@ -24,6 +24,7 @@ export async function exportData(userId: string) {
       messages: (byConversation.get(c.id) ?? []).map(({ conversation_id: _, ...m }) => m),
     })),
     facts: await query("SELECT fact, created_at FROM facts WHERE user_id = $1 ORDER BY created_at", [userId]),
+    custom_instructions: (await query<{ custom_instructions: string | null }>("SELECT custom_instructions FROM user_settings WHERE user_id = $1", [userId]))[0]?.custom_instructions ?? null,
     reminders: await query("SELECT text, action, due_at, repeat, status FROM reminders WHERE user_id = $1 ORDER BY due_at", [userId]),
     places: await query("SELECT name, latitude, longitude FROM places WHERE user_id = $1 ORDER BY name", [userId]),
     place_reminders: await query(
@@ -53,6 +54,7 @@ export async function deleteAllData(userId: string) {
   await query("DELETE FROM reminders WHERE user_id = $1", [userId]);
   await query("DELETE FROM conversations WHERE user_id = $1", [userId]); // cascades to messages, tasks, approvals
   await query("DELETE FROM facts WHERE user_id = $1", [userId]);
+  await query("UPDATE user_settings SET custom_instructions = NULL WHERE user_id = $1", [userId]);
   await query("DELETE FROM list_items WHERE user_id = $1", [userId]);
   await query("DELETE FROM notes WHERE user_id = $1", [userId]);
   await query("DELETE FROM activity WHERE user_id = $1", [userId]);

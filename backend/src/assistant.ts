@@ -446,13 +446,17 @@ const tools: Anthropic.Beta.BetaToolUnion[] = [
 ];
 
 async function buildSystem(): Promise<Anthropic.Beta.BetaTextBlockParam[]> {
-  const facts = await memory.listFacts(config.userId);
+  const [facts, instructions] = await Promise.all([memory.listFacts(config.userId), memory.getInstructions(config.userId)]);
   const factText =
     facts.length === 0
       ? "You have not saved any facts about the user yet."
       : "Saved facts about the user:\n" + facts.map((f) => `- [${f.id}] ${f.fact}`).join("\n");
   return [
     { type: "text", text: SYSTEM_PROMPT },
+    // A block of their own, so the fixed prompt stays byte-identical.
+    ...(instructions
+      ? [{ type: "text" as const, text: `The user's instructions for how you reply (from Settings; follow them unless they conflict with the rules above):\n${instructions}` }]
+      : []),
     { type: "text", text: factText },
   ];
 }

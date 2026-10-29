@@ -104,6 +104,28 @@ describe("runTurn", () => {
     expect(await memory.listFacts("me")).toEqual([{ id: factId, fact: "Lives in Boston" }]);
   });
 
+  it("sends the user's reply instructions in their own system block, set over the API", async () => {
+    const put = (body: unknown) => app.request("/api/instructions", { method: "PUT", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    expect(await (await app.request("/api/instructions", { headers: auth })).json()).toEqual({ instructions: null });
+    expect(await (await put({ instructions: "  Keep it short.  " })).json()).toEqual({ instructions: "Keep it short." });
+    expect((await put({ instructions: "x".repeat(2000) })).status).toBe(400);
+
+    const requests = fakeClient([
+      { content: [{ type: "text", text: "Hi.", citations: null }], stop_reason: "end_turn" },
+      { content: [{ type: "text", text: "Hi.", citations: null }], stop_reason: "end_turn" },
+    ]);
+    const id = await memory.createConversation("me");
+    await runTurn({ conversationId: id, text: "hello", source: "text", emit: () => {} });
+    const system = requests[0].system as { text: string }[];
+    expect(system).toHaveLength(3);
+    expect(system[1].text).toMatch(/instructions for how you reply[\s\S]*\nKeep it short\.$/);
+
+    expect(await (await put({ instructions: "" })).json()).toEqual({ instructions: null });
+    await runTurn({ conversationId: id, text: "again", source: "text", emit: () => {} });
+    expect(requests[1].system as unknown[]).toHaveLength(2);
+    expect((requests[1].system as { text: string }[])[0].text).toBe(system[0].text);
+  });
+
   it("marks voice turns and folds in pending task updates", async () => {
     const requests = fakeClient([
       { content: [{ type: "text", text: "Sure.", citations: null }], stop_reason: "end_turn" },

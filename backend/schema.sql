@@ -294,6 +294,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS conversations_import_ref ON conversations (use
 
 -- How long to keep chats, in days since they were last used. NULL keeps them for good.
 ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS chat_retention_days INTEGER CHECK (chat_retention_days > 0);
+-- "How Jarvis should reply": the user's own instructions, sent with every chat.
+ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS custom_instructions TEXT;
 
 -- "Tell me when Sam replies": a Gmail search checked every few minutes, with a notification for each new match.
 CREATE TABLE IF NOT EXISTS mail_watches (

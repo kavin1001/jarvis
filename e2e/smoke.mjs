@@ -75,7 +75,7 @@ await step("memory", async () => {
 
 await step("settings", async () => {
   await tab("Settings");
-  for (const heading of ["Usage", "Privacy", "Keep chats", "What Jarvis did on your accounts", "Signed-in devices"]) await see(heading);
+  for (const heading of ["Usage", "How Jarvis replies", "Privacy", "Keep chats", "What Jarvis did on your accounts", "Signed-in devices"]) await see(heading);
 });
 
 await step("no page errors", async () => {
