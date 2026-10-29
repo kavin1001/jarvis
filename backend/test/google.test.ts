@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import { app } from "../src/app.js";
 import { decrypt, encrypt } from "../src/crypto.js";
 import { query, pool } from "../src/db.js";
-import { googleStatus, runGoogleTool, startGoogleAuth } from "../src/google.js";
+import { freeSlots, googleStatus, runGoogleTool, startGoogleAuth } from "../src/google.js";
 import { auth, resetDb } from "./helpers.js";
 
 const SECRET = "test-connector-secret";
@@ -272,5 +272,66 @@ describe("Google tools", () => {
 
     mockFetch({});
     expect(await (await agenda("?lat=1&lon=2")).json()).toEqual({ events: [], weather: null });
+  });
+});
+
+describe("free time", () => {
+  const day = { minMinutes: 30, dayStart: "09:00", dayEnd: "18:00", weekends: false };
+  const NY = "America/New_York";
+
+  it("finds the gaps between meetings within the local working day", () => {
+    // Thursday 29 October 2026 in New York (UTC-4): busy 10:00-11:00 and 10:30-12:00 (overlapping), 15:00-15:15.
+    const busy = [
+      { start: "2026-10-29T19:00:00Z", end: "2026-10-29T19:15:00Z" },
+      { start: "2026-10-29T14:00:00Z", end: "2026-10-29T15:00:00Z" },
+      { start: "2026-10-29T14:30:00Z", end: "2026-10-29T16:00:00Z" },
+    ];
+    const slots = freeSlots(busy, new Date("2026-10-29T04:00:00Z"), new Date("2026-10-30T04:00:00Z"), day, NY);
+    expect(slots.map((s) => [s.start.toISOString(), s.end.toISOString()])).toEqual([
+      ["2026-10-29T13:00:00.000Z", "2026-10-29T14:00:00.000Z"], // 9-10
+      ["2026-10-29T16:00:00.000Z", "2026-10-29T19:00:00.000Z"], // 12-3
+      ["2026-10-29T19:15:00.000Z", "2026-10-29T22:00:00.000Z"], // 3:15-6
+    ]);
+  });
+
+  it("skips weekends, honours the minimum length, starts no earlier than now, and handles a DST change", () => {
+    // Fri 30 Oct 2026 16:40 New York to Mon 2 Nov (clocks go back on Sun 1 Nov).
+    const slots = freeSlots(
+      [{ start: "2026-10-30T21:00:00Z", end: "2026-10-30T21:45:00Z" }],
+      new Date("2026-10-30T20:40:00Z"),
+      new Date("2026-11-03T05:00:00Z"),
+      { ...day, minMinutes: 20 },
+      NY,
+    );
+    // Friday: 4:40-5:00 is 20 min (kept), 5:45-6:00 is 15 (dropped). Monday is UTC-5: 9:00 = 14:00Z.
+    expect(slots.map((s) => [s.start.toISOString(), s.end.toISOString()])).toEqual([
+      ["2026-10-30T20:40:00.000Z", "2026-10-30T21:00:00.000Z"],
+      ["2026-11-02T14:00:00.000Z", "2026-11-02T23:00:00.000Z"],
+    ]);
+    expect(freeSlots([], new Date("2026-10-31T12:00:00Z"), new Date("2026-11-01T12:00:00Z"), { ...day, weekends: true }, "UTC")).toHaveLength(2);
+  });
+
+  it("asks Google for busy times and lists the slots in the user's time zone", async () => {
+    await connect({ access_token: "at", expires_at: Date.now() + 3600_000 });
+    const calls = mockFetch({
+      "calendar/v3": () => ({
+        items: [
+          { start: { dateTime: "2026-10-29T14:00:00Z" }, end: { dateTime: "2026-10-29T21:00:00Z" } },
+          { start: { date: "2026-10-29" }, end: { date: "2026-10-30" } },
+          { transparency: "transparent", start: { dateTime: "2026-10-29T13:00:00Z" }, end: { dateTime: "2026-10-29T14:00:00Z" } },
+          { attendees: [{ self: true, responseStatus: "declined" }], start: { dateTime: "2026-10-29T21:00:00Z" }, end: { dateTime: "2026-10-29T22:00:00Z" } },
+        ],
+      }),
+    });
+    const text = await runGoogleTool(
+      "me",
+      "calendar_find_free_time",
+      { time_min: "2026-10-29T13:00:00Z", time_max: "2026-10-29T23:00:00Z", duration_minutes: 45 },
+      NY,
+    );
+    expect(text).toContain("Thu, Oct 29, 9:00 AM to 10:00 AM");
+    expect(text).toContain("5:00 PM to 6:00 PM");
+    expect(calls[0].url).toContain("singleEvents=true");
+    await expect(runGoogleTool("me", "calendar_find_free_time", { time_min: "2026-10-29T13:00:00Z", time_max: "2026-12-29T13:00:00Z" })).rejects.toThrow(/31 days/);
   });
 });

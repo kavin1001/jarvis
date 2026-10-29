@@ -1,5 +1,5 @@
 /** Wall-clock parts of an instant in a time zone. */
-function zonedParts(date: Date, timeZone: string) {
+export function zonedParts(date: Date, timeZone: string) {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone,
     hourCycle: "h23",

@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { decrypt, encrypt } from "./crypto.js";
 import { query } from "./db.js";
+import { zonedParts, zonedToUtc } from "./time.js";
 
 // Read mail, save drafts (never send), archive and mark mail, read and change calendar events,
 // and look up contacts (saved ones, and "other contacts": people the user has emailed).
@@ -248,6 +249,24 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
     },
   },
   {
+    name: "calendar_find_free_time",
+    description:
+      "Find open slots on the user's calendar between two ISO 8601 times, within their day (default 9:00 to 18:00 local, weekdays). Use it for \"when am I free\" and before suggesting a time to meet.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        time_min: { type: "string" },
+        time_max: { type: "string" },
+        duration_minutes: { type: "integer", description: "Shortest slot worth listing. Default 30." },
+        day_start: { type: "string", description: "Local HH:MM. Default 09:00." },
+        day_end: { type: "string", description: "Local HH:MM. Default 18:00." },
+        include_weekends: { type: "boolean" },
+      },
+      required: ["time_min", "time_max"],
+    },
+  },
+  {
     name: "calendar_create_event",
     description:
       "Add an event to the user's primary calendar. No invitations are sent. Confirm the details with the user first unless they were explicit.",
@@ -292,6 +311,7 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
 ];
 
 const isoDate = z.string().refine((v) => !Number.isNaN(Date.parse(v)), "must be an ISO 8601 date-time");
+const hhmm = z.string().regex(/^([01]?\d|2[0-3]):[0-5]\d$/, "must be HH:MM");
 const inputs = {
   contacts_search: z.object({ query: z.string().trim().min(1).max(100) }),
   gmail_search: z.object({ query: z.string(), max_results: z.number().int().min(1).max(10).default(5) }),
@@ -307,6 +327,14 @@ const inputs = {
     action: z.enum(["archive", "move_to_inbox", "mark_read", "mark_unread", "star", "unstar"]),
   }),
   calendar_list_events: z.object({ time_min: isoDate, time_max: isoDate, query: z.string().optional() }),
+  calendar_find_free_time: z.object({
+    time_min: isoDate,
+    time_max: isoDate,
+    duration_minutes: z.number().int().min(5).max(24 * 60).default(30),
+    day_start: hhmm.default("09:00"),
+    day_end: hhmm.default("18:00"),
+    include_weekends: z.boolean().default(false),
+  }),
   calendar_create_event: z.object({
     summary: z.string().min(1),
     start: isoDate,
@@ -414,7 +442,44 @@ async function searchContacts(userId: string, q: string): Promise<string> {
   return lines.length ? lines.join("\n") : `No contacts match "${q}".`;
 }
 
-export async function runGoogleTool(userId: string, name: keyof typeof inputs, raw: unknown): Promise<string> {
+/**
+ * Open stretches between busy blocks, clipped to the local working day in timeZone.
+ * Each slot is at least minMinutes long; busy blocks may overlap or come unsorted.
+ */
+export function freeSlots(
+  busy: { start: string; end: string }[],
+  from: Date,
+  to: Date,
+  opts: { minMinutes: number; dayStart: string; dayEnd: string; weekends: boolean },
+  timeZone: string,
+): { start: Date; end: Date }[] {
+  const blocks = busy.map((b) => [Date.parse(b.start), Date.parse(b.end)] as const).sort((a, b) => a[0] - b[0]);
+  const [sh, sm] = opts.dayStart.split(":").map(Number);
+  const [eh, em] = opts.dayEnd.split(":").map(Number);
+  const slots: { start: Date; end: Date }[] = [];
+  // Walk local calendar days from the first to the last.
+  let day = zonedParts(from, timeZone);
+  for (let i = 0; i < 62; i++) {
+    const midday = zonedToUtc(day.year, day.month, day.day, 12, 0, 0, timeZone);
+    if (midday.getTime() - 12 * 3600_000 > to.getTime()) break;
+    const weekday = zonedParts(midday, timeZone).weekday;
+    if (opts.weekends || (weekday !== "Sat" && weekday !== "Sun")) {
+      let cursor = Math.max(zonedToUtc(day.year, day.month, day.day, sh, sm, 0, timeZone).getTime(), from.getTime());
+      const close = Math.min(zonedToUtc(day.year, day.month, day.day, eh, em, 0, timeZone).getTime(), to.getTime());
+      for (const [bs, be] of blocks) {
+        if (be <= cursor) continue;
+        if (bs >= close) break;
+        if (bs - cursor >= opts.minMinutes * 60_000) slots.push({ start: new Date(cursor), end: new Date(bs) });
+        cursor = Math.max(cursor, be);
+      }
+      if (close - cursor >= opts.minMinutes * 60_000) slots.push({ start: new Date(cursor), end: new Date(close) });
+    }
+    day = zonedParts(new Date(midday.getTime() + 24 * 3600_000), timeZone);
+  }
+  return slots;
+}
+
+export async function runGoogleTool(userId: string, name: keyof typeof inputs, raw: unknown, timeZone = "UTC"): Promise<string> {
   const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
   const CAL = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
   switch (name) {
@@ -498,6 +563,38 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
       return res.items
         .map((ev) => `[${ev.id}] ${ev.start.dateTime ?? ev.start.date} to ${ev.end.dateTime ?? ev.end.date}: ${ev.summary ?? "(no title)"}${ev.location ? ` @ ${ev.location}` : ""}`)
         .join("\n");
+    }
+    case "calendar_find_free_time": {
+      const f = inputs.calendar_find_free_time.parse(raw);
+      const from = new Date(f.time_min);
+      const to = new Date(f.time_max);
+      if (to <= from) throw new Error("time_max must be after time_min");
+      if (to.getTime() - from.getTime() > 31 * 24 * 3600_000) throw new Error("Look at most 31 days ahead at a time");
+      // From the events themselves rather than the freeBusy endpoint, which the calendar.events scope doesn't cover.
+      const params = new URLSearchParams({ timeMin: from.toISOString(), timeMax: to.toISOString(), singleEvents: "true", maxResults: "250" });
+      const res = await google<{
+        items: {
+          transparency?: string;
+          start: { dateTime?: string };
+          end: { dateTime?: string };
+          attendees?: { self?: boolean; responseStatus?: string }[];
+        }[];
+      }>(userId, `${CAL}?${params}`);
+      // All-day events, ones marked "free", and invitations the user declined don't block time.
+      const busy = res.items
+        .filter((ev) => ev.start.dateTime && ev.end.dateTime && ev.transparency !== "transparent")
+        .filter((ev) => !ev.attendees?.some((a) => a.self && a.responseStatus === "declined"))
+        .map((ev) => ({ start: ev.start.dateTime!, end: ev.end.dateTime! }));
+      const slots = freeSlots(busy, from, to, { minMinutes: f.duration_minutes, dayStart: f.day_start, dayEnd: f.day_end, weekends: f.include_weekends }, timeZone);
+      if (slots.length === 0) return `No free ${f.duration_minutes}-minute slots between ${f.day_start} and ${f.day_end} in that range.`;
+      const day = new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short", month: "short", day: "numeric" });
+      const time = new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit" });
+      const shown = slots.slice(0, 15);
+      return (
+        `Free (${timeZone}):\n` +
+        shown.map((s) => `- ${day.format(s.start)}, ${time.format(s.start)} to ${time.format(s.end)} (${s.start.toISOString()} to ${s.end.toISOString()})`).join("\n") +
+        (slots.length > shown.length ? `\n…and ${slots.length - shown.length} more.` : "")
+      );
     }
     case "calendar_create_event": {
       const e = inputs.calendar_create_event.parse(raw);
