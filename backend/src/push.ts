@@ -34,7 +34,7 @@ export async function sendPush(
   body: string,
   data: Record<string, unknown> = {},
   /**
-   * An app-registered category: "approval" (Approve/Deny), "reminder" (Snooze) or
+   * An app-registered category: "approval" (Approve/Deny), "reminder" (Snooze), "nag" (Done and Snooze) or
    * "reply" (answer Jarvis from the notification).
    */
   categoryId?: string,

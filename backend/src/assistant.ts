@@ -158,6 +158,7 @@ const SetReminderInput = z
     in_seconds: z.number().int().min(1).max(7 * 24 * 3600).optional(),
     action: z.enum(["notify", "run"]).default("notify"),
     repeat: z.enum(["daily", "weekdays", "weekends", "weekly", "biweekly", "monthly"]).nullish(),
+    nag_minutes: z.number().int().min(5).max(60).nullish(),
   })
   .refine((r) => r.due_at || r.in_seconds, "Give due_at or in_seconds");
 const SearchChatsInput = z.object({ query: z.string().min(1).max(200), limit: z.number().int().min(1).max(15).default(8) });
@@ -255,6 +256,10 @@ const tools: Anthropic.Beta.BetaToolUnion[] = [
         in_seconds: { type: "integer", description: "Instead of due_at, for timers and \"in 20 minutes\": seconds from now." },
         action: { type: "string", enum: ["notify", "run"] },
         repeat: { type: "string", enum: ["daily", "weekdays", "weekends", "weekly", "biweekly", "monthly"], description: "Omit for a one-off. biweekly is every two weeks; monthly keeps the day of the month (the 31st falls on the last day of shorter months)." },
+        nag_minutes: {
+          type: "integer",
+          description: "For \"keep reminding me until I do it\" (pills, leaving for the airport): after going off, the reminder comes back every this many minutes (5-60) until the user taps Done, at most 12 times. notify only.",
+        },
       },
       required: ["text"],
     },
@@ -512,9 +517,11 @@ async function runClientTool(
           action: input.action,
           dueAt,
           repeat: input.repeat ?? null,
+          nagMinutes: input.nag_minutes ?? null,
         });
         const tz = await reminders.getTimezone(config.userId);
-        return result(`Scheduled ${id} for ${describeNow(tz, dueAt)}${input.repeat ? `, repeating ${input.repeat}` : ""}.`);
+        const nag = input.nag_minutes && input.action === "notify" ? `, coming back every ${input.nag_minutes} minutes until they tap Done` : "";
+        return result(`Scheduled ${id} for ${describeNow(tz, dueAt)}${input.repeat ? `, repeating ${input.repeat}` : ""}${nag}.`);
       }
       case "list_reminders": {
         const tz = await reminders.getTimezone(config.userId);
@@ -524,7 +531,10 @@ async function runClientTool(
         if (rows.length === 0 && atPlaces.length === 0 && watches.length === 0) return result("No upcoming reminders.");
         return result(
           [
-            ...rows.map((r) => `[${r.id}] ${describeNow(tz, new Date(r.due_at))}${r.repeat ? ` (${r.repeat})` : ""} ${r.action}: ${r.text}`),
+            ...rows.map(
+              (r) =>
+                `[${r.id}] ${describeNow(tz, new Date(r.due_at))}${r.repeat ? ` (${r.repeat})` : ""}${r.nag_of ? " (repeat of a reminder that went off; cancel it when the user says it's done)" : r.nag_minutes ? ` (comes back every ${r.nag_minutes} min until done)` : ""} ${r.action}: ${r.text}`,
+            ),
             ...atPlaces.map((r) => `[${r.id}] ${places.describePlaceReminder(r)}: ${r.text}`),
             ...watches.map((w) => `[${w.id}] ${mailWatch.describeMailWatch(w, tz)}`),
           ].join("\n"),

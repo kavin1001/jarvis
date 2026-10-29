@@ -111,6 +111,12 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
       label,
       onPress: () => api.moveReminder(settings, r.id, to).then(load, failed("move it")),
     });
+    if (r.nag_of) {
+      return [
+        { label: "Done", onPress: () => api.reminderDone(settings, r.id).then(load, failed("mark it done")) },
+        move("Snooze an hour", new Date(Date.now() + 3600_000)),
+      ];
+    }
     return [
       ...(r.action === "run"
         ? [
@@ -183,6 +189,7 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
                   <Text style={styles.rowMeta}>
                     {new Date(r.due_at).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit", month: "short", day: "numeric" })}
                     {r.repeat ? ` · ${REPEAT_LABELS[r.repeat]}` : ""}
+                    {r.nag_of ? " · again until you tap Done" : r.nag_minutes ? ` · keeps reminding every ${r.nag_minutes} min` : ""}
                   </Text>
                 </Pressable>
               ))}

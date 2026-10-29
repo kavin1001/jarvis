@@ -2,7 +2,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { pool, query } from "../src/db.js";
 import * as memory from "../src/memory.js";
 import { app } from "../src/app.js";
-import { createReminder, fireDueReminders, listReminders, rescheduleReminder, runReminderNow, setTimezone, skipReminder, snoozeReminder } from "../src/reminders.js";
+import { MAX_NAGS, createReminder, fireDueReminders, listReminders, markReminderDone, rescheduleReminder, runReminderNow, setTimezone, skipReminder, snoozeReminder } from "../src/reminders.js";
 import { auth } from "./helpers.js";
 import { resetDb } from "./helpers.js";
 
@@ -20,6 +20,45 @@ describe("reminders", () => {
     expect(prompts).toEqual([]);
     expect(await memory.takePendingTaskUpdates(conv)).toEqual(["Reminder: Call mom"]);
     expect(await listReminders("me")).toEqual([]);
+  });
+
+  it("keeps coming back until marked done, and only notes it in the chat once", async () => {
+    const conv = await memory.createConversation("me");
+    const t0 = new Date("2026-10-29T08:00:00Z");
+    await createReminder({ userId: "me", conversationId: conv, text: "Take your pills", action: "notify", dueAt: t0, repeat: null, nagMinutes: 10 });
+    const run = async () => "";
+    await fireDueReminders(run, new Date(t0.getTime() + 1000));
+    let [nag] = await listReminders("me");
+    expect(nag).toMatchObject({ text: "Take your pills", nag_minutes: 10, nags_left: MAX_NAGS - 1 });
+    expect(new Date(nag.due_at).toISOString()).toBe("2026-10-29T08:10:01.000Z");
+
+    await fireDueReminders(run, new Date("2026-10-29T08:10:05Z"));
+    [nag] = await listReminders("me");
+    expect(nag.nags_left).toBe(MAX_NAGS - 2);
+    expect(await memory.takePendingTaskUpdates(conv)).toEqual(["Reminder: Take your pills"]);
+
+    // Snoozing replaces the next nag, and the snoozed one carries on nagging.
+    const snoozed = await snoozeReminder("me", nag.id, 30, new Date("2026-10-29T08:12:00Z"));
+    expect((await listReminders("me")).map((r) => r.id)).toEqual([snoozed]);
+    expect(await markReminderDone("me", snoozed!)).toBe(true);
+    expect(await listReminders("me")).toEqual([]);
+    expect(await markReminderDone("someone-else", snoozed!)).toBe(false);
+  });
+
+  it("stops nagging after the limit, and Done leaves a routine on its schedule", async () => {
+    await createReminder({ userId: "me", conversationId: null, text: "Stretch", action: "notify", dueAt: new Date("2026-10-29T09:00:00Z"), repeat: "daily", nagMinutes: 5 });
+    let t = new Date("2026-10-29T09:00:01Z").getTime();
+    for (let i = 0; i <= MAX_NAGS + 2; i++, t += 5 * 60_000 + 1000) await fireDueReminders(async () => "", new Date(t));
+    const left = await listReminders("me");
+    expect(left).toHaveLength(1);
+    expect(left[0].repeat).toBe("daily");
+
+    await fireDueReminders(async () => "", new Date("2026-10-30T09:00:01Z"));
+    const [nag] = (await listReminders("me")).filter((r) => r.nag_of);
+    expect(await markReminderDone("me", nag.id)).toBe(true);
+    const after = await listReminders("me");
+    expect(after.map((r) => r.repeat)).toEqual(["daily"]);
+    expect(new Date(after[0].due_at).toISOString()).toBe("2026-10-31T09:00:00.000Z");
   });
 
   it("runs a recurring job and moves it to the next day", async () => {

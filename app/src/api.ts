@@ -59,6 +59,10 @@ export interface Reminder {
   action: "notify" | "run";
   due_at: string;
   repeat: Repeat | null;
+  /** Comes back every this many minutes after going off, until Done. */
+  nag_minutes?: number | null;
+  /** Set on the copy that is coming back: the reminder it repeats. */
+  nag_of?: string | null;
 }
 
 export interface Place {
@@ -374,6 +378,7 @@ export const api = {
     request<{ id: string; due_at: string }>(s, `/api/reminders/${id}`, { method: "PATCH", body: { due_at: dueAt.toISOString() } }),
   skipReminder: (s: Settings, id: string) => request<{ id: string; due_at: string }>(s, `/api/reminders/${id}/skip`, { method: "POST" }),
   runReminderNow: (s: Settings, id: string) => request<{ started: boolean }>(s, `/api/reminders/${id}/run`, { method: "POST" }),
+  reminderDone: (s: Settings, id: string) => request<{ done: boolean }>(s, `/api/reminders/${id}/done`, { method: "POST" }),
   snoozeReminder: (s: Settings, id: string, minutes: number) =>
     request<{ id: string }>(s, `/api/reminders/${id}/snooze`, { method: "POST", body: { minutes } }),
   facts: (s: Settings) => request<Fact[]>(s, "/api/facts"),

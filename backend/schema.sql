@@ -104,6 +104,11 @@ DO $$ BEGIN
     ALTER TABLE reminders ADD CONSTRAINT reminders_repeat_check CHECK (repeat IN ('daily', 'weekdays', 'weekends', 'weekly', 'biweekly', 'monthly'));
   END IF;
 END $$;
+-- "Keep reminding me until I do it": after firing, a one-off copy comes back every nag_minutes
+-- until the user taps Done. Copies point at the reminder they repeat (nag_of) and count down nags_left.
+ALTER TABLE reminders ADD COLUMN IF NOT EXISTS nag_minutes SMALLINT;
+ALTER TABLE reminders ADD COLUMN IF NOT EXISTS nag_of UUID;
+ALTER TABLE reminders ADD COLUMN IF NOT EXISTS nags_left SMALLINT;
 
 -- 0.4: usage and cost tracking.
 CREATE TABLE IF NOT EXISTS usage_events (

@@ -30,6 +30,11 @@ if (pushSupported) Notifications.setNotificationCategoryAsync("reminder", [
   { identifier: "snooze10", buttonTitle: "Snooze 10 min", options: { opensAppToForeground: true } },
   { identifier: "snooze60", buttonTitle: "Snooze 1 hour", options: { opensAppToForeground: true } },
 ]).catch(() => {});
+// Reminders that come back until done ("keep reminding me to take my pills").
+if (pushSupported) Notifications.setNotificationCategoryAsync("nag", [
+  { identifier: "done", buttonTitle: "Done", options: { opensAppToForeground: true } },
+  { identifier: "snooze10", buttonTitle: "Snooze 10 min", options: { opensAppToForeground: true } },
+]).catch(() => {});
 
 // Reply from the notification of an answer or a finished task, without opening the chat first.
 if (pushSupported) Notifications.setNotificationCategoryAsync("reply", [
@@ -85,6 +90,10 @@ export function usePush(
       const data = response.notification.request.content.data as { approvalId?: string; conversationId?: string; reminderId?: string };
       if (response.actionIdentifier === "reply" && data.conversationId && response.userText?.trim()) {
         onReply?.(data.conversationId, response.userText.trim());
+        return;
+      }
+      if (data.reminderId && response.actionIdentifier === "done") {
+        api.reminderDone(settings, data.reminderId).then(onTaskUpdate, (err) => Alert.alert("Could not mark it done", String(err)));
         return;
       }
       const snooze = SNOOZE[response.actionIdentifier];

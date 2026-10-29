@@ -25,7 +25,7 @@ import * as memory from "./memory.js";
 import * as mailWatch from "./mailWatch.js";
 import * as places from "./places.js";
 import { getNotifySettings, savePushToken, sendPush, setNotifySettings } from "./push.js";
-import { cancelReminder, createReminder, getTimezone, listReminders, rescheduleReminder, runReminderNow, skipReminder, snoozeReminder } from "./reminders.js";
+import { cancelReminder, createReminder, getTimezone, listReminders, markReminderDone, rescheduleReminder, runReminderNow, skipReminder, snoozeReminder } from "./reminders.js";
 import { serverStatus } from "./status.js";
 import { firstOccurrence } from "./time.js";
 import { summarize } from "./usage.js";
@@ -471,6 +471,13 @@ app.post("/api/reminders/:id/snooze", async (c) => {
   if (!z.string().uuid().safeParse(reminderId).success) return c.json({ error: "Not found" }, 404);
   const id = await snoozeReminder(config.userId, reminderId, body.data.minutes);
   return id ? c.json({ id }) : c.json({ error: "Not found" }, 404);
+});
+
+// "Done" on a reminder that keeps coming back.
+app.post("/api/reminders/:id/done", async (c) => {
+  const reminderId = c.req.param("id");
+  if (!z.string().uuid().safeParse(reminderId).success) return c.json({ error: "Not found" }, 404);
+  return (await markReminderDone(config.userId, reminderId)) ? c.json({ done: true }) : c.json({ error: "Not found" }, 404);
 });
 
 const Reschedule = z.object({ due_at: z.string().datetime({ offset: true }) }).strict();

@@ -16,7 +16,13 @@ export interface Reminder {
   month_day: number | null;
   timezone: string;
   status: "scheduled" | "done" | "cancelled";
+  nag_minutes: number | null;
+  nag_of: string | null;
+  nags_left: number | null;
 }
+
+/** A nagging reminder comes back at most this many times after it first goes off. */
+export const MAX_NAGS = 12;
 
 export async function getTimezone(userId: string): Promise<string> {
   const [row] = await query<{ timezone: string }>("SELECT timezone FROM user_settings WHERE user_id = $1", [userId]);
@@ -39,12 +45,14 @@ export async function createReminder(r: {
   action: "notify" | "run";
   dueAt: Date;
   repeat: Repeat | null;
+  /** Comes back every this many minutes after going off, until marked done. Notify reminders only. */
+  nagMinutes?: number | null;
 }) {
   const timezone = await getTimezone(r.userId);
   const [row] = await query<{ id: string }>(
-    `INSERT INTO reminders (user_id, conversation_id, text, action, due_at, repeat, timezone, month_day)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id`,
-    [r.userId, r.conversationId, r.text, r.action, r.dueAt, r.repeat, timezone, monthDayFor(r.dueAt, r.repeat, timezone)],
+    `INSERT INTO reminders (user_id, conversation_id, text, action, due_at, repeat, timezone, month_day, nag_minutes)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+    [r.userId, r.conversationId, r.text, r.action, r.dueAt, r.repeat, timezone, monthDayFor(r.dueAt, r.repeat, timezone), r.action === "notify" ? (r.nagMinutes ?? null) : null],
   );
   return row.id;
 }
@@ -71,12 +79,30 @@ export async function cancelReminder(userId: string, id: string) {
 export async function snoozeReminder(userId: string, id: string, minutes: number, now = new Date()) {
   const [r] = await query<Reminder>("SELECT * FROM reminders WHERE id = $1 AND user_id = $2", [id, userId]);
   if (!r) return null;
+  // A snooze replaces the nag that was coming; the snoozed copy carries on nagging after it.
+  if (r.nag_minutes) await stopNagging(userId, r);
   const [row] = await query<{ id: string }>(
-    `INSERT INTO reminders (user_id, conversation_id, text, action, due_at, repeat, timezone)
-     VALUES ($1, $2, $3, 'notify', $4, NULL, $5) RETURNING id`,
-    [userId, r.conversation_id, r.text, new Date(now.getTime() + minutes * 60_000), r.timezone],
+    `INSERT INTO reminders (user_id, conversation_id, text, action, due_at, repeat, timezone, nag_minutes, nag_of, nags_left)
+     VALUES ($1, $2, $3, 'notify', $4, NULL, $5, $6, $7, $8) RETURNING id`,
+    [userId, r.conversation_id, r.text, new Date(now.getTime() + minutes * 60_000), r.timezone, r.nag_minutes, r.nag_minutes ? (r.nag_of ?? r.id) : null, r.nags_left],
   );
   return row.id;
+}
+
+async function stopNagging(userId: string, r: Pick<Reminder, "id" | "nag_of">) {
+  return query("UPDATE reminders SET status = 'cancelled' WHERE user_id = $1 AND nag_of = $2 AND status = 'scheduled' RETURNING id", [userId, r.nag_of ?? r.id]);
+}
+
+/**
+ * "Done" on a reminder that keeps coming back: stops the copies still to come. A repeating
+ * reminder stays on its schedule. Returns false for an unknown id.
+ */
+export async function markReminderDone(userId: string, id: string) {
+  const [r] = await query<Reminder>("SELECT * FROM reminders WHERE id = $1 AND user_id = $2", [id, userId]);
+  if (!r) return false;
+  await stopNagging(userId, r);
+  if (r.nag_of) await query("UPDATE reminders SET status = 'done' WHERE id = $1 AND status = 'scheduled'", [r.id]);
+  return true;
 }
 
 /** Runs a scheduled prompt as a Jarvis turn and returns the answer. Injected to avoid an import cycle. */
@@ -136,19 +162,29 @@ export async function fireDueReminders(runPrompt: RunPrompt, now = new Date()) {
     );
     if (claimed.length === 0) continue;
     try {
-      await fire(r, runPrompt);
+      await fire(r, runPrompt, now);
     } catch (err) {
       console.error(`reminder ${r.id} failed`, err);
     }
   }
 }
 
-async function fire(r: Reminder, runPrompt: RunPrompt) {
+async function fire(r: Reminder, runPrompt: RunPrompt, now = new Date()) {
   const conversationId = r.conversation_id ?? (await memory.createConversation(r.user_id));
   if (r.action === "notify") {
     const text = `Reminder: ${r.text}`;
-    await memory.appendMessage(conversationId, "assistant", [{ type: "text", text }], text, "system", "task_update");
-    await sendPush(r.user_id, "Reminder", r.text, { conversationId, reminderId: r.id }, "reminder");
+    // A nag repeats the same reminder; the chat only needs it once.
+    if (!r.nag_of) await memory.appendMessage(conversationId, "assistant", [{ type: "text", text }], text, "system", "task_update");
+    const nagsLeft = r.nag_of ? (r.nags_left ?? 0) : MAX_NAGS;
+    if (r.nag_minutes && nagsLeft > 0) {
+      await stopNagging(r.user_id, r);
+      await query(
+        `INSERT INTO reminders (user_id, conversation_id, text, action, due_at, repeat, timezone, nag_minutes, nag_of, nags_left)
+         VALUES ($1, $2, $3, 'notify', $4, NULL, $5, $6, $7, $8)`,
+        [r.user_id, conversationId, r.text, new Date(now.getTime() + r.nag_minutes * 60_000), r.timezone, r.nag_minutes, r.nag_of ?? r.id, nagsLeft - 1],
+      );
+    }
+    await sendPush(r.user_id, "Reminder", r.text, { conversationId, reminderId: r.id }, r.nag_minutes ? "nag" : "reminder");
     return;
   }
   const answer = await runPrompt(conversationId, r.text);
