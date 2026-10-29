@@ -53,7 +53,8 @@ describe("notes", () => {
 
     const patched = await app.request(`/api/notes/${note.id}`, { method: "PATCH", headers: json, body: JSON.stringify({ title: "Gym" }) });
     expect(await patched.json()).toMatchObject({ title: "Gym", body: "Locker 113" });
-    expect((await app.request("/api/notes?q=locker", { headers: auth }).then((r) => r.json())) as unknown[]).toHaveLength(1);
+    const found = await app.request("/api/notes?q=locker", { headers: auth });
+    expect((await found.json()) as unknown[]).toHaveLength(1);
 
     expect((await exportData("me")).notes).toMatchObject([{ title: "Gym", body: "Locker 113" }]);
     await deleteAllData("me");
