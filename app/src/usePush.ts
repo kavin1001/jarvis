@@ -2,10 +2,14 @@ import Constants from "expo-constants";
 import * as Device from "expo-device";
 import * as Notifications from "expo-notifications";
 import { useEffect } from "react";
-import { Alert } from "react-native";
+import { Platform } from "react-native";
+import { Alert } from "./dialog";
 import { api, type Settings } from "./api";
 
-Notifications.setNotificationHandler({
+// Push needs a native build; the web version polls instead.
+const pushSupported = Platform.OS !== "web";
+
+if (pushSupported) Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowBanner: true,
     shouldShowList: true,
@@ -15,7 +19,7 @@ Notifications.setNotificationHandler({
 });
 
 // Approve / Deny buttons on approval notifications. Approving needs the phone unlocked.
-Notifications.setNotificationCategoryAsync("approval", [
+if (pushSupported) Notifications.setNotificationCategoryAsync("approval", [
   { identifier: "approve", buttonTitle: "Approve", options: { opensAppToForeground: true, isAuthenticationRequired: true } },
   { identifier: "deny", buttonTitle: "Deny", options: { opensAppToForeground: true, isDestructive: true } },
 ]).catch(() => {});
@@ -39,7 +43,7 @@ const handled = new Set<string>();
  */
 export function usePush(settings: Settings | null, onTaskUpdate: () => void, onOpenConversation?: (id: string) => void) {
   useEffect(() => {
-    if (!settings) return;
+    if (!settings || !pushSupported) return;
     (async () => {
       if (!Device.isDevice) return;
       const { status } = await Notifications.requestPermissionsAsync();

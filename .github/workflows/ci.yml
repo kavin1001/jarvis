@@ -51,9 +51,13 @@ jobs:
         env:
           EXPO_OFFLINE: 1
           CI: 1
+      - run: npx expo export --platform web --output-dir /tmp/expo-web
+        env:
+          EXPO_OFFLINE: 1
+          CI: 1
 
   docker:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t jarvis-backend backend
+      - run: docker build -f backend/Dockerfile -t jarvis-backend .

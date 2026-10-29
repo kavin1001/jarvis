@@ -1,6 +1,6 @@
 import { fetch } from "expo/fetch";
 import Constants from "expo-constants";
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "./storage";
 import { Platform } from "react-native";
 
 export interface Settings {
@@ -108,15 +108,26 @@ export const deviceName = () => Constants.deviceName ?? `Jarvis on ${Platform.OS
 export async function signIn(url: string, secret: string): Promise<Settings> {
   const base = url.trim().replace(/\/$/, "");
   const trimmed = secret.trim();
-  const pairing = PAIRING_CODE.test(trimmed);
-  const res = await fetch(`${base}${pairing ? "/pair" : "/api/devices"}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...(pairing ? {} : { Authorization: `Bearer ${trimmed}` }) },
-    body: JSON.stringify(pairing ? { code: trimmed, name: deviceName() } : { name: deviceName() }),
-  });
-  const body = (await res.json().catch(() => ({}))) as { token?: string; error?: string };
-  if (!res.ok || !body.token) throw new Error(body.error ?? (res.status === 401 ? "Wrong app token" : `Sign-in failed (${res.status})`));
-  return { url: base, token: body.token };
+  const post = async (path: string, body: object, token?: string) => {
+    const res = await fetch(`${base}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(body),
+    });
+    return { res, body: (await res.json().catch(() => ({}))) as { token?: string; error?: string } };
+  };
+  // Something shaped like a pairing code is tried as one first; a short app token can look the same.
+  let pairingError: string | undefined;
+  if (PAIRING_CODE.test(trimmed)) {
+    const paired = await post("/pair", { code: trimmed, name: deviceName() });
+    if (paired.res.ok && paired.body.token) return { url: base, token: paired.body.token };
+    if (paired.res.status === 429) throw new Error(paired.body.error ?? "Too many attempts");
+    pairingError = paired.body.error;
+  }
+  const { res, body } = await post("/api/devices", { name: deviceName() }, trimmed);
+  if (res.ok && body.token) return { url: base, token: body.token };
+  if (res.status === 401) throw new Error(pairingError ?? "Wrong app token");
+  throw new Error(body.error ?? `Sign-in failed (${res.status})`);
 }
 
 /** Older installs stored the master token; swap it for a device token once. */

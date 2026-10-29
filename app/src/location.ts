@@ -1,5 +1,5 @@
 import * as Location from "expo-location";
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "./storage";
 
 const KEY = "jarvis-share-location";
 

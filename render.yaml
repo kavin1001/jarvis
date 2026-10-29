@@ -5,8 +5,9 @@ services:
   - type: web
     name: jarvis-backend
     runtime: docker
-    rootDir: backend
-    dockerfilePath: ./Dockerfile
+    # Built from the repo root so the image also contains the web app.
+    dockerContext: .
+    dockerfilePath: ./backend/Dockerfile
     plan: starter
     healthCheckPath: /health
     envVars:

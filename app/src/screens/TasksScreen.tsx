@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, FlatList, Pressable, RefreshControl, Text, View } from "react-native";
+import { FlatList, Pressable, RefreshControl, Text, View } from "react-native";
+import { Alert } from "../dialog";
 import { api, type Reminder, type Settings, type Task } from "../api";
 import { askApproval } from "../usePush";
 import { colors, Empty, Header, LinkButton, relativeTime, styles } from "../ui";

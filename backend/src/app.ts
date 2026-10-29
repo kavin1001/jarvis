@@ -1,4 +1,8 @@
+import { serveStatic } from "@hono/node-server/serve-static";
+import Anthropic from "@anthropic-ai/sdk";
 import { Hono } from "hono";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { bodyLimit } from "hono/body-limit";
 import { logger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
@@ -105,6 +109,15 @@ const ChatBody = z.object({
     .optional(),
 });
 
+function describeChatError(err: unknown) {
+  if (err instanceof Anthropic.AuthenticationError || err instanceof Anthropic.PermissionDeniedError)
+    return "The server's Claude API key is missing or invalid. Check ANTHROPIC_API_KEY.";
+  if (err instanceof Anthropic.RateLimitError) return "Claude is rate limiting this account right now. Try again in a minute.";
+  if (err instanceof Anthropic.APIConnectionError) return "The server couldn't reach Claude. Try again.";
+  if (err instanceof Anthropic.InternalServerError) return "Claude is having trouble right now. Try again shortly.";
+  return "Jarvis hit an error. Try again.";
+}
+
 // Streams the reply as server-sent events: conversation, text, task_started, done, error.
 app.post("/api/chat", async (c) => {
   const body = ChatBody.safeParse(await c.req.json());
@@ -132,7 +145,7 @@ app.post("/api/chat", async (c) => {
       });
     } catch (err) {
       console.error("chat turn failed", err);
-      await send({ type: "error", message: "Jarvis hit an error. Try again." });
+      await send({ type: "error", message: describeChatError(err) });
     }
   });
 });
@@ -267,3 +280,11 @@ app.delete("/api/devices/:id", async (c) => {
   return c.json({ revoked: id.success && (await revokeDevice(config.userId, id.data)) });
 });
 app.post("/api/devices/pair-codes", async (c) => c.json(await createPairingCode(config.userId)));
+
+// The web build of the app, when present (the Docker image puts it in ./public). Same origin, so no CORS.
+const webDir = process.env.WEB_DIR ?? "public";
+if (existsSync(join(webDir, "index.html"))) {
+  app.use("/*", serveStatic({ root: webDir }));
+  // Client-side routes fall back to the app shell.
+  app.get("/*", serveStatic({ root: webDir, path: "index.html" }));
+}

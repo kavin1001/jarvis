@@ -133,7 +133,7 @@ export default function ChatScreen({
       voice.stop();
     } else {
       pressedAt.current = Date.now();
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       voice.start();
     }
   };
@@ -179,7 +179,7 @@ export default function ChatScreen({
           <Pressable
             onLongPress={() => {
               Clipboard.setStringAsync(item.text);
-              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             }}
             accessibilityHint="Hold to copy"
             style={[

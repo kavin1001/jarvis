@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Switch, Text, TextInput, View } from "react-native";
+import { Switch, Text, TextInput, View } from "react-native";
+import { Alert } from "../dialog";
 import { api, type McpServer, type Settings } from "../api";
 import { colors, LinkButton, styles } from "../ui";
 

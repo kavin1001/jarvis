@@ -1,7 +1,7 @@
-import * as SecureStore from "expo-secure-store";
+import * as SecureStore from "./src/storage";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Button, SafeAreaView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Button, Platform, SafeAreaView, StyleSheet, Text, TextInput, View } from "react-native";
 import { api, loadSettings, saveSettings, signIn, upgradeToDeviceToken, type Settings } from "./src/api";
 import { useDeepLinkCommand } from "./src/deepLink";
 import ChatScreen from "./src/screens/ChatScreen";
@@ -101,7 +101,10 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
 }
 
 function Setup({ onSignedIn }: { onSignedIn: (s: Settings) => void }) {
-  const [url, setUrl] = useState(process.env.EXPO_PUBLIC_JARVIS_API_URL ?? "");
+  // The web build is served by the backend itself, so its own origin is the default.
+  const [url, setUrl] = useState(
+    process.env.EXPO_PUBLIC_JARVIS_API_URL ?? (Platform.OS === "web" ? globalThis.location?.origin ?? "" : ""),
+  );
   const [secret, setSecret] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

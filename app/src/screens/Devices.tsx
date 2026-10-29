@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Text, View } from "react-native";
+import { Text, View } from "react-native";
+import { Alert } from "../dialog";
 import { api, type Device, type Settings } from "../api";
 import { LinkButton, relativeTime, styles } from "../ui";
 
@@ -39,7 +40,7 @@ export function Devices({ settings, onSignOut }: { settings: Settings; onSignOut
           <View style={{ flex: 1 }}>
             <Text style={styles.rowTitle}>
               {d.name}
-              {d.current ? " (this phone)" : ""}
+              {d.current ? " (this device)" : ""}
             </Text>
             <Text style={styles.rowMeta}>{d.last_seen_at ? `Active ${relativeTime(d.last_seen_at)}` : "Never used"}</Text>
           </View>

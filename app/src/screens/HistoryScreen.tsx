@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, FlatList, Pressable, RefreshControl, Text, TextInput } from "react-native";
+import { FlatList, Pressable, RefreshControl, Text, TextInput } from "react-native";
+import { Alert } from "../dialog";
 import { api, type Conversation, type SearchHit, type Settings } from "../api";
 import { colors, Empty, Header, LinkButton, relativeTime, styles } from "../ui";
 

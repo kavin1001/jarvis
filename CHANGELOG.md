@@ -4,6 +4,9 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Web version: the backend now serves the app at its own URL, so you can use Jarvis in a browser, or add it to your iPhone home screen, before setting up an Apple Developer account. It uses browser dialogs and local storage where phones use native ones, and skips push. The Docker image builds it, and CI exports it.
+- Chat errors now say what went wrong: a bad API key, rate limiting, or Claude being unreachable.
+- Sign-in: an 8-letter app token is no longer mistaken for a pairing code.
 - Reliability: overlapping turns in one conversation (a double send, or a scheduled job landing mid-reply) now queue instead of interleaving. `/health` checks the database, so Render restarts a broken instance. Request bodies are size limited (32 MB for chat with photos, 1 MB elsewhere). Errors and unknown routes return JSON without internals. The OAuth page sends secure headers.
 - Dependabot opens weekly backend dependency updates.
 - Approve or deny a background task's request right from the notification. Approving requires Face ID or your passcode.

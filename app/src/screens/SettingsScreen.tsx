@@ -1,6 +1,7 @@
 import Constants from "expo-constants";
 import { useCallback, useEffect, useState } from "react";
-import { Alert, AppState, Linking, RefreshControl, ScrollView, Switch, Text, View } from "react-native";
+import { AppState, Linking, RefreshControl, ScrollView, Switch, Text, View } from "react-native";
+import { Alert } from "../dialog";
 import { api, clearSettings, type Connectors, type Settings, type Usage } from "../api";
 import { locationSharingEnabled, setLocationSharing } from "../location";
 import { Devices } from "./Devices";
