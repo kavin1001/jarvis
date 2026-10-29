@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Web app on a computer: **Enter** sends and **Shift+Enter** starts a new line. The cursor goes back to the message box once Jarvis has replied.
 - Reply from the notification: on a "Jarvis replied", finished-task or routine notification, press and hold (or swipe down) and choose **Reply**. What you type is sent in that chat. A message sent from a link or a notification while the chat is still loading no longer disappears.
 - Gmail: Jarvis can archive, mark read or unread, and star email, up to 50 at a time ("archive all the newsletters from this week"). Nothing is deleted. If you connected Google before this change, Settings asks you to **Connect again** to grant the new permission, and the Google consent screen needs the `gmail.modify` scope (docs/DEPLOY.md, section 5).
 - Settings, **Lock Jarvis** (iPhone and Android): Jarvis asks for Face ID, Touch ID or your passcode when you open it, and again after more than a minute away. The app switcher shows a blank screen instead of your chats. A reply that's still coming in keeps going behind the lock. Needs a new app build, since it adds a native module.

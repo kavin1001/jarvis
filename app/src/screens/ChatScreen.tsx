@@ -21,7 +21,7 @@ import { Markdown, plainText } from "../Markdown";
 import * as Speech from "expo-speech";
 import type { Doc } from "../documents";
 import { chooseAttachments, type Photo } from "../photos";
-import { Text, TextInput, useStyles, type Palette } from "../theme";
+import { Text, TextInput, useStyles, type Palette, type TextInputHandle } from "../theme";
 import { askApproval } from "../usePush";
 import { createSpeaker, isStopPhrase, useVoice } from "../useVoice";
 import { shouldSpeak } from "../voicePrefs";
@@ -268,6 +268,14 @@ export default function ChatScreen({
     setDocs(item.docs);
   }
 
+  // The box is disabled while Jarvis replies; on a computer, put the cursor back afterwards.
+  const composer = useRef<TextInputHandle>(null);
+  const wasBusy = useRef(false);
+  useEffect(() => {
+    if (Platform.OS === "web" && wasBusy.current && !busy) composer.current?.focus();
+    wasBusy.current = busy;
+  }, [busy]);
+
   // Each command runs once, after the screen is ready.
   const handled = useRef(0);
   useEffect(() => {
@@ -465,12 +473,24 @@ export default function ChatScreen({
           <Text style={styles.attachText}>＋</Text>
         </Pressable>
         <TextInput
+          ref={composer}
           style={styles.input}
           value={draft}
           onChangeText={setDraft}
           placeholder="Ask Jarvis"
           multiline
           editable={!busy}
+          // On a computer keyboard, Enter sends and Shift+Enter starts a new line.
+          onKeyPress={
+            Platform.OS === "web"
+              ? (e) => {
+                  const key = e.nativeEvent as unknown as { key: string; shiftKey?: boolean; isComposing?: boolean };
+                  if (key.key !== "Enter" || key.shiftKey || key.isComposing) return;
+                  e.preventDefault();
+                  send(draft, "text");
+                }
+              : undefined
+          }
         />
         {busy ? (
           <Pressable
