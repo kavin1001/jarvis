@@ -327,7 +327,7 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
   {
     name: "gmail_create_draft",
     description:
-      "Save an email draft in the user's Gmail. It is NOT sent; the user reviews and sends it from Gmail. Pass reply_to_message_id to draft a reply in the same thread, and reply_all to copy everyone else who was on that email.",
+      "Save an email draft in the user's Gmail. It is NOT sent; the user reviews and sends it from Gmail. Pass reply_to_message_id to draft a reply in the same thread, and reply_all to copy everyone else who was on that email. Pass forward_message_id instead to forward an email: its text and attachments are added below your body (\"forward the invoice to my accountant\").",
     eager_input_streaming: true,
     input_schema: {
       type: "object",
@@ -338,6 +338,7 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
         body: { type: "string", description: "Plain text." },
         reply_to_message_id: { type: "string" },
         reply_all: { type: "boolean", description: "With reply_to_message_id: also copy everyone else on the original email" },
+        forward_message_id: { type: "string", description: "An email to forward, with its attachments. Not with reply_to_message_id." },
       },
       required: ["to", "subject", "body"],
     },
@@ -596,7 +597,8 @@ const inputs = {
     body: z.string(),
     reply_to_message_id: z.string().optional(),
     reply_all: z.boolean().default(false),
-  }),
+    forward_message_id: z.string().min(1).optional(),
+  }).refine((d) => !(d.reply_to_message_id && d.forward_message_id), "Reply or forward, not both."),
   gmail_organize: z
     .object({
       message_ids: z.array(z.string().min(1)).min(1).max(50),
@@ -1330,7 +1332,7 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
       return `Saved "${oneLine(file.filename)}" to Drive (id ${saved.id}): ${saved.webViewLink}`;
     }
     case "gmail_create_draft": {
-      const { to, cc, subject, body, reply_to_message_id, reply_all } = inputs.gmail_create_draft.parse(raw);
+      const { to, cc, subject, body, reply_to_message_id, reply_all, forward_message_id } = inputs.gmail_create_draft.parse(raw);
       const lines = [`To: ${addressHeader(to)}`];
       let copied = cc ? splitAddresses(oneLine(cc)) : [];
       let threadId: string | undefined;
@@ -1356,14 +1358,45 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
       }
       copied = copied.slice(0, 50);
       if (copied.length) lines.push(`Cc: ${addressHeader(copied.join(", "))}`);
-      lines.push(`Subject: ${mimeWord(oneLine(subject))}`, "MIME-Version: 1.0", "Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: base64");
-      const encodedBody = Buffer.from(body).toString("base64").replace(/.{76}/g, "$&\r\n");
-      const rawMessage = Buffer.from(`${lines.join("\r\n")}\r\n\r\n${encodedBody}`).toString("base64url");
+      let text = body;
+      const files: { filename: string; mimeType: string; data: Buffer }[] = [];
+      const left: string[] = [];
+      if (forward_message_id) {
+        const original = await google<GmailMessage>(userId, `${GMAIL}/messages/${encodeURIComponent(forward_message_id)}?format=full`);
+        text +=
+          `\n\n---------- Forwarded message ---------\nFrom: ${header(original, "From")}\nDate: ${header(original, "Date")}\n` +
+          `Subject: ${header(original, "Subject")}\nTo: ${header(original, "To")}\n\n${plainText(original.payload)}`;
+        let total = 0;
+        for (const f of attachmentsOf(original.payload)) {
+          // Gmail won't take a message over 25 MB, so leave out what doesn't fit and say so.
+          if (total + f.size > MAX_SAVE_BYTES) {
+            left.push(f.filename);
+            continue;
+          }
+          total += f.size;
+          files.push({ filename: f.filename, mimeType: f.mimeType, data: await attachmentBytes(userId, forward_message_id, f.id) });
+        }
+      }
+      const base64 = (b: Buffer) => b.toString("base64").replace(/.{76}/g, "$&\r\n");
+      const textPart = ["Content-Type: text/plain; charset=UTF-8", "Content-Transfer-Encoding: base64", "", base64(Buffer.from(text))];
+      lines.push(`Subject: ${mimeWord(oneLine(subject))}`, "MIME-Version: 1.0");
+      if (files.length) {
+        const boundary = `jarvis-${randomBytes(12).toString("hex")}`;
+        lines.push(`Content-Type: multipart/mixed; boundary="${boundary}"`, "", `--${boundary}`, ...textPart);
+        for (const f of files) {
+          const name = mimeWord(oneLine(f.filename).replace(/["\\]/g, ""));
+          lines.push(`--${boundary}`, `Content-Type: ${f.mimeType}; name="${name}"`, `Content-Disposition: attachment; filename="${name}"`, "Content-Transfer-Encoding: base64", "", base64(f.data));
+        }
+        lines.push(`--${boundary}--`);
+      } else lines.push(...textPart);
+      const rawMessage = Buffer.from(lines.join("\r\n")).toString("base64url");
       const draft = await google<{ id: string }>(userId, `${GMAIL}/drafts`, {
         method: "POST",
         body: { message: { raw: rawMessage, ...(threadId ? { threadId } : {}) } },
       });
-      return `Draft ${draft.id} saved in Gmail${copied.length ? `, copying ${copied.join(", ")}` : ""}. It has not been sent; the user can review and send it from Gmail.`;
+      const attached = files.length ? `, with ${files.length} attachment${files.length === 1 ? "" : "s"}` : "";
+      const missing = left.length ? ` Left out because the email would be over 25 MB: ${left.join(", ")}.` : "";
+      return `Draft ${draft.id} saved in Gmail${copied.length ? `, copying ${copied.join(", ")}` : ""}${attached}. It has not been sent; the user can review and send it from Gmail.${missing}`;
     }
     case "gmail_organize": {
       const { message_ids, action, label } = inputs.gmail_organize.parse(raw);

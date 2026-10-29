@@ -674,6 +674,36 @@ describe("email attachments", () => {
     await expect(runGoogleTool("me", "gmail_read_attachment", { message_id: "m9", attachment_id: "nope" })).rejects.toThrow(/No attachment/);
   });
 
+  it("drafts a forward with the email's text and the attachments that fit", async () => {
+    await connect({ access_token: "at", expires_at: Date.now() + 3600_000 });
+    const pdf = Buffer.from("%PDF-1.4 fake");
+    const calls = mockFetch({
+      "attachments/att-1": () => ({ data: pdf.toString("base64url") }),
+      "attachments/att-2": () => ({ data: Buffer.from("docx").toString("base64url") }),
+      "messages/m9": () => message,
+      drafts: () => ({ id: "d1" }),
+    });
+    const out = await runGoogleTool("me", "gmail_create_draft", { to: "acct@example.com", subject: "Fwd: Your invoice", body: "For the tax return.", forward_message_id: "m9" });
+    expect(out).toBe(
+      "Draft d1 saved in Gmail, with 2 attachments. It has not been sent; the user can review and send it from Gmail. Left out because the email would be over 25 MB: huge.zip.",
+    );
+    expect(calls.some((c) => c.url.includes("att-3"))).toBe(false);
+    const raw = Buffer.from(JSON.parse(calls.at(-1)!.init!.body as string).message.raw, "base64url").toString();
+    const boundary = raw.match(/boundary="([^"]+)"/)![1];
+    const parts = raw.split(`--${boundary}`);
+    expect(parts).toHaveLength(5);
+    const text = Buffer.from(parts[1].split("\r\n\r\n")[1].replace(/\r\n/g, ""), "base64").toString();
+    expect(text).toMatch(/^For the tax return\.\n\n---------- Forwarded message ---------\n/);
+    expect(text).toContain("Subject: Your invoice");
+    expect(text).toContain("See attached.");
+    expect(parts[2]).toContain('Content-Disposition: attachment; filename="invoice.pdf"');
+    expect(Buffer.from(parts[2].split("\r\n\r\n")[1].replace(/\r\n/g, ""), "base64")).toEqual(pdf);
+    expect(parts[4]).toBe("--");
+    await expect(
+      runGoogleTool("me", "gmail_create_draft", { to: "a@example.com", subject: "x", body: "y", forward_message_id: "m9", reply_to_message_id: "m9" }),
+    ).rejects.toThrow(/Reply or forward/);
+  });
+
   it("saves any attachment to Drive with a resumable upload", async () => {
     await connect({ access_token: "at", expires_at: Date.now() + 3600_000 });
     await expect(runGoogleTool("me", "gmail_save_attachment", { message_id: "m9", attachment_id: "att-2" })).rejects.toThrow(/save files to Drive/);
