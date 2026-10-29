@@ -14,6 +14,12 @@ Notifications.setNotificationHandler({
   }),
 });
 
+// Approve / Deny buttons on approval notifications. Approving needs the phone unlocked.
+Notifications.setNotificationCategoryAsync("approval", [
+  { identifier: "approve", buttonTitle: "Approve", options: { opensAppToForeground: true, isAuthenticationRequired: true } },
+  { identifier: "deny", buttonTitle: "Deny", options: { opensAppToForeground: true, isDestructive: true } },
+]).catch(() => {});
+
 export function askApproval(settings: Settings, approvalId: string, summary: string, onDecided?: () => void) {
   const decide = (decision: "allow" | "deny") =>
     api.decide(settings, approvalId, decision).then(onDecided, (err) => Alert.alert("Could not send", String(err)));
@@ -23,8 +29,15 @@ export function askApproval(settings: Settings, approvalId: string, summary: str
   ]);
 }
 
-/** Registers this device for task notifications and handles taps on approval requests. */
-export function usePush(settings: Settings | null, onTaskUpdate: () => void) {
+type Response = Notifications.NotificationResponse;
+const handled = new Set<string>();
+
+/**
+ * Registers this device for notifications and handles taps: Approve/Deny
+ * buttons answer right away, a plain tap on an approval asks, and anything
+ * tied to a conversation opens it.
+ */
+export function usePush(settings: Settings | null, onTaskUpdate: () => void, onOpenConversation?: (id: string) => void) {
   useEffect(() => {
     if (!settings) return;
     (async () => {
@@ -37,12 +50,24 @@ export function usePush(settings: Settings | null, onTaskUpdate: () => void) {
     })().catch((err) => console.warn("push registration failed", err));
 
     const received = Notifications.addNotificationReceivedListener(() => onTaskUpdate());
-    const tapped = Notifications.addNotificationResponseReceivedListener((response) => {
-      const { approvalId } = response.notification.request.content.data as { approvalId?: string };
+    const handle = (response: Response) => {
+      // The cold-start response and the listener can both report the same tap.
+      const key = response.notification.request.identifier + response.actionIdentifier;
+      if (handled.has(key)) return;
+      handled.add(key);
+      const data = response.notification.request.content.data as { approvalId?: string; conversationId?: string };
       const summary = response.notification.request.content.body ?? "";
-      if (approvalId) askApproval(settings, approvalId, summary, onTaskUpdate);
+      if (data.approvalId && (response.actionIdentifier === "approve" || response.actionIdentifier === "deny")) {
+        const decision = response.actionIdentifier === "approve" ? "allow" : "deny";
+        api.decide(settings, data.approvalId, decision).then(onTaskUpdate, (err) => Alert.alert("Could not send", String(err)));
+        return;
+      }
+      if (data.approvalId) askApproval(settings, data.approvalId, summary, onTaskUpdate);
+      else if (data.conversationId) onOpenConversation?.(data.conversationId);
       onTaskUpdate();
-    });
+    };
+    Notifications.getLastNotificationResponseAsync().then((r) => r && handle(r));
+    const tapped = Notifications.addNotificationResponseReceivedListener(handle);
     return () => {
       received.remove();
       tapped.remove();

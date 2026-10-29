@@ -174,7 +174,7 @@ async function recordApproval(taskId: string, eventId: string, kind: ApprovalRow
   if (inserted.length === 0) return; // already recorded (replay after restart)
   await setStatus(taskId, "waiting_approval");
   const task = await getTask(taskId);
-  await sendPush(task.user_id, "Jarvis needs your OK", summary, { taskId, approvalId: inserted[0].id });
+  await sendPush(task.user_id, "Jarvis needs your OK", summary, { taskId, approvalId: inserted[0].id }, "approval");
 }
 
 /** Records the user's answer and passes it straight to the agent's session. */

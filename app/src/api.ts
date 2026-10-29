@@ -153,6 +153,8 @@ export interface Connectors {
 }
 
 export const api = {
+  addRoutine: (s: Settings, body: { text: string; time: string; repeat: "daily" | "weekdays" | "weekly" | null; action?: "run" | "notify" }) =>
+    request<{ id: string; due_at: string }>(s, "/api/reminders", { method: "POST", body }),
   search: (s: Settings, q: string) => request<SearchHit[]>(s, `/api/search?q=${encodeURIComponent(q)}`),
   devices: (s: Settings) => request<Device[]>(s, "/api/devices"),
   revokeDevice: (s: Settings, id: string) => request(s, `/api/devices/${id}`, { method: "DELETE" }),

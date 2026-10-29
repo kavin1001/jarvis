@@ -13,6 +13,8 @@ export async function sendPush(
   title: string,
   body: string,
   data: Record<string, unknown> = {},
+  /** An app-registered category, e.g. "approval" for Approve/Deny buttons on the lock screen. */
+  categoryId?: string,
 ) {
   const tokens = await query<{ token: string }>("SELECT token FROM push_tokens WHERE user_id = $1", [
     userId,
@@ -22,8 +24,14 @@ export async function sendPush(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(
-      tokens.map((t) => ({ to: t.token, title, body: body.slice(0, 180), data, sound: "default" })),
+      tokens.map((t) => ({ to: t.token, title, body: body.slice(0, 180), data, sound: "default", ...(categoryId ? { categoryId } : {}) })),
     ),
   });
-  if (!response.ok) console.error("push failed", response.status, await response.text());
+  if (!response.ok) return console.error("push failed", response.status, await response.text());
+  // Tickets come back in the same order; forget phones that uninstalled the app.
+  const { data: tickets = [] } = (await response.json().catch(() => ({}))) as {
+    data?: { status: string; details?: { error?: string } }[];
+  };
+  const dead = tokens.filter((_, i) => tickets[i]?.details?.error === "DeviceNotRegistered").map((t) => t.token);
+  if (dead.length) await query("DELETE FROM push_tokens WHERE token = ANY($1)", [dead]);
 }

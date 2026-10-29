@@ -4,6 +4,10 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Approve or deny a background task's request right from the notification. Approving requires Face ID or your passcode.
+- Tapping a task or reminder notification opens its conversation, including when the app was closed.
+- Routines: **Add routine** in the Tasks tab sets up a weekday morning briefing or a daily evening wrap-up in one tap. `POST /api/reminders` takes a local `HH:MM` time.
+- The backend forgets push tokens for phones that uninstalled the app.
 - Location (opt-in): turn on **Share approximate location** in Settings and Jarvis can answer "what's open near me" and "will it rain here". Coordinates are rounded to about 1 km, sent only with your messages, and never delay a message by more than about 3 seconds.
 - Formatting: Jarvis's replies render bold, italics, code, lists, headings and tappable links.
 - Hold any message to copy it. The mic gives a light haptic tap when it starts.

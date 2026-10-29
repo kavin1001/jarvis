@@ -65,7 +65,7 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
   }, [command]);
 
   const bump = useCallback(() => setRefreshKey((k) => k + 1), []);
-  usePush(settings, bump);
+  usePush(settings, bump, openConversation);
 
   function openConversation(id: string | undefined) {
     setConversationId(id);

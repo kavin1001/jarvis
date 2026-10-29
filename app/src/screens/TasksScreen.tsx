@@ -2,7 +2,22 @@ import { useCallback, useEffect, useState } from "react";
 import { Alert, FlatList, Pressable, RefreshControl, Text, View } from "react-native";
 import { api, type Reminder, type Settings, type Task } from "../api";
 import { askApproval } from "../usePush";
-import { colors, Empty, Header, relativeTime, styles } from "../ui";
+import { colors, Empty, Header, LinkButton, relativeTime, styles } from "../ui";
+
+const ROUTINES: { label: string; text: string; time: string; repeat: "daily" | "weekdays" }[] = [
+  {
+    label: "Morning briefing (weekdays, 8:00)",
+    text: "Morning briefing: today's weather where I am, what's on my calendar, any important unread email, and two or three top news headlines. Keep it short.",
+    time: "08:00",
+    repeat: "weekdays",
+  },
+  {
+    label: "Evening wrap-up (daily, 18:00)",
+    text: "Evening wrap-up: what's on my calendar tomorrow, any reminders due tomorrow, and anything from today's background tasks I still need to act on.",
+    time: "18:00",
+    repeat: "daily",
+  },
+];
 
 const STATUS_LABEL: Record<Task["status"], string> = {
   queued: "Queued",
@@ -42,7 +57,26 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
 
   return (
     <>
-      <Header title="Tasks and reminders" />
+      <Header
+        title="Tasks and reminders"
+        right={
+          <LinkButton
+            label="Add routine"
+            onPress={() =>
+              Alert.alert("Add a routine", "Jarvis runs it on schedule and sends you the answer. You can also just ask in chat, like \"every Sunday at 6, plan my week\".", [
+                ...ROUTINES.map((r) => ({
+                  text: r.label,
+                  onPress: () =>
+                    api
+                      .addRoutine(settings, { text: r.text, time: r.time, repeat: r.repeat })
+                      .then(load, (err) => Alert.alert("Couldn't add it", String(err))),
+                })),
+                { text: "Cancel", style: "cancel" as const },
+              ])
+            }
+          />
+        }
+      />
       <FlatList
         data={tasks}
         keyExtractor={(t) => t.id}

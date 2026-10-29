@@ -9,7 +9,8 @@ import { disconnectGoogle, googleStatus, handleGoogleCallback, startGoogleAuth }
 import { addServer, deleteServer, listServers, NewServer, setServerEnabled } from "./mcp.js";
 import * as memory from "./memory.js";
 import { savePushToken } from "./push.js";
-import { cancelReminder, getTimezone, listReminders } from "./reminders.js";
+import { cancelReminder, createReminder, getTimezone, listReminders } from "./reminders.js";
+import { firstOccurrence } from "./time.js";
 import { summarize } from "./usage.js";
 import { decideApproval, listTasks } from "./tasks.js";
 
@@ -150,6 +151,23 @@ app.delete("/api/facts/:id", async (c) =>
 );
 
 app.get("/api/reminders", async (c) => c.json(await listReminders(config.userId)));
+
+// Routines from the app ("every weekday at 8, brief me"), without going through chat.
+const NewRoutine = z.object({
+  text: z.string().trim().min(1).max(1000),
+  action: z.enum(["notify", "run"]).default("run"),
+  time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "HH:MM, 24-hour"),
+  repeat: z.enum(["daily", "weekdays", "weekly"]).nullable().default("daily"),
+});
+app.post("/api/reminders", async (c) => {
+  const body = NewRoutine.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) return c.json({ error: body.error.issues.map((i) => i.message).join("; ") }, 400);
+  const [hour, minute] = body.data.time.split(":").map(Number);
+  const tz = await getTimezone(config.userId);
+  const dueAt = firstOccurrence(hour, minute, body.data.repeat, tz);
+  const id = await createReminder({ userId: config.userId, conversationId: null, ...body.data, dueAt });
+  return c.json({ id, due_at: dueAt.toISOString() });
+});
 app.delete("/api/reminders/:id", async (c) =>
   c.json({ cancelled: await cancelReminder(config.userId, c.req.param("id")) }),
 );

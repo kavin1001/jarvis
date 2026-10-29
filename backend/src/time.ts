@@ -74,3 +74,20 @@ export function isValidTimeZone(tz: string) {
     return false;
   }
 }
+
+/** The first upcoming moment the local clock reads hour:minute (on a weekday, for "weekdays"). */
+export function firstOccurrence(
+  hour: number,
+  minute: number,
+  repeat: "daily" | "weekdays" | "weekly" | null,
+  timeZone: string,
+  now = new Date(),
+): Date {
+  const p = zonedParts(now, timeZone);
+  let candidate = zonedToUtc(p.year, p.month, p.day, hour, minute, 0, timeZone);
+  const isWeekend = (d: Date) => ["Sat", "Sun"].includes(zonedParts(d, timeZone).weekday);
+  while (candidate <= now || (repeat === "weekdays" && isWeekend(candidate))) {
+    candidate = nextOccurrence(candidate, "daily", timeZone);
+  }
+  return candidate;
+}
