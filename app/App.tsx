@@ -1,11 +1,12 @@
 import * as SecureStore from "./src/storage";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Button, Platform, SafeAreaView, StyleSheet, View } from "react-native";
+import { ActivityIndicator, AppState, Button, Platform, SafeAreaView, StyleSheet, View } from "react-native";
 import { AppLock } from "./src/appLock";
 import { api, loadSettings, saveSettings, signIn, upgradeToDeviceToken, type Settings } from "./src/api";
 import { ConnectionProvider, OfflineBanner } from "./src/connection";
 import { useDeepLinkCommand, type Command } from "./src/deepLink";
+import { syncPlaceReminders } from "./src/geofence";
 import { askCommand } from "./src/links";
 import ChatScreen from "./src/screens/ChatScreen";
 import HistoryScreen from "./src/screens/HistoryScreen";
@@ -73,6 +74,14 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
       .tasks(settings)
       .then((tasks) => setPendingApprovals(tasks.reduce((n, t) => n + t.pending_approvals.length, 0)))
       .catch(() => {});
+  }, [settings, refreshKey, tab]);
+
+  // Pick up place reminders set in chat (or cancelled) so the phone watches the right places.
+  useEffect(() => {
+    const sync = () => syncPlaceReminders(settings).catch((err) => console.warn("place reminders", err));
+    sync();
+    const sub = AppState.addEventListener("change", (state) => state === "active" && sync());
+    return () => sub.remove();
   }, [settings, refreshKey, tab]);
 
   const linkCommand = useDeepLinkCommand();

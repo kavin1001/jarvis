@@ -5,6 +5,7 @@ import { googleStatus, googleTools, isGoogleTool, runGoogleTool } from "./google
 import { mcpRequestParts } from "./mcp.js";
 import * as lists from "./lists.js";
 import * as memory from "./memory.js";
+import * as places from "./places.js";
 import * as reminders from "./reminders.js";
 import { cancelTask, continueTask, listTasks, startTask, taskLaneConfigured } from "./tasks.js";
 import { describeNow } from "./time.js";
@@ -75,6 +76,8 @@ const TOOL_STATUS: Record<string, string> = {
   cancel_reminder: "Cancelling a reminder…",
   search_past_chats: "Looking through past chats…",
   get_weather: "Checking the weather…",
+  save_place: "Saving that place…",
+  set_place_reminder: "Setting a reminder…",
   list_add: "Adding to your list…",
   list_show: "Checking your lists…",
   list_change: "Updating your list…",
@@ -111,6 +114,7 @@ How to work:
 - Never ask the user for passwords or card numbers in chat. Logins live in a secure vault the background agent can use.
 - When the user refers to an earlier conversation that isn't in this chat, look it up with search_past_chats before saying you don't remember.
 - When the user tells you a lasting preference or fact about themselves, save it with remember. When a saved fact changes, correct it with update_fact. Remove facts with forget when asked.
+- For "when I get home" or "when I leave here" use set_place_reminder; "here" uses the location in the message. Save named places with save_place when asked ("this is my office").
 - Keep the user's lists (shopping, packing, to-dos) with list_add, list_show, list_change and list_clear. "Add eggs and milk" during a shopping chat goes on the shopping list. They can also see and tick off their lists in the app's Lists tab.
 - For reminders and recurring jobs ("remind me at 5", "every weekday at 8 brief me on my day") use set_reminder. Use action "run" when Jarvis should do something at that time and send the result; "notify" for a plain reminder. Times are in the user's local time zone, given in each message. For timers and "in 20 minutes", pass in_seconds instead of due_at; a timer's text reads like "10-minute timer: pasta".
 - Messages that start with [Scheduled job] were sent by a reminder the user set, not typed live. Answer them as a short notification-sized briefing.
@@ -149,6 +153,19 @@ const WeatherInput = z
     units: z.enum(["celsius", "fahrenheit"]).default("celsius"),
   })
   .refine((w) => w.place || (w.latitude !== undefined && w.longitude !== undefined), "Give a place or latitude and longitude");
+const SavePlaceInput = z.object({
+  name: z.string().min(1).max(60),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+});
+const PlaceReminderInput = z.object({
+  text: z.string().min(1).max(1000),
+  place: z.string().min(1).max(60),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+  on: z.enum(["arrive", "leave"]),
+  every_time: z.boolean().default(false),
+});
 const StartTaskInput = z.object({
   instructions: z.string().min(1),
   summary: z.string().min(1).max(120),
@@ -244,6 +261,35 @@ const tools: Anthropic.Beta.BetaToolUnion[] = [
         days: { type: "integer", description: "1-7, default 2 (today and tomorrow)." },
         units: { type: "string", enum: ["celsius", "fahrenheit"], description: "What the user is used to: fahrenheit in the US." },
       },
+    },
+  },
+  {
+    name: "save_place",
+    description:
+      "Save a named place (\"home\", \"work\", \"gym\") at the user's approximate location from this message, for place reminders. It's only accurate to about a kilometre; for an exact spot the user can save the place in the app under Settings, Places while they're there.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: { name: { type: "string" }, latitude: { type: "number" }, longitude: { type: "number" } },
+      required: ["name", "latitude", "longitude"],
+    },
+  },
+  {
+    name: "set_place_reminder",
+    description:
+      "A reminder that goes off when the user arrives at or leaves a place (\"remind me to call Mom when I leave work\", \"when I get home, remind me to take the bins out\"). Use a saved place's name, or for \"here\" pass place \"here\" with the user's approximate location.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        text: { type: "string", description: "What to remind them of." },
+        place: { type: "string", description: "A saved place's name, or a short label like \"here\" with latitude and longitude." },
+        latitude: { type: "number" },
+        longitude: { type: "number" },
+        on: { type: "string", enum: ["arrive", "leave"] },
+        every_time: { type: "boolean", description: "Repeat each time instead of once. Default false." },
+      },
+      required: ["text", "place", "on"],
     },
   },
   {
@@ -387,16 +433,20 @@ async function runClientTool(
       case "list_reminders": {
         const tz = await reminders.getTimezone(config.userId);
         const rows = await reminders.listReminders(config.userId);
-        if (rows.length === 0) return result("No upcoming reminders.");
+        const atPlaces = await places.listPlaceReminders(config.userId);
+        if (rows.length === 0 && atPlaces.length === 0) return result("No upcoming reminders.");
         return result(
-          rows
-            .map((r) => `[${r.id}] ${describeNow(tz, new Date(r.due_at))}${r.repeat ? ` (${r.repeat})` : ""} ${r.action}: ${r.text}`)
-            .join("\n"),
+          [
+            ...rows.map((r) => `[${r.id}] ${describeNow(tz, new Date(r.due_at))}${r.repeat ? ` (${r.repeat})` : ""} ${r.action}: ${r.text}`),
+            ...atPlaces.map((r) => `[${r.id}] ${places.describePlaceReminder(r)}: ${r.text}`),
+          ].join("\n"),
         );
       }
       case "cancel_reminder": {
         const { reminder_id } = CancelReminderInput.parse(block.input);
-        const ok = await reminders.cancelReminder(config.userId, reminder_id);
+        const ok =
+          (await places.cancelPlaceReminder(config.userId, reminder_id)) ||
+          (/^[0-9a-f-]{36}$/i.test(reminder_id) && (await reminders.cancelReminder(config.userId, reminder_id)));
         return result(ok ? "Cancelled." : "No upcoming reminder with that id.", !ok);
       }
       case "search_past_chats": {
@@ -420,6 +470,41 @@ async function runClientTool(
           return result(await weatherReport(place, { days: w.days, units: w.units }));
         } catch (err) {
           return result(`The weather service didn't answer (${(err as Error).message}). Use web_search instead.`, true);
+        }
+      }
+      case "save_place": {
+        const p = SavePlaceInput.parse(block.input);
+        await places.savePlace(config.userId, { ...p, radius_m: places.APPROXIMATE_RADIUS_M });
+        return result(`Saved "${places.placeName(p.name)}" (approximate, about 1 km).`);
+      }
+      case "set_place_reminder": {
+        const input = PlaceReminderInput.parse(block.input);
+        const saved = await places.getPlace(config.userId, input.place);
+        const place =
+          saved ??
+          (input.latitude !== undefined && input.longitude !== undefined
+            ? { name: input.place, latitude: input.latitude, longitude: input.longitude, radius_m: places.APPROXIMATE_RADIUS_M }
+            : null);
+        if (!place) {
+          const known = (await places.listPlaces(config.userId)).map((p) => p.name);
+          return result(
+            `No saved place called "${input.place}"${known.length ? ` (saved: ${known.join(", ")})` : ""}. Ask the user to save it in Settings, Places when they're there, or to say "save this as ${input.place}" there.`,
+            true,
+          );
+        }
+        try {
+          const id = await places.createPlaceReminder({
+            userId: config.userId,
+            conversationId,
+            text: input.text,
+            place,
+            on: input.on,
+            everyTime: input.every_time,
+          });
+          const rule = places.describePlaceReminder({ on_event: input.on, place_name: places.placeName(place.name), every_time: input.every_time });
+          return result(`Set ${id}: ${rule}. It only works while Location reminders are on in the app's Settings; mention that if they haven't used one before.`);
+        } catch (err) {
+          return result((err as Error).message, true);
         }
       }
       case "list_add": {

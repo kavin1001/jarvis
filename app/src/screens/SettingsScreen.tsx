@@ -11,6 +11,8 @@ import { SetupStatus } from "./SetupStatus";
 import { YourData } from "./YourData";
 import { McpServers } from "./McpServers";
 import { NotifySettings } from "./NotifySettings";
+import { Places } from "./Places";
+import { stopPlaceReminders } from "../geofence";
 import { Choices, Header, LinkButton, useShared } from "../ui";
 import { Text, useColors, useTheme, type Appearance } from "../theme";
 import { createSpeaker } from "../useVoice";
@@ -197,6 +199,8 @@ export default function SettingsScreen({
         </View>
       )}
 
+      <Places settings={settings} />
+
       <NotifySettings settings={settings} />
 
       <McpServers settings={settings} />
@@ -209,7 +213,7 @@ export default function SettingsScreen({
         }}
       />
 
-      <Devices settings={settings} onSignOut={() => clearSettings().then(onSignOut)} />
+      <Devices settings={settings} onSignOut={() => stopPlaceReminders().then(clearSettings).then(onSignOut)} />
 
       <View style={styles.row}>
         <Text style={styles.rowMeta}>Backend</Text>
@@ -233,6 +237,7 @@ export default function SettingsScreen({
                   // Also revoke this phone's token on the server, if it's reachable.
                   const current = (await api.devices(settings).catch(() => [])).find((d) => d.current);
                   if (current) await api.revokeDevice(settings, current.id).catch(() => {});
+                  await stopPlaceReminders();
                   await clearSettings();
                   onSignOut();
                 },

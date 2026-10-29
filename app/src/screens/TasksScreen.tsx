@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { FlatList, Pressable, RefreshControl, View } from "react-native";
 import { ActionSheet, type SheetAction } from "../ActionSheet";
 import { Alert } from "../dialog";
-import { api, type Reminder, type Settings, type Task } from "../api";
+import { api, type PlaceReminder, type Reminder, type Settings, type Task } from "../api";
 import { askApproval } from "../usePush";
 import { Empty, Header, LinkButton, relativeTime, useShared } from "../ui";
 import { Text, useColors } from "../theme";
@@ -23,6 +23,12 @@ const ROUTINES: { label: string; text: string; time: string; repeat: "daily" | "
   },
 ];
 
+function placeRule(r: PlaceReminder) {
+  const where = r.place_name === "home" ? "home" : r.place_name;
+  const what = r.on_event === "arrive" ? (where === "home" ? "When you get home" : `When you get to ${where}`) : `When you leave ${where}`;
+  return r.every_time ? `${what}, every time` : what;
+}
+
 const STATUS_LABEL: Record<Task["status"], string> = {
   queued: "Queued",
   running: "Working",
@@ -39,14 +45,16 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
   const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [atPlaces, setAtPlaces] = useState<PlaceReminder[]>([]);
   const [sheet, setSheet] = useState<SheetAction[] | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [t, r] = await Promise.all([api.tasks(settings), api.reminders(settings)]);
+      const [t, r, p] = await Promise.all([api.tasks(settings), api.reminders(settings), api.placeReminders(settings).catch(() => [])]);
       setTasks(t);
       setReminders(r);
+      setAtPlaces(p);
     } finally {
       setLoading(false);
     }
@@ -117,7 +125,7 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
         keyExtractor={(t) => t.id}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
         ListHeaderComponent={
-          reminders.length > 0 ? (
+          reminders.length > 0 || atPlaces.length > 0 ? (
             <View>
               <Text style={[styles.rowMeta, { paddingHorizontal: 16, paddingTop: 8 }]}>Upcoming</Text>
               {reminders.map((r) => (
@@ -135,6 +143,21 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
                     {new Date(r.due_at).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit", month: "short", day: "numeric" })}
                     {r.repeat ? ` · ${r.repeat}` : ""}
                   </Text>
+                </Pressable>
+              ))}
+              {atPlaces.map((r) => (
+                <Pressable
+                  key={r.id}
+                  style={styles.row}
+                  accessibilityHint="Cancel"
+                  onPress={() =>
+                    setSheet([{ label: "Cancel it", danger: true, onPress: () => api.cancelPlaceReminder(settings, r.id).then(load, failed("cancel it")) }])
+                  }
+                >
+                  <Text style={styles.rowTitle} numberOfLines={2}>
+                    📍 {r.text}
+                  </Text>
+                  <Text style={styles.rowMeta}>{placeRule(r)}</Text>
                 </Pressable>
               ))}
               <Text style={[styles.rowMeta, { paddingHorizontal: 16, paddingTop: 16 }]}>Background tasks</Text>

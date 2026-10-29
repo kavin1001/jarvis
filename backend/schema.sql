@@ -214,3 +214,33 @@ CREATE TABLE IF NOT EXISTS list_items (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS list_items_user_list ON list_items (user_id, list, created_at);
+
+-- Named places ("home", "work") for reminders that go off on arriving or leaving.
+CREATE TABLE IF NOT EXISTS places (
+  user_id     TEXT NOT NULL,
+  name        TEXT NOT NULL,
+  latitude    DOUBLE PRECISION NOT NULL,
+  longitude   DOUBLE PRECISION NOT NULL,
+  -- How big an area to watch: small for a spot saved from the phone, larger for an approximate one.
+  radius_m    INTEGER NOT NULL DEFAULT 150,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, name)
+);
+
+-- "Remind me when I get home": the phone watches the area and tells the server when it arrives or leaves.
+CREATE TABLE IF NOT EXISTS place_reminders (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id          TEXT NOT NULL,
+  conversation_id  UUID REFERENCES conversations(id) ON DELETE SET NULL,
+  text             TEXT NOT NULL,
+  place_name       TEXT NOT NULL,
+  latitude         DOUBLE PRECISION NOT NULL,
+  longitude        DOUBLE PRECISION NOT NULL,
+  radius_m         INTEGER NOT NULL,
+  on_event         TEXT NOT NULL CHECK (on_event IN ('arrive', 'leave')),
+  every_time       BOOLEAN NOT NULL DEFAULT false,
+  status           TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'done', 'cancelled')),
+  last_fired_at    TIMESTAMPTZ,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS place_reminders_active ON place_reminders (user_id) WHERE status = 'active';

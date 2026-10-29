@@ -58,6 +58,24 @@ export interface Reminder {
   repeat: "daily" | "weekdays" | "weekly" | null;
 }
 
+export interface Place {
+  name: string;
+  latitude: number;
+  longitude: number;
+  radius_m: number;
+}
+
+export interface PlaceReminder {
+  id: string;
+  text: string;
+  place_name: string;
+  latitude: number;
+  longitude: number;
+  radius_m: number;
+  on_event: "arrive" | "leave";
+  every_time: boolean;
+}
+
 export interface AgendaEvent {
   summary: string;
   /** ISO date-time, or a plain date for all-day events. */
@@ -299,6 +317,14 @@ export const api = {
   cancelTask: (s: Settings, id: string) => request(s, `/api/tasks/${id}/cancel`, { method: "POST" }),
   stopReply: (s: Settings, conversationId: string) =>
     request<{ stopped: boolean }>(s, `/api/conversations/${conversationId}/stop`, { method: "POST" }),
+  places: (s: Settings) => request<Place[]>(s, "/api/places"),
+  savePlace: (s: Settings, place: { name: string; latitude: number; longitude: number }) =>
+    request<{ name: string }>(s, "/api/places", { method: "POST", body: place }),
+  deletePlace: (s: Settings, name: string) => request(s, `/api/places/${encodeURIComponent(name)}`, { method: "DELETE" }),
+  placeReminders: (s: Settings) => request<PlaceReminder[]>(s, "/api/place-reminders"),
+  cancelPlaceReminder: (s: Settings, id: string) => request(s, `/api/place-reminders/${id}`, { method: "DELETE" }),
+  triggerPlaceReminder: (s: Settings, id: string, event: "arrive" | "leave") =>
+    request<{ sent: boolean }>(s, `/api/place-reminders/${id}/trigger`, { method: "POST", body: { event } }),
   moveReminder: (s: Settings, id: string, dueAt: Date) =>
     request<{ id: string; due_at: string }>(s, `/api/reminders/${id}`, { method: "PATCH", body: { due_at: dueAt.toISOString() } }),
   skipReminder: (s: Settings, id: string) => request<{ id: string; due_at: string }>(s, `/api/reminders/${id}/skip`, { method: "POST" }),

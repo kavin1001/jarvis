@@ -172,6 +172,42 @@ describe("runTurn", () => {
     expect(due).toBeLessThan(Date.now() + 600_000 + 1000);
   });
 
+  it("sets a place reminder for \"here\" or a saved place, and lists and cancels it", async () => {
+    const tool = (name: string, input: unknown) => ({ content: [{ type: "tool_use", id: `tu_${name}`, name, input } as never], stop_reason: "tool_use" as const });
+    const reply = { content: [{ type: "text" as const, text: "OK", citations: null }], stop_reason: "end_turn" as const };
+    const requests = fakeClient([
+      tool("set_place_reminder", { text: "Buy stamps", place: "work", on: "leave" }),
+      tool("set_place_reminder", { text: "Buy stamps", place: "here", latitude: 40.71, longitude: -74.01, on: "leave" }),
+      tool("list_reminders", {}),
+      reply,
+    ]);
+    const conv = await memory.createConversation("me");
+    await runTurn({ conversationId: conv, text: "remind me to buy stamps when I leave", source: "text", emit: () => {} });
+    const results = requests.slice(1).map((r) => JSON.stringify(r.messages.at(-1)));
+    expect(results[0]).toContain('No saved place called \\"work\\"');
+    expect(results[1]).toContain("when you leave here");
+    expect(results[2]).toContain("when you leave here: Buy stamps");
+    const { listPlaceReminders } = await import("../src/places.js");
+    const [r] = await listPlaceReminders("me");
+    expect(r).toMatchObject({ radius_m: 1000, conversation_id: conv });
+
+    fakeClient([tool("cancel_reminder", { reminder_id: r.id }), tool("cancel_reminder", { reminder_id: "not-an-id" }), reply]);
+    await runTurn({ conversationId: conv, text: "never mind", source: "text", emit: () => {} });
+    expect(await listPlaceReminders("me")).toEqual([]);
+  });
+
+  it("keeps a list through the tools", async () => {
+    const tool = (name: string, input: unknown) => ({ content: [{ type: "tool_use", id: `tu_${name}`, name, input } as never], stop_reason: "tool_use" as const });
+    const requests = fakeClient([
+      tool("list_add", { list: "Shopping", items: ["eggs", "milk"] }),
+      tool("list_show", {}),
+      { content: [{ type: "text", text: "Added.", citations: null }], stop_reason: "end_turn" },
+    ]);
+    await runTurn({ conversationId: await memory.createConversation("me"), text: "add eggs and milk", source: "text", emit: () => {} });
+    expect(JSON.stringify(requests[1].messages.at(-1))).toContain("Added 2 to the shopping list");
+    expect(JSON.stringify(requests[2].messages.at(-1))).toContain("shopping: 2 left, 0 done");
+  });
+
   it("uploads photos and sends them as file references", async () => {
     const requests = fakeClient([{ content: [{ type: "text", text: "A cat.", citations: null }], stop_reason: "end_turn" }]);
     const id = await memory.createConversation("me");

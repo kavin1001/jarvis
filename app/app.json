@@ -36,7 +36,9 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Jarvis uses your approximate location for questions like \"what's open near me\", only when you turn it on in Settings."
+          "locationWhenInUsePermission": "Jarvis uses your approximate location for questions like \"what's open near me\", only when you turn it on in Settings.",
+          "locationAlwaysAndWhenInUsePermission": "With place reminders on, Jarvis watches the places you saved so it can remind you when you arrive or leave, even while it's closed.",
+          "isAndroidBackgroundLocationEnabled": true
         }
       ],
       [

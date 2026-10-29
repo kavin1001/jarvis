@@ -18,6 +18,7 @@ import { addServer, deleteServer, listServers, NewServer, setServerEnabled } fro
 import { handleMcpCallback, startMcpOAuth } from "./mcpOAuth.js";
 import * as lists from "./lists.js";
 import * as memory from "./memory.js";
+import * as places from "./places.js";
 import { getNotifySettings, savePushToken, sendPush, setNotifySettings } from "./push.js";
 import { cancelReminder, createReminder, getTimezone, listReminders, rescheduleReminder, runReminderNow, skipReminder, snoozeReminder } from "./reminders.js";
 import { serverStatus } from "./status.js";
@@ -390,6 +391,29 @@ app.post("/api/reminders/:id/run", async (c) => {
 app.delete("/api/reminders/:id", async (c) =>
   c.json({ cancelled: await cancelReminder(config.userId, c.req.param("id")) }),
 );
+
+// Places and place reminders. The phone saves a precise spot, and fetches the active
+// reminders to watch; when it arrives or leaves, it tells the server, which sends the reminder.
+app.get("/api/places", async (c) => c.json(await places.listPlaces(config.userId)));
+const NewPlace = z
+  .object({ name: z.string().trim().min(1).max(60), latitude: z.number().min(-90).max(90), longitude: z.number().min(-180).max(180) })
+  .strict();
+app.post("/api/places", async (c) => {
+  const body = NewPlace.safeParse(await c.req.json());
+  if (!body.success) return c.json({ error: body.error.message }, 400);
+  await places.savePlace(config.userId, { ...body.data, radius_m: places.PRECISE_RADIUS_M });
+  return c.json({ name: places.placeName(body.data.name) });
+});
+app.delete("/api/places/:name", async (c) => c.json({ deleted: await places.deletePlace(config.userId, c.req.param("name")) }));
+app.get("/api/place-reminders", async (c) => c.json(await places.listPlaceReminders(config.userId)));
+app.delete("/api/place-reminders/:id", async (c) => c.json({ cancelled: await places.cancelPlaceReminder(config.userId, c.req.param("id")) }));
+const PlaceEvent = z.object({ event: z.enum(["arrive", "leave"]) }).strict();
+app.post("/api/place-reminders/:id/trigger", async (c) => {
+  const body = PlaceEvent.safeParse(await c.req.json());
+  if (!body.success) return c.json({ error: body.error.message }, 400);
+  const outcome = await places.triggerPlaceReminder(config.userId, c.req.param("id"), body.data.event);
+  return outcome === "not_found" ? c.json({ error: "Not found" }, 404) : c.json({ sent: outcome === "sent" });
+});
 
 app.get("/api/usage", async (c) =>
   c.json(await summarize(config.userId, await getTimezone(config.userId), config.dailyBudgetUsd)),
