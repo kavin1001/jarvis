@@ -424,7 +424,7 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
   {
     name: "calendar_update_event",
     description:
-      "Change an event on the user's primary calendar: move it, rename it, or change its place or notes. Pass only the fields that change. No updates are sent to guests. If the answer says it overlaps with other events, tell the user. Get the id from calendar_list_events.",
+      "Change an event on the user's primary calendar: move it, rename it, change its place or notes, or attach a Drive file (attach_file_id, e.g. an agenda doc you just made, so guests can open it from the invite). Pass only the fields that change. No updates are sent to guests. If the answer says it overlaps with other events, tell the user. Get the id from calendar_list_events.",
     eager_input_streaming: true,
     input_schema: {
       type: "object",
@@ -435,6 +435,7 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
         end: { type: "string", description: "ISO 8601 with offset" },
         location: { type: "string" },
         description: { type: "string" },
+        attach_file_id: { type: "string", description: "A Drive file id (from drive_search or a doc you made) to attach to the event" },
       },
       required: ["event_id"],
     },
@@ -649,6 +650,7 @@ const inputs = {
       end: isoDate.optional(),
       location: z.string().optional(),
       description: z.string().optional(),
+      attach_file_id: z.string().regex(/^[\w-]{10,200}$/, "must be a Drive file id").optional(),
     })
     .refine((e) => Object.keys(e).length > 1, "Nothing to change"),
   calendar_delete_event: z.object({ event_id: z.string().min(1) }),
@@ -1486,9 +1488,23 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
       return `Event created (id ${created.id}): ${created.htmlLink}${created.hangoutLink ? `\nMeet link: ${created.hangoutLink}` : ""}${clash}`;
     }
     case "calendar_update_event": {
-      const { event_id, start, end, ...rest } = inputs.calendar_update_event.parse(raw);
+      const { event_id, start, end, attach_file_id, ...rest } = inputs.calendar_update_event.parse(raw);
       const { url } = parseEventRef(event_id);
       const body: Record<string, unknown> = { ...rest };
+      if (attach_file_id) {
+        const file = await google<{ id: string; name: string; mimeType: string; webViewLink: string }>(
+          userId,
+          `${DRIVE}/${attach_file_id}?fields=id,name,mimeType,webViewLink&supportsAllDrives=true`,
+        ).catch((err: Error) => {
+          throw /\b40[34]\b/.test(err.message) ? new Error("Jarvis can't see that Drive file. Search for it with drive_search first.") : err;
+        });
+        const { attachments = [] } = await google<{ attachments?: { fileId?: string }[] }>(userId, `${url}?fields=attachments`);
+        // Calendar keeps at most 25 attachments on an event.
+        if (!attachments.some((a) => a.fileId === file.id)) {
+          if (attachments.length >= 25) throw new Error("That event already has 25 attachments, the most Calendar allows.");
+          body.attachments = [...attachments, { fileId: file.id, fileUrl: file.webViewLink, title: file.name, mimeType: file.mimeType }];
+        }
+      }
       let was = "";
       let clash = "";
       if (start || end) {
@@ -1505,7 +1521,10 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
         // The old times, so the move can be undone from Settings.
         was = ` (it was ${new Date(oldStart).toISOString()} to ${new Date(oldEnd).toISOString()})`;
       }
-      const updated = await google<{ id: string; htmlLink: string }>(userId, `${url}?sendUpdates=none`, { method: "PATCH", body });
+      const updated = await google<{ id: string; htmlLink: string }>(userId, `${url}?sendUpdates=none${body.attachments ? "&supportsAttachments=true" : ""}`, {
+        method: "PATCH",
+        body,
+      });
       if (body.start) clash = await clashes(userId, Date.parse((body.start as { dateTime: string }).dateTime), Date.parse((body.end as { dateTime: string }).dateTime), timeZone, updated.id);
       return `Event updated${was}: ${updated.htmlLink}${clash}`;
     }

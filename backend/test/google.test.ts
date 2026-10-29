@@ -282,6 +282,30 @@ describe("Google tools", () => {
     expect(calls).toHaveLength(3);
   });
 
+  it("attaches a Drive file to an event once", async () => {
+    await connect({ access_token: "at", expires_at: Date.now() + 3600_000 });
+    const calls = mockFetch({
+      "events/ev1?fields=attachments": () => ({ attachments: [{ fileId: "old_1234567890", title: "Old" }] }),
+      "events/ev2?fields=attachments": () => ({ attachments: [{ fileId: "doc_1234567890" }] }),
+      "events/ev": () => ({ id: "ev1", htmlLink: "https://calendar.example/ev1" }),
+      "files/doc_1234567890": () => ({ id: "doc_1234567890", name: "Agenda", mimeType: "application/vnd.google-apps.document", webViewLink: "https://docs.google.com/d" }),
+      "files/gone_1234567890": () => new Response("no", { status: 404 }),
+    });
+    expect(await runGoogleTool("me", "calendar_update_event", { event_id: "ev1", attach_file_id: "doc_1234567890" })).toBe("Event updated: https://calendar.example/ev1");
+    const patch = calls.find((c) => c.init?.method === "PATCH")!;
+    expect(patch.url).toContain("supportsAttachments=true");
+    expect(JSON.parse(patch.init!.body as string)).toEqual({
+      attachments: [
+        { fileId: "old_1234567890", title: "Old" },
+        { fileId: "doc_1234567890", fileUrl: "https://docs.google.com/d", title: "Agenda", mimeType: "application/vnd.google-apps.document" },
+      ],
+    });
+    // Already attached: nothing added.
+    await runGoogleTool("me", "calendar_update_event", { event_id: "ev2", attach_file_id: "doc_1234567890" });
+    expect(JSON.parse(calls.filter((c) => c.init?.method === "PATCH").at(-1)!.init!.body as string)).toEqual({});
+    await expect(runGoogleTool("me", "calendar_update_event", { event_id: "ev1", attach_file_id: "gone_1234567890" })).rejects.toThrow(/can't see that Drive file/);
+  });
+
   it("moves an event keeping its length, and deletes one", async () => {
     await connect({ access_token: "at", expires_at: Date.now() + 3600_000 });
     const calls = mockFetch({

@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Attach files to calendar events: "make an agenda for my 3pm and attach it", "add the budget sheet to Friday's meeting". Guests can open it from the invite. No updates are emailed to them.
 - Forward email as a draft: "forward the invoice to my accountant". The draft includes the original message and its attachments (up to Gmail's 25 MB), ready for you to send from Gmail. Jarvis still never sends.
 - Docs, sheets and attachments Jarvis saves now go in a **Jarvis** folder in your Drive, so they're easy to find and don't clutter My Drive.
 - Save email attachments to Drive: "save the boarding pass to my Drive", "keep that invoice". Any file type up to 25 MB, with a link back. **Undo** in Settings moves it to the bin. Uses the same permission as Google Docs.
