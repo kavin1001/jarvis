@@ -6,9 +6,11 @@ import { query } from "./db.js";
 import { zonedParts, zonedToUtc } from "./time.js";
 
 // Read mail, save drafts (never send), archive and mark mail, read and change calendar events,
-// and look up contacts (saved ones, and "other contacts": people the user has emailed).
+// look up contacts (saved ones, and "other contacts": people the user has emailed), and see which
+// calendars the user has, so shared and family calendars count too.
 const MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify";
 const CONTACTS_SCOPES = ["https://www.googleapis.com/auth/contacts.readonly", "https://www.googleapis.com/auth/contacts.other.readonly"];
+const CALENDAR_LIST_SCOPE = "https://www.googleapis.com/auth/calendar.calendarlist.readonly";
 const SCOPES = [
   "openid",
   "email",
@@ -17,6 +19,7 @@ const SCOPES = [
   MODIFY_SCOPE,
   "https://www.googleapis.com/auth/calendar.events",
   ...CONTACTS_SCOPES,
+  CALENDAR_LIST_SCOPE,
 ];
 
 interface Tokens {
@@ -52,6 +55,7 @@ export async function googleStatus(userId: string) {
     // Connections made before archiving was added lack the scope until reconnected.
     can_organize: Boolean(row?.scopes.split(" ").includes(MODIFY_SCOPE)),
     can_search_contacts: Boolean(row && CONTACTS_SCOPES.every((sc) => row.scopes.split(" ").includes(sc))),
+    can_see_all_calendars: Boolean(row?.scopes.split(" ").includes(CALENDAR_LIST_SCOPE)),
   };
 }
 
@@ -111,6 +115,7 @@ export async function handleGoogleCallback(code: string, state: string): Promise
   });
   const email = info.ok ? ((await info.json()) as { email?: string }).email ?? null : null;
 
+  calendarCache.delete(claimed.user_id);
   await query(
     `INSERT INTO connectors (user_id, provider, account_email, tokens, scopes) VALUES ($1, 'google', $2, $3, $4)
      ON CONFLICT (user_id, provider) DO UPDATE SET account_email = $2, tokens = $3, scopes = $4, updated_at = now()`,
@@ -120,6 +125,7 @@ export async function handleGoogleCallback(code: string, state: string): Promise
 }
 
 export async function disconnectGoogle(userId: string) {
+  calendarCache.delete(userId);
   const e = env();
   const [row] = await query<{ tokens: string }>(
     "DELETE FROM connectors WHERE user_id = $1 AND provider = 'google' RETURNING tokens",
@@ -257,7 +263,7 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
   },
   {
     name: "calendar_list_events",
-    description: "List events on the user's primary Google Calendar between two ISO 8601 times. Each line starts with the event id in brackets.",
+    description: "List events between two ISO 8601 times on the user's Google calendars: their own, plus shared or family calendars they show. Each line starts with the event id in brackets; events from other calendars name it.",
     eager_input_streaming: true,
     input_schema: {
       type: "object",
@@ -565,9 +571,85 @@ export function freeSlots(
   return slots;
 }
 
+// ---- Calendars ------------------------------------------------------------
+
+const CAL_API = "https://www.googleapis.com/calendar/v3/calendars";
+const eventsUrl = (calendarId: string) => `${CAL_API}/${encodeURIComponent(calendarId)}/events`;
+
+interface Calendar {
+  id: string;
+  name: string;
+  primary: boolean;
+}
+const PRIMARY: Calendar = { id: "primary", name: "", primary: true };
+const MAX_CALENDARS = 10;
+const calendarCache = new Map<string, { at: number; calendars: Calendar[] }>();
+
+/**
+ * The calendars to read: the primary one, plus the others the user shows in Google Calendar
+ * (shared, family, work…) once the calendar-list permission is granted.
+ */
+async function calendarsOf(userId: string): Promise<Calendar[]> {
+  if (!(await googleStatus(userId)).can_see_all_calendars) return [PRIMARY];
+  const cached = calendarCache.get(userId);
+  if (cached && Date.now() - cached.at < 10 * 60_000) return cached.calendars;
+  try {
+    const res = await google<{ items?: { id: string; summary?: string; summaryOverride?: string; primary?: boolean; selected?: boolean; hidden?: boolean }[] }>(
+      userId,
+      "https://www.googleapis.com/calendar/v3/users/me/calendarList?minAccessRole=reader",
+    );
+    const shown = (res.items ?? []).filter((c) => c.primary || (c.selected && !c.hidden));
+    const calendars = [
+      PRIMARY,
+      ...shown.filter((c) => !c.primary).map((c) => ({ id: c.id, name: c.summaryOverride ?? c.summary ?? c.id, primary: false })),
+    ].slice(0, MAX_CALENDARS);
+    calendarCache.set(userId, { at: Date.now(), calendars });
+    return calendars;
+  } catch (err) {
+    console.warn("calendar list failed", err instanceof Error ? err.message : err);
+    return [PRIMARY];
+  }
+}
+
+/** Events from other calendars carry theirs in the id Claude sees: "<calendar id>|<event id>". */
+const eventRef = (calendar: Calendar, eventId: string) => (calendar.primary ? eventId : `${calendar.id}|${eventId}`);
+function parseEventRef(ref: string) {
+  const bar = ref.indexOf("|");
+  return bar === -1 ? { url: `${eventsUrl("primary")}/${encodeURIComponent(ref)}` } : { url: `${eventsUrl(ref.slice(0, bar))}/${encodeURIComponent(ref.slice(bar + 1))}` };
+}
+
+/** One events.list query run on every calendar, each event tagged with its calendar. */
+async function eventsAcross<E>(userId: string, params: URLSearchParams): Promise<{ calendar: Calendar; event: E }[]> {
+  const calendars = await calendarsOf(userId);
+  const lists = await Promise.all(
+    calendars.map(async (calendar) => {
+      try {
+        const res = await google<{ items?: E[] }>(userId, `${eventsUrl(calendar.id)}?${params}`);
+        return (res.items ?? []).map((event) => ({ calendar, event }));
+      } catch (err) {
+        // One calendar failing (unsubscribed since, say) shouldn't hide the others; the primary one must work.
+        if (calendar.primary) throw err;
+        return [];
+      }
+    }),
+  );
+  return lists.flat();
+}
+
+type CalEvent = {
+  id: string;
+  summary?: string;
+  location?: string;
+  transparency?: string;
+  start: { dateTime?: string; date?: string };
+  end: { dateTime?: string; date?: string };
+  attendees?: { self?: boolean; responseStatus?: string }[];
+};
+const startOf = (e: CalEvent) => Date.parse(e.start.dateTime ?? e.start.date ?? "");
+
 export async function runGoogleTool(userId: string, name: keyof typeof inputs, raw: unknown, timeZone = "UTC"): Promise<GoogleToolResult> {
   const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
-  const CAL = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
+  const CAL = eventsUrl("primary");
   switch (name) {
     case "contacts_search": {
       const { query: q } = inputs.contacts_search.parse(raw);
@@ -683,12 +765,13 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
         maxResults: "25",
         ...(q ? { q } : {}),
       });
-      const res = await google<{
-        items: { id: string; summary?: string; location?: string; start: { dateTime?: string; date?: string }; end: { dateTime?: string; date?: string } }[];
-      }>(userId, `${CAL}?${params}`);
-      if (!res.items.length) return "No events in that range.";
-      return res.items
-        .map((ev) => `[${ev.id}] ${ev.start.dateTime ?? ev.start.date} to ${ev.end.dateTime ?? ev.end.date}: ${ev.summary ?? "(no title)"}${ev.location ? ` @ ${ev.location}` : ""}`)
+      const found = (await eventsAcross<CalEvent>(userId, params)).sort((a, b) => startOf(a.event) - startOf(b.event)).slice(0, 25);
+      if (!found.length) return "No events in that range.";
+      return found
+        .map(
+          ({ calendar, event: ev }) =>
+            `[${eventRef(calendar, ev.id)}] ${ev.start.dateTime ?? ev.start.date} to ${ev.end.dateTime ?? ev.end.date}: ${ev.summary ?? "(no title)"}${ev.location ? ` @ ${ev.location}` : ""}${calendar.primary ? "" : ` (${calendar.name} calendar)`}`,
+        )
         .join("\n");
     }
     case "calendar_find_free_time": {
@@ -699,16 +782,9 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
       if (to.getTime() - from.getTime() > 31 * 24 * 3600_000) throw new Error("Look at most 31 days ahead at a time");
       // From the events themselves rather than the freeBusy endpoint, which the calendar.events scope doesn't cover.
       const params = new URLSearchParams({ timeMin: from.toISOString(), timeMax: to.toISOString(), singleEvents: "true", maxResults: "250" });
-      const res = await google<{
-        items: {
-          transparency?: string;
-          start: { dateTime?: string };
-          end: { dateTime?: string };
-          attendees?: { self?: boolean; responseStatus?: string }[];
-        }[];
-      }>(userId, `${CAL}?${params}`);
+      const events = (await eventsAcross<CalEvent>(userId, params)).map((e) => e.event);
       // All-day events, ones marked "free", and invitations the user declined don't block time.
-      const busy = res.items
+      const busy = events
         .filter((ev) => ev.start.dateTime && ev.end.dateTime && ev.transparency !== "transparent")
         .filter((ev) => !ev.attendees?.some((a) => a.self && a.responseStatus === "declined"))
         .map((ev) => ({ start: ev.start.dateTime!, end: ev.end.dateTime! }));
@@ -739,7 +815,7 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
     }
     case "calendar_update_event": {
       const { event_id, start, end, ...rest } = inputs.calendar_update_event.parse(raw);
-      const url = `${CAL}/${encodeURIComponent(event_id)}`;
+      const { url } = parseEventRef(event_id);
       const body: Record<string, unknown> = { ...rest };
       if (start || end) {
         // Moving only the start keeps the event's length.
@@ -758,7 +834,7 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
     }
     case "calendar_delete_event": {
       const { event_id } = inputs.calendar_delete_event.parse(raw);
-      await google(userId, `${CAL}/${encodeURIComponent(event_id)}?sendUpdates=none`, { method: "DELETE" });
+      await google(userId, `${parseEventRef(event_id).url}?sendUpdates=none`, { method: "DELETE" });
       return "Event deleted.";
     }
   }
@@ -784,10 +860,11 @@ export async function upcomingEvents(userId: string, hours = 24, max = 3): Promi
     orderBy: "startTime",
     maxResults: String(max),
   });
-  const res = await google<{
-    items: { summary?: string; location?: string; start: { dateTime?: string; date?: string } }[];
-  }>(userId, `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`);
-  return res.items.map((e) => ({
+  const events = (await eventsAcross<CalEvent>(userId, params))
+    .map((e) => e.event)
+    .sort((a, b) => startOf(a) - startOf(b))
+    .slice(0, max);
+  return events.map((e) => ({
     summary: e.summary ?? "(No title)",
     start: e.start.dateTime ?? e.start.date ?? "",
     all_day: !e.start.dateTime,

@@ -82,7 +82,7 @@ describe("Google OAuth", () => {
 
   it("exposes status, start and disconnect to the app", async () => {
     const status = await app.request("/api/connectors", { headers: auth });
-    expect(await status.json()).toEqual({ google: { available: true, connected: false, email: null, can_organize: false, can_search_contacts: false } });
+    expect(await status.json()).toEqual({ google: { available: true, connected: false, email: null, can_organize: false, can_search_contacts: false, can_see_all_calendars: false } });
     const start = await app.request("/api/connectors/google/start", { method: "POST", headers: auth });
     expect((await start.json()).url).toMatch(/^https:\/\/accounts\.google\.com\//);
 
@@ -371,6 +371,39 @@ describe("free time", () => {
     expect(text).toContain("5:00 PM to 6:00 PM");
     expect(calls[0].url).toContain("singleEvents=true");
     await expect(runGoogleTool("me", "calendar_find_free_time", { time_min: "2026-10-29T13:00:00Z", time_max: "2026-12-29T13:00:00Z" })).rejects.toThrow(/31 days/);
+  });
+});
+
+describe("all calendars", () => {
+  it("reads every calendar the user shows, tags events with theirs, and edits them there", async () => {
+    await connect({ access_token: "at", expires_at: Date.now() + 3600_000 }, "https://www.googleapis.com/auth/calendar.calendarlist.readonly");
+    const family = "family123@group.calendar.google.com";
+    const calls = mockFetch({
+      calendarList: () => ({
+        items: [
+          { id: "me@example.com", primary: true, selected: true },
+          { id: family, summary: "Family", selected: true },
+          { id: "hidden@group.calendar.google.com", summary: "Old", selected: true, hidden: true },
+          { id: "holidays", summary: "Holidays", selected: false },
+        ],
+      }),
+      [`calendars/${encodeURIComponent(family)}/events/ev2`]: () => ({ htmlLink: "https://calendar.example/ev2" }),
+      [`calendars/${encodeURIComponent(family)}/events`]: () => ({
+        items: [{ id: "ev2", summary: "Swim class", start: { dateTime: "2026-10-29T16:00:00Z" }, end: { dateTime: "2026-10-29T17:00:00Z" } }],
+      }),
+      "calendars/primary/events": () => ({
+        items: [{ id: "ev1", summary: "Standup", start: { dateTime: "2026-10-29T14:00:00Z" }, end: { dateTime: "2026-10-29T14:15:00Z" } }],
+      }),
+    });
+    const listed = (await runGoogleTool("me", "calendar_list_events", { time_min: "2026-10-29T00:00:00Z", time_max: "2026-10-30T00:00:00Z" })) as string;
+    expect(listed.split("\n")).toEqual([
+      "[ev1] 2026-10-29T14:00:00Z to 2026-10-29T14:15:00Z: Standup",
+      `[${family}|ev2] 2026-10-29T16:00:00Z to 2026-10-29T17:00:00Z: Swim class (Family calendar)`,
+    ]);
+    expect(calls.some((c) => c.url.includes("hidden%40") || c.url.includes("calendars/holidays"))).toBe(false);
+
+    expect(await runGoogleTool("me", "calendar_delete_event", { event_id: `${family}|ev2` })).toBe("Event deleted.");
+    expect(calls.at(-1)!.url).toContain(`calendars/${encodeURIComponent(family)}/events/ev2?sendUpdates=none`);
   });
 });
 
