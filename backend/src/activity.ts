@@ -53,6 +53,8 @@ export function describeAction(name: string, input: Input, timeZone = "UTC"): st
         : `Changed ${input.summary ? `an event to "${str(input.summary)}"` : "an event"}`;
     case "calendar_delete_event":
       return "Deleted an event from your calendar";
+    case "calendar_respond_to_event":
+      return `Replied ${input.response === "accepted" ? "yes" : input.response === "declined" ? "no" : "maybe"} to an invitation`;
     case "start_task":
       return `Started a background task: ${str(input.summary) || str(input.instructions)}`;
     case "continue_task":

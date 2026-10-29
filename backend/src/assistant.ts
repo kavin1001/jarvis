@@ -112,6 +112,7 @@ const TOOL_STATUS: Record<string, string> = {
   calendar_update_event: "Updating your calendar…",
   gmail_organize: "Tidying your inbox…",
   calendar_delete_event: "Removing it from your calendar…",
+  calendar_respond_to_event: "Replying to the invitation…",
 };
 
 /** A short line for the app while a tool runs, e.g. "Searching the web…". */

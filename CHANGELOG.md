@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Reply to invitations: "accept the design review", "tell Sam I can't make Friday's meeting", "say maybe to the party". Jarvis now sees which events are invitations and whether you've replied, and can answer yes, no or maybe with an optional note to the organizer. Uses the calendar permission you already gave.
 - Shared and family calendars: Jarvis now reads every calendar you show in Google Calendar, not only your own. Listing events, finding free time and the coming-up card include them, events say which calendar they're on, and Jarvis can move or delete them there. New events still go on your own calendar. Already connected? Add the `calendar.calendarlist.readonly` scope to the consent screen (see `docs/DEPLOY.md`), then tap **Connect again** in Settings.
 - Birthdays: "whose birthday is coming up?", "anyone's birthday this week?". Jarvis reads the birthdays saved in your Google Contacts and says how old people turn when the year is known. The ready-made morning briefing now mentions birthdays today or tomorrow. Uses the contacts permission you already gave; no reconnect needed.
 - Settings, Privacy, **Keep chats**: forever (as before), 1 year, 90 days or 30 days. Chats you haven't used for longer are deleted with their messages, checked hourly. Pinned chats, and chats with a background task still running, are kept. Before deleting anything straight away, Jarvis says how many chats will go. `GET/PATCH /api/privacy`.

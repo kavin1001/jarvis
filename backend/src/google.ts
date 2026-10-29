@@ -335,6 +335,21 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
     eager_input_streaming: true,
     input_schema: { type: "object", properties: { event_id: { type: "string" } }, required: ["event_id"] },
   },
+  {
+    name: "calendar_respond_to_event",
+    description:
+      "Reply to an invitation on the user's calendar: yes, no or maybe, with an optional note to the organizer. Only for events the user was invited to (calendar_list_events marks them); the organizer sees the reply. Only after the user has said how to reply.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        event_id: { type: "string" },
+        response: { type: "string", enum: ["accepted", "declined", "tentative"] },
+        note: { type: "string", description: "Optional message for the organizer, e.g. \"Running 10 minutes late\"." },
+      },
+      required: ["event_id", "response"],
+    },
+  },
 ];
 
 const isoDate = z.string().refine((v) => !Number.isNaN(Date.parse(v)), "must be an ISO 8601 date-time");
@@ -382,6 +397,11 @@ const inputs = {
     })
     .refine((e) => Object.keys(e).length > 1, "Nothing to change"),
   calendar_delete_event: z.object({ event_id: z.string().min(1) }),
+  calendar_respond_to_event: z.object({
+    event_id: z.string().min(1),
+    response: z.enum(["accepted", "declined", "tentative"]),
+    note: z.string().max(500).optional(),
+  }),
 };
 
 export function isGoogleTool(name: string): name is keyof typeof inputs {
@@ -643,8 +663,19 @@ type CalEvent = {
   transparency?: string;
   start: { dateTime?: string; date?: string };
   end: { dateTime?: string; date?: string };
-  attendees?: { self?: boolean; responseStatus?: string }[];
+  attendees?: Attendee[];
+  organizer?: { email?: string; displayName?: string; self?: boolean };
 };
+type Attendee = { email?: string; displayName?: string; self?: boolean; responseStatus?: string; comment?: string };
+const REPLY: Record<string, string> = { accepted: "yes", declined: "no", tentative: "maybe", needsAction: "not replied yet" };
+
+/** " (invited by Sam; your reply: not replied yet)" for an invitation, empty for the user's own events. */
+function inviteNote(ev: CalEvent) {
+  const me = ev.attendees?.find((a) => a.self);
+  if (!me || ev.organizer?.self) return "";
+  const by = ev.organizer?.displayName ?? ev.organizer?.email;
+  return ` (invited${by ? ` by ${by}` : ""}; your reply: ${REPLY[me.responseStatus ?? "needsAction"] ?? me.responseStatus})`;
+}
 const startOf = (e: CalEvent) => Date.parse(e.start.dateTime ?? e.start.date ?? "");
 
 export async function runGoogleTool(userId: string, name: keyof typeof inputs, raw: unknown, timeZone = "UTC"): Promise<GoogleToolResult> {
@@ -770,7 +801,7 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
       return found
         .map(
           ({ calendar, event: ev }) =>
-            `[${eventRef(calendar, ev.id)}] ${ev.start.dateTime ?? ev.start.date} to ${ev.end.dateTime ?? ev.end.date}: ${ev.summary ?? "(no title)"}${ev.location ? ` @ ${ev.location}` : ""}${calendar.primary ? "" : ` (${calendar.name} calendar)`}`,
+            `[${eventRef(calendar, ev.id)}] ${ev.start.dateTime ?? ev.start.date} to ${ev.end.dateTime ?? ev.end.date}: ${ev.summary ?? "(no title)"}${ev.location ? ` @ ${ev.location}` : ""}${calendar.primary ? "" : ` (${calendar.name} calendar)`}${inviteNote(ev)}`,
         )
         .join("\n");
     }
@@ -836,6 +867,17 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
       const { event_id } = inputs.calendar_delete_event.parse(raw);
       await google(userId, `${parseEventRef(event_id).url}?sendUpdates=none`, { method: "DELETE" });
       return "Event deleted.";
+    }
+    case "calendar_respond_to_event": {
+      const { event_id, response, note } = inputs.calendar_respond_to_event.parse(raw);
+      const { url } = parseEventRef(event_id);
+      const ev = await google<CalEvent>(userId, url);
+      const me = ev.attendees?.find((a) => a.self);
+      if (!me || ev.organizer?.self) throw new Error("That event isn't an invitation: it's the user's own, or has no guests.");
+      // Google replaces the whole guest list on a patch, so send it all back with only the user's reply changed.
+      const attendees = ev.attendees!.map((a) => (a.self ? { ...a, responseStatus: response, ...(note !== undefined ? { comment: note } : {}) } : a));
+      await google(userId, `${url}?sendUpdates=none`, { method: "PATCH", body: { attendees } });
+      return `Replied ${REPLY[response]} to "${ev.summary ?? "the event"}".`;
     }
   }
 }

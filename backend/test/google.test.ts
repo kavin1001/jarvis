@@ -182,6 +182,46 @@ describe("Google tools", () => {
     expect(calls.at(-1)!.init?.method).toBe("DELETE");
   });
 
+  it("marks invitations in the list and replies to them", async () => {
+    await connect({ access_token: "at", expires_at: Date.now() + 3600_000 });
+    const invite = {
+      id: "inv1",
+      summary: "Design review",
+      start: { dateTime: "2026-10-30T15:00:00Z" },
+      end: { dateTime: "2026-10-30T16:00:00Z" },
+      organizer: { email: "sam@example.com", displayName: "Sam" },
+      attendees: [
+        { email: "sam@example.com", responseStatus: "accepted", organizer: true },
+        { email: "me@example.com", self: true, responseStatus: "needsAction" },
+      ],
+    };
+    const own = { id: "own1", summary: "Gym", start: { dateTime: "2026-10-30T07:00:00Z" }, end: { dateTime: "2026-10-30T08:00:00Z" }, organizer: { self: true } };
+    const calls = mockFetch({
+      "events/inv1": (_url, init) => (init?.method === "PATCH" ? {} : invite),
+      "events/own1": () => own,
+      "calendar/v3": () => ({ items: [own, invite] }),
+    });
+    const listed = (await runGoogleTool("me", "calendar_list_events", { time_min: "2026-10-30T00:00:00Z", time_max: "2026-10-31T00:00:00Z" })) as string;
+    expect(listed.split("\n")).toEqual([
+      "[own1] 2026-10-30T07:00:00Z to 2026-10-30T08:00:00Z: Gym",
+      "[inv1] 2026-10-30T15:00:00Z to 2026-10-30T16:00:00Z: Design review (invited by Sam; your reply: not replied yet)",
+    ]);
+
+    expect(await runGoogleTool("me", "calendar_respond_to_event", { event_id: "inv1", response: "declined", note: "Out that day" })).toBe(
+      'Replied no to "Design review".',
+    );
+    const patch = calls.find((c) => c.init?.method === "PATCH")!;
+    expect(patch.url).toContain("sendUpdates=none");
+    expect(JSON.parse(patch.init!.body as string)).toEqual({
+      attendees: [
+        { email: "sam@example.com", responseStatus: "accepted", organizer: true },
+        { email: "me@example.com", self: true, responseStatus: "declined", comment: "Out that day" },
+      ],
+    });
+    await expect(runGoogleTool("me", "calendar_respond_to_event", { event_id: "own1", response: "accepted" })).rejects.toThrow(/isn't an invitation/);
+    await expect(runGoogleTool("me", "calendar_respond_to_event", { event_id: "inv1", response: "yes" })).rejects.toThrow();
+  });
+
   it("archives and marks email, and asks to reconnect an old connection", async () => {
     await connect({ access_token: "at", expires_at: Date.now() + 3600_000 }, "email https://www.googleapis.com/auth/gmail.readonly");
     await expect(runGoogleTool("me", "gmail_organize", { message_ids: ["m1"], action: "archive" })).rejects.toThrow(/connect it again/);
