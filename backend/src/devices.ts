@@ -70,10 +70,12 @@ export async function revokeDevice(userId: string, id: string) {
   return rows.length > 0;
 }
 
-/** A tiny fixed-window limiter for the unauthenticated pairing endpoint. */
+/** A tiny fixed-window limiter for pairing and for failed sign-ins. */
 const attempts = new Map<string, { count: number; resetAt: number }>();
 export function allowAttempt(key: string, limit = 10, windowMs = 60_000) {
   const now = Date.now();
+  // Many distinct keys (an attacker rotating addresses) must not grow the map forever.
+  if (attempts.size > 10_000) for (const [k, e] of attempts) if (e.resetAt < now) attempts.delete(k);
   const entry = attempts.get(key);
   if (!entry || entry.resetAt < now) {
     attempts.set(key, { count: 1, resetAt: now + windowMs });
@@ -81,4 +83,10 @@ export function allowAttempt(key: string, limit = 10, windowMs = 60_000) {
   }
   entry.count++;
   return entry.count <= limit;
+}
+
+/** True while a key has used up its attempts for the current window. */
+export function isLimited(key: string, limit = 10) {
+  const entry = attempts.get(key);
+  return Boolean(entry && entry.resetAt >= Date.now() && entry.count >= limit);
 }

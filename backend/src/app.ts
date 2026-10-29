@@ -12,7 +12,7 @@ import { deleteAllData, exportData } from "./account.js";
 import { runTurn, type ChatEvent } from "./assistant.js";
 import { config } from "./config.js";
 import { query } from "./db.js";
-import { allowAttempt, authenticate, createPairingCode, listDevices, redeemPairingCode, registerDevice, revokeDevice, type Caller } from "./devices.js";
+import { allowAttempt, authenticate, createPairingCode, isLimited, listDevices, redeemPairingCode, registerDevice, revokeDevice, type Caller } from "./devices.js";
 import { disconnectGoogle, googleStatus, handleGoogleCallback, startGoogleAuth } from "./google.js";
 import { addServer, deleteServer, listServers, NewServer, setServerEnabled } from "./mcp.js";
 import { handleMcpCallback, startMcpOAuth } from "./mcpOAuth.js";
@@ -25,6 +25,8 @@ import { summarize } from "./usage.js";
 import { cancelTask, decideApproval, listTasks } from "./tasks.js";
 
 export const app = new Hono<{ Variables: { caller: Caller } }>();
+// Defaults: nosniff, frame-ancestors via X-Frame-Options, strict referrer, no CSP (the web app uses inline styles).
+app.use("*", secureHeaders());
 
 if (process.env.NODE_ENV !== "test") app.use(logger());
 
@@ -42,7 +44,14 @@ app.get("/health", async (c) => {
 const tooLarge = (c: { json: (b: unknown, s: 413) => Response }) => c.json({ error: "Request too large" }, 413);
 app.use("/api/chat", bodyLimit({ maxSize: 32 * 1024 * 1024, onError: tooLarge }));
 app.use("*", async (c, next) => (c.req.path === "/api/chat" ? next() : bodyLimit({ maxSize: 1024 * 1024, onError: tooLarge })(c, next)));
-app.use("/oauth/*", secureHeaders());
+
+/**
+ * The caller's address. Behind one proxy (Render, Fly) the right-most
+ * X-Forwarded-For entry is the one the proxy added, so a client can't pick it.
+ */
+const clientIp = (c: { req: { header: (name: string) => string | undefined } }) =>
+  c.req.header("x-forwarded-for")?.split(",").at(-1)?.trim() || "local";
+const FAILED_SIGN_IN_LIMIT = 20;
 
 app.onError((err, c) => {
   console.error(`${c.req.method} ${c.req.path} failed`, err);
@@ -50,9 +59,15 @@ app.onError((err, c) => {
 });
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 app.use("/api/*", async (c, next) => {
+  const ip = clientIp(c);
+  // Slows down guessing a weak JARVIS_APP_TOKEN; only failures count.
+  if (isLimited(`auth:${ip}`, FAILED_SIGN_IN_LIMIT)) return c.json({ error: "Too many failed sign-ins. Wait a minute." }, 429);
   const token = c.req.header("Authorization")?.match(/^Bearer (.+)$/)?.[1];
   const caller = token ? await authenticate(token) : null;
-  if (!caller) return c.json({ error: "Unauthorized" }, 401);
+  if (!caller) {
+    allowAttempt(`auth:${ip}`, FAILED_SIGN_IN_LIMIT);
+    return c.json({ error: "Unauthorized" }, 401);
+  }
   c.set("caller", caller);
   await next();
 });
@@ -62,8 +77,7 @@ const Pair = DeviceName.extend({ code: z.string().min(8).max(20) });
 
 // A new device trades a one-time code (shown on a signed-in device) for its own token.
 app.post("/pair", async (c) => {
-  const ip = c.req.header("x-forwarded-for")?.split(",")[0].trim() ?? "local";
-  if (!allowAttempt(`pair:${ip}`)) return c.json({ error: "Too many attempts. Wait a minute." }, 429);
+  if (!allowAttempt(`pair:${clientIp(c)}`)) return c.json({ error: "Too many attempts. Wait a minute." }, 429);
   const body = Pair.safeParse(await c.req.json().catch(() => null));
   if (!body.success) return c.json({ error: "Enter the code and a device name" }, 400);
   const device = await redeemPairingCode(body.data.code, body.data.name);

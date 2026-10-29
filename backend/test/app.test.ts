@@ -17,6 +17,21 @@ describe("HTTP API", () => {
     expect((await app.request("/api/facts", { headers: { Authorization: "Bearer wrong" } })).status).toBe(401);
   });
 
+  it("limits failed sign-ins per address, counting the address the proxy added", async () => {
+    const from = (xff: string, token = "wrong") => app.request("/api/facts", { headers: { Authorization: `Bearer ${token}`, "X-Forwarded-For": xff } });
+    // A client-supplied first entry doesn't give a fresh address each time.
+    for (let i = 0; i < 20; i++) expect((await from(`10.0.0.${i}, 203.0.113.7`)).status).toBe(401);
+    expect((await from("10.9.9.9, 203.0.113.7")).status).toBe(429);
+    expect((await from("203.0.113.7", "test-token")).status).toBe(429);
+    expect((await from("198.51.100.1", "test-token")).status).toBe(200);
+  });
+
+  it("sends security headers", async () => {
+    const res = await app.request("/health");
+    expect(res.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(res.headers.get("x-frame-options")).toBe("SAMEORIGIN");
+  });
+
   it("validates chat bodies", async () => {
     const res = await app.request("/api/chat", {
       method: "POST",
