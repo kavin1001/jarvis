@@ -419,7 +419,7 @@ app.post("/api/activity/:id/undo", async (c) => {
       if (u.tool === "unsnooze") {
         if (!(await mailSnooze.unsnooze(config.userId, u.snooze_id, modifyMail))) throw new Error("That email is already back in the inbox.");
       } else if (u.tool === "gmail_delete_draft") await deleteDraft(config.userId, u.draft_id);
-      else if (u.tool === "gmail_organize") await runGoogleTool(config.userId, "gmail_organize", { message_ids: u.message_ids, action: u.action });
+      else if (u.tool === "gmail_organize") await runGoogleTool(config.userId, "gmail_organize", { message_ids: u.message_ids, action: u.action, label: u.label });
       else if (u.tool === "calendar_update_event") await runGoogleTool(config.userId, "calendar_update_event", { event_id: u.event_id, start: u.start, end: u.end });
       else await runGoogleTool(config.userId, "calendar_delete_event", { event_id: u.event_id });
     });

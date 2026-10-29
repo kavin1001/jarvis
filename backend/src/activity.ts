@@ -18,7 +18,7 @@ export interface Activity {
 
 /** How to reverse an action: the tool call that puts things back. */
 export type Undo =
-  | { tool: "gmail_organize"; message_ids: string[]; action: string }
+  | { tool: "gmail_organize"; message_ids: string[]; action: string; label?: string }
   | { tool: "calendar_delete_event"; event_id: string }
   | { tool: "calendar_update_event"; event_id: string; start: string; end: string }
   | { tool: "unsnooze"; snooze_id: string }
@@ -61,7 +61,10 @@ export function describeAction(name: string, input: Input, timeZone = "UTC"): st
       return `Saved a draft to ${str(input.to, 60)}${str(input.subject) ? `: "${str(input.subject)}"` : ""}`;
     case "gmail_organize": {
       const n = Array.isArray(input.message_ids) ? input.message_ids.length : 0;
-      return `${ORGANIZE[String(input.action)] ?? "Changed"} ${n} email${n === 1 ? "" : "s"}`;
+      const emails = `${n} email${n === 1 ? "" : "s"}`;
+      if (input.action === "add_label") return `Labelled ${emails} "${str(input.label)}"`;
+      if (input.action === "remove_label") return `Removed the label "${str(input.label)}" from ${emails}`;
+      return `${ORGANIZE[String(input.action)] ?? "Changed"} ${emails}`;
     }
     case "calendar_create_event": {
       const on = input.all_day ? day(input.start) : when(input.start, timeZone);
@@ -99,6 +102,8 @@ const INVERSE: Record<string, string> = {
   mark_unread: "mark_read",
   star: "unstar",
   unstar: "star",
+  add_label: "remove_label",
+  remove_label: "add_label",
 };
 
 /** The reverse of an account action, from its input and the tool's answer; null when it can't be undone from here. */
@@ -107,7 +112,9 @@ export function undoFor(name: string, input: Input, result: string): Undo | null
     case "gmail_organize": {
       const ids = Array.isArray(input.message_ids) ? input.message_ids.filter((x): x is string => typeof x === "string") : [];
       const action = INVERSE[String(input.action)];
-      return ids.length && action ? { tool: "gmail_organize", message_ids: ids, action } : null;
+      if (!ids.length || !action) return null;
+      if (!action.endsWith("_label")) return { tool: "gmail_organize", message_ids: ids, action };
+      return typeof input.label === "string" ? { tool: "gmail_organize", message_ids: ids, action, label: input.label } : null;
     }
     case "gmail_create_draft": {
       const id = result.match(/^Draft (\S+) saved in Gmail/)?.[1];

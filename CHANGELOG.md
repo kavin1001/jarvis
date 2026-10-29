@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Gmail labels: "label these as Receipts", "put the flight emails under Travel", "take the Work label off that". Jarvis makes the label if it doesn't exist yet. It can be undone from Settings like archiving. Uses the archive permission you already gave.
 - VoiceOver and TalkBack: rows and links in Tasks, History, Memory, Lists and Settings now announce themselves as buttons, and the Talk button says to hold it while you talk.
 - If a screen crashes, Jarvis now shows "Chat hit a problem" with **Try again** instead of a blank screen, and the other tabs keep working. The error is sent to your server, so it shows in the backend's logs as `app error`. `POST /api/client-errors`.
 - Better drafts: "reply all and say Friday works", "copy Ana on it". Jarvis can now draft reply-alls and add people to copy. Subjects and names with accents or other alphabets ("Café plans", "José") no longer arrive garbled.

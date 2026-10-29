@@ -365,6 +365,32 @@ describe("Google tools", () => {
     await expect(runGoogleTool("me", "gmail_organize", { message_ids: [], action: "archive" })).rejects.toThrow();
   });
 
+  it("adds and removes labels, creating a new one only when adding", async () => {
+    await connect({ access_token: "at", expires_at: Date.now() + 3600_000 }, "email https://www.googleapis.com/auth/gmail.modify");
+    const labels = [{ id: "Label_1", name: "Receipts" }];
+    const calls = mockFetch({
+      batchModify: () => ({}),
+      labels: (_url, init) => {
+        if (init?.method !== "POST") return { labels: [{ id: "INBOX", name: "INBOX" }, ...labels] };
+        const made = { id: "Label_2", name: JSON.parse(init.body as string).name };
+        labels.push(made);
+        return made;
+      },
+    });
+    const modifies = () => calls.filter((c) => c.url.endsWith("batchModify")).map((c) => JSON.parse(c.init!.body as string));
+    expect(await runGoogleTool("me", "gmail_organize", { message_ids: ["m1", "m2"], action: "add_label", label: "receipts" })).toBe('Done: labelled 2 emails "receipts".');
+    expect(await runGoogleTool("me", "gmail_organize", { message_ids: ["m3"], action: "add_label", label: "Travel/2026" })).toBe('Done: labelled 1 email "Travel/2026" (a new label).');
+    expect(JSON.parse(calls.find((c) => c.init?.method === "POST" && c.url.endsWith("/labels"))!.init!.body as string)).toEqual({ name: "Travel/2026", labelListVisibility: "labelShow", messageListVisibility: "show" });
+    expect(await runGoogleTool("me", "gmail_organize", { message_ids: ["m3"], action: "remove_label", label: "Travel/2026" })).toBe('Done: removed the label "Travel/2026" from 1 email.');
+    expect(modifies()).toEqual([
+      { ids: ["m1", "m2"], addLabelIds: ["Label_1"] },
+      { ids: ["m3"], addLabelIds: ["Label_2"] },
+      { ids: ["m3"], removeLabelIds: ["Label_2"] },
+    ]);
+    await expect(runGoogleTool("me", "gmail_organize", { message_ids: ["m3"], action: "remove_label", label: "Nope" })).rejects.toThrow(/no Gmail label called "Nope"/);
+    await expect(runGoogleTool("me", "gmail_organize", { message_ids: ["m3"], action: "add_label" })).rejects.toThrow(/need a label name/);
+  });
+
   it("looks up contacts and people the user has emailed, after one warm-up search", async () => {
     const scopes = "email https://www.googleapis.com/auth/contacts.readonly https://www.googleapis.com/auth/contacts.other.readonly";
     await connect({ access_token: "at", expires_at: Date.now() + 3600_000 }, "email");

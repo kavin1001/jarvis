@@ -55,6 +55,8 @@ describe("activity log", () => {
   it("knows how to reverse archiving, an added event and a snooze", () => {
     expect(undoFor("gmail_organize", { message_ids: ["a", "b"], action: "archive" }, "Done")).toEqual({ tool: "gmail_organize", message_ids: ["a", "b"], action: "move_to_inbox" });
     expect(undoFor("gmail_organize", { message_ids: ["a"], action: "star" }, "Done")).toMatchObject({ action: "unstar" });
+    expect(undoFor("gmail_organize", { message_ids: ["a"], action: "add_label", label: "Receipts" }, "Done")).toEqual({ tool: "gmail_organize", message_ids: ["a"], action: "remove_label", label: "Receipts" });
+    expect(describeAction("gmail_organize", { message_ids: ["a", "b"], action: "add_label", label: "Receipts" })).toBe('Labelled 2 emails "Receipts"');
     expect(undoFor("calendar_create_event", { summary: "x" }, "Event created (id abc123): https://calendar.example/e")).toEqual({ tool: "calendar_delete_event", event_id: "abc123" });
     expect(undoFor("calendar_create_event", { summary: "x" }, "Event created: https://calendar.example/e")).toBeNull();
     const snooze = "0b6f5a1e-2c3d-4e5f-8a9b-0c1d2e3f4a5b";

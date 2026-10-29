@@ -311,13 +311,14 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
   {
     name: "gmail_organize",
     description:
-      "Tidy the user's inbox: archive, mark read or unread, star or unstar, or move back to the inbox, for up to 50 emails at once (ids from gmail_search). Archiving only removes the Inbox label; nothing is deleted. Say what you did and how many.",
+      "Tidy the user's inbox: archive, mark read or unread, star or unstar, move back to the inbox, or add or remove a label (add_label creates the label if it doesn't exist), for up to 50 emails at once (ids from gmail_search; search label:Name to find labelled email). Archiving only removes the Inbox label; nothing is deleted. Say what you did and how many.",
     eager_input_streaming: true,
     input_schema: {
       type: "object",
       properties: {
         message_ids: { type: "array", items: { type: "string" } },
-        action: { type: "string", enum: ["archive", "move_to_inbox", "mark_read", "mark_unread", "star", "unstar"] },
+        action: { type: "string", enum: ["archive", "move_to_inbox", "mark_read", "mark_unread", "star", "unstar", "add_label", "remove_label"] },
+        label: { type: "string", description: "For add_label and remove_label: the label's name, e.g. \"Receipts\" or \"Travel/2026\"" },
       },
       required: ["message_ids", "action"],
     },
@@ -498,10 +499,13 @@ const inputs = {
     reply_to_message_id: z.string().optional(),
     reply_all: z.boolean().default(false),
   }),
-  gmail_organize: z.object({
-    message_ids: z.array(z.string().min(1)).min(1).max(50),
-    action: z.enum(["archive", "move_to_inbox", "mark_read", "mark_unread", "star", "unstar"]),
-  }),
+  gmail_organize: z
+    .object({
+      message_ids: z.array(z.string().min(1)).min(1).max(50),
+      action: z.enum(["archive", "move_to_inbox", "mark_read", "mark_unread", "star", "unstar", "add_label", "remove_label"]),
+      label: z.string().trim().min(1).max(225).optional(),
+    })
+    .refine((o) => !o.action.endsWith("_label") || o.label, "add_label and remove_label need a label name"),
   calendar_list_events: z.object({ time_min: isoDate, time_max: isoDate, query: z.string().optional() }),
   calendar_find_free_time: z.object({
     time_min: isoDate,
@@ -624,8 +628,19 @@ function plainText(part: GmailPart): string {
   return "";
 }
 
+/** A Gmail label's id from its name (any case), creating a user label when asked. */
+async function labelId(userId: string, name: string, create: boolean) {
+  const LABELS = "https://gmail.googleapis.com/gmail/v1/users/me/labels";
+  const { labels = [] } = await google<{ labels?: { id: string; name: string }[] }>(userId, LABELS);
+  const found = labels.find((l) => l.name.toLowerCase() === name.toLowerCase());
+  if (found) return { id: found.id, created: false };
+  if (!create) throw new Error(`There's no Gmail label called "${name}".`);
+  const made = await google<{ id: string }>(userId, LABELS, { method: "POST", body: { name, labelListVisibility: "labelShow", messageListVisibility: "show" } });
+  return { id: made.id, created: true };
+}
+
 // Labels added and removed for each gmail_organize action.
-const ORGANIZE: Record<z.infer<typeof inputs.gmail_organize>["action"], [string[], string[]]> = {
+const ORGANIZE: Record<Exclude<z.infer<typeof inputs.gmail_organize>["action"], "add_label" | "remove_label">, [string[], string[]]> = {
   archive: [[], ["INBOX"]],
   move_to_inbox: [["INBOX"], []],
   mark_read: [[], ["UNREAD"]],
@@ -1052,15 +1067,24 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
       return `Draft ${draft.id} saved in Gmail${copied.length ? `, copying ${copied.join(", ")}` : ""}. It has not been sent; the user can review and send it from Gmail.`;
     }
     case "gmail_organize": {
-      const { message_ids, action } = inputs.gmail_organize.parse(raw);
+      const { message_ids, action, label } = inputs.gmail_organize.parse(raw);
       if (!(await googleStatus(userId)).can_organize)
         throw new Error("Jarvis needs one more permission for this. In Settings, disconnect Google and connect it again.");
+      const emails = `${message_ids.length} email${message_ids.length === 1 ? "" : "s"}`;
+      if (action === "add_label" || action === "remove_label") {
+        const { id, created } = await labelId(userId, label!, action === "add_label");
+        await google(userId, `${GMAIL}/messages/batchModify`, {
+          method: "POST",
+          body: { ids: message_ids, ...(action === "add_label" ? { addLabelIds: [id] } : { removeLabelIds: [id] }) },
+        });
+        return action === "add_label" ? `Done: labelled ${emails} "${label}"${created ? " (a new label)" : ""}.` : `Done: removed the label "${label}" from ${emails}.`;
+      }
       const [add, remove] = ORGANIZE[action];
       await google(userId, `${GMAIL}/messages/batchModify`, {
         method: "POST",
         body: { ids: message_ids, addLabelIds: add, removeLabelIds: remove },
       });
-      return `Done: ${action.replace(/_/g, " ")} for ${message_ids.length} email${message_ids.length === 1 ? "" : "s"}.`;
+      return `Done: ${action.replace(/_/g, " ")} for ${emails}.`;
     }
     case "calendar_list_events": {
       const { time_min, time_max, query: q } = inputs.calendar_list_events.parse(raw);
