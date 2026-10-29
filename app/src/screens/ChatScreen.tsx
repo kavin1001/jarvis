@@ -89,7 +89,8 @@ export default function ChatScreen({
   };
 
   // What's coming up, shown on an empty chat.
-  const [upcoming, setUpcoming] = useState<{ events: AgendaEvent[]; reminders: Reminder[]; working: Task[] }>({
+  const [upcoming, setUpcoming] = useState<{ weather: string | null; events: AgendaEvent[]; reminders: Reminder[]; working: Task[] }>({
+    weather: null,
     events: [],
     reminders: [],
     working: [],
@@ -106,9 +107,10 @@ export default function ChatScreen({
       const dayAhead = Date.now() + 24 * 3600_000;
       const [reminders, agenda] = await Promise.all([
         api.reminders(settings).catch(() => []),
-        api.agenda(settings).catch(() => ({ events: [] })),
+        approximateLocation().then((near) => api.agenda(settings, near)).catch(() => ({ events: [], weather: null })),
       ]);
       setUpcoming({
+        weather: agenda.weather ?? null,
         events: agenda.events,
         reminders: reminders.filter((r) => Date.parse(r.due_at) <= dayAhead).slice(0, 3),
         working: tasks.filter((t) => t.status === "queued" || t.status === "running" || t.status === "waiting_approval").slice(0, 3),
@@ -350,8 +352,13 @@ export default function ChatScreen({
         onContentSizeChange={() => list.current?.scrollToEnd({ animated: true })}
         ListEmptyComponent={
           <View style={styles.empty}>
-            {upcoming.events.length > 0 || upcoming.reminders.length > 0 || upcoming.working.length > 0 ? (
+            {upcoming.weather || upcoming.events.length > 0 || upcoming.reminders.length > 0 || upcoming.working.length > 0 ? (
               <View style={styles.today}>
+                {upcoming.weather ? (
+                  <Text style={styles.todayLine} numberOfLines={1}>
+                    🌤 {upcoming.weather}
+                  </Text>
+                ) : null}
                 {upcoming.events.map((e, i) => (
                   <Text key={`${e.start}-${i}`} style={styles.todayLine} numberOfLines={1}>
                     📅 {e.all_day ? dayLabel(e.start) : whenLabel(e.start)} · {e.summary}

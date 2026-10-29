@@ -200,7 +200,7 @@ describe("Google tools", () => {
   });
 
   it("lists the next events for the home card, and nothing when not connected", async () => {
-    expect(await (await app.request("/api/agenda", { headers: auth })).json()).toEqual({ events: [] });
+    expect(await (await app.request("/api/agenda", { headers: auth })).json()).toEqual({ events: [], weather: null });
     await connect({ access_token: "at", expires_at: Date.now() + 3600_000 });
     const calls = mockFetch({
       "calendar/v3": () => ({
@@ -216,5 +216,24 @@ describe("Google tools", () => {
       { summary: "(No title)", start: "2026-10-30", all_day: true, location: null },
     ]);
     expect(new URL(calls[0].url).searchParams.get("maxResults")).toBe("3");
+  });
+
+  it("adds today's weather when the phone sends its location, and leaves it out when the service fails", async () => {
+    const calls = mockFetch({
+      "api.open-meteo.com": () => ({
+        current: { temperature_2m: 61.4, weather_code: 3 },
+        daily: { temperature_2m_max: [66.2], temperature_2m_min: [52.9], precipitation_probability_max: [40] },
+      }),
+    });
+    const agenda = (qs: string) => app.request(`/api/agenda${qs}`, { headers: auth });
+    expect((await (await agenda("?lat=40.71&lon=-74.01&units=fahrenheit")).json()).weather).toBe("61°F, overcast · 53 to 66°F, 40% chance of rain");
+    expect(new URL(calls[0].url).searchParams.get("temperature_unit")).toBe("fahrenheit");
+    // Cached for a while, so opening new chats doesn't call the service each time.
+    await agenda("?lat=40.71&lon=-74.01&units=fahrenheit");
+    expect(calls).toHaveLength(1);
+    expect((await agenda("?lat=200&lon=0")).status).toBe(400);
+
+    mockFetch({});
+    expect(await (await agenda("?lat=1&lon=2")).json()).toEqual({ events: [], weather: null });
   });
 });

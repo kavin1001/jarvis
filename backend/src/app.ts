@@ -23,6 +23,7 @@ import { cancelReminder, createReminder, getTimezone, listReminders, snoozeRemin
 import { serverStatus } from "./status.js";
 import { firstOccurrence } from "./time.js";
 import { summarize } from "./usage.js";
+import { weatherGlance } from "./weather.js";
 import { cancelTask, decideApproval, downloadTaskFile, listTasks } from "./tasks.js";
 
 export const app = new Hono<{ Variables: { caller: Caller } }>();
@@ -223,14 +224,30 @@ app.post("/api/conversations/:id/stop", async (c) => {
 app.get("/api/status", async (c) => c.json(await serverStatus(config.userId)));
 
 // Next events for the home card. A Google error leaves the card empty rather than failing the screen.
-app.get("/api/agenda", async (c) =>
-  c.json({
-    events: await upcomingEvents(config.userId).catch((err) => {
+// ?lat=&lon=&units= (the phone's approximate location) adds a line about today's weather.
+const AgendaQuery = z.object({
+  lat: z.coerce.number().min(-90).max(90).optional(),
+  lon: z.coerce.number().min(-180).max(180).optional(),
+  units: z.enum(["celsius", "fahrenheit"]).default("celsius"),
+});
+app.get("/api/agenda", async (c) => {
+  const q = AgendaQuery.safeParse(c.req.query());
+  if (!q.success) return c.json({ error: q.error.message }, 400);
+  const { lat, lon, units } = q.data;
+  const [events, weather] = await Promise.all([
+    upcomingEvents(config.userId).catch((err) => {
       console.warn("agenda failed", err instanceof Error ? err.message : err);
       return [];
     }),
-  }),
-);
+    lat !== undefined && lon !== undefined
+      ? weatherGlance(lat, lon, units).catch((err) => {
+          console.warn("weather failed", err instanceof Error ? err.message : err);
+          return null;
+        })
+      : null,
+  ]);
+  return c.json({ events, weather });
+});
 
 // ?before=<updated_at>&before_id=<id> of the last chat shown loads the next, older page.
 app.get("/api/conversations", async (c) => {

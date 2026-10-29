@@ -7,7 +7,8 @@ function stubFetch(body: (url: URL) => unknown) {
   const urls: URL[] = [];
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (url: URL) => {
+    vi.fn(async (href: string) => {
+      const url = new URL(href);
       urls.push(url);
       return Response.json(body(url));
     }),

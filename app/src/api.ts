@@ -247,6 +247,13 @@ export interface NotifySettings {
   spending: boolean;
 }
 
+// The few countries that use Fahrenheit, going by the phone's region.
+const FAHRENHEIT = new Set(["US", "LR", "MM", "BS", "BZ", "KY", "PW", "FM", "MH"]);
+function temperatureUnit() {
+  const region = Intl.DateTimeFormat().resolvedOptions().locale.split("-u-")[0].split("-").at(-1)?.toUpperCase() ?? "";
+  return FAHRENHEIT.has(region) ? "fahrenheit" : "celsius";
+}
+
 export const api = {
   notifySettings: (s: Settings) => request<NotifySettings>(s, "/api/notifications"),
   setNotifySettings: (s: Settings, change: Partial<NotifySettings>) =>
@@ -282,7 +289,11 @@ export const api = {
     request(s, `/api/conversations/${id}`, { method: "PATCH", body: { title } }),
   usage: (s: Settings) => request<Usage>(s, "/api/usage"),
   status: (s: Settings) => request<ServerStatus>(s, "/api/status"),
-  agenda: (s: Settings) => request<{ events: AgendaEvent[] }>(s, "/api/agenda"),
+  agenda: (s: Settings, near?: { latitude: number; longitude: number }) =>
+    request<{ events: AgendaEvent[]; weather?: string | null }>(
+      s,
+      near ? `/api/agenda?lat=${near.latitude}&lon=${near.longitude}&units=${temperatureUnit()}` : "/api/agenda",
+    ),
   reminders: (s: Settings) => request<Reminder[]>(s, "/api/reminders"),
   cancelReminder: (s: Settings, id: string) => request(s, `/api/reminders/${id}`, { method: "DELETE" }),
   cancelTask: (s: Settings, id: string) => request(s, `/api/tasks/${id}/cancel`, { method: "POST" }),

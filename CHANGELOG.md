@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- The coming-up card on a new chat starts with today's weather where you are ("🌤 14°C, partly cloudy · 9 to 20°C, 70% chance of rain") when location sharing is on. Fahrenheit if your phone is set to the US. The server keeps each forecast for 15 minutes, so opening new chats doesn't fetch it again.
 - Weather: "do I need an umbrella this afternoon?", "what's it like in Lisbon this weekend?". Jarvis checks a real forecast (current conditions, the next 12 hours and up to 7 days) from Open-Meteo, which is free and needs no account, instead of searching the web. It's faster, cheaper, and uses your approximate location for "here". If the service doesn't answer, Jarvis falls back to a web search.
 - Lists: "add eggs and milk to my shopping list", "what's on my packing list?", "I got the milk". Jarvis keeps any number of named lists, skips items already on them, and checks things off as you tell it. The new **Lists** tab shows them too: tick items off, edit or remove one, add several at once separated by commas, clear the checked ones or delete a list. Lists are in the data export and **Erase everything** removes them.
 - Reliability: the server keeps running when the database restarts for maintenance or a background job fails unexpectedly. Before, either one could stop the whole server until the host restarted it. Requests now give up after 10 seconds while the database can't be reached, instead of hanging.

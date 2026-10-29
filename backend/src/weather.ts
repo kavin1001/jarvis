@@ -46,7 +46,7 @@ export interface Place {
 }
 
 async function getJson<T>(url: URL): Promise<T> {
-  const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
+  const res = await fetch(url.toString(), { signal: AbortSignal.timeout(8000) });
   if (!res.ok) throw new Error(`The weather service answered ${res.status}.`);
   return (await res.json()) as T;
 }
@@ -132,4 +132,34 @@ export async function weatherReport(place: Place, opts: { days: number; units: "
     );
   });
   return lines.join("\n");
+}
+
+const glanceCache = new Map<string, { at: number; line: string }>();
+const GLANCE_TTL_MS = 15 * 60_000;
+
+/** One short line for the coming-up card: "14°C, partly cloudy · 9 to 20°C, 70% chance of rain". */
+export async function weatherGlance(latitude: number, longitude: number, units: "celsius" | "fahrenheit"): Promise<string> {
+  const key = `${latitude.toFixed(2)},${longitude.toFixed(2)},${units}`;
+  const hit = glanceCache.get(key);
+  if (hit && Date.now() - hit.at < GLANCE_TTL_MS) return hit.line;
+  const url = new URL(FORECAST_URL);
+  url.search = new URLSearchParams({
+    latitude: latitude.toFixed(2),
+    longitude: longitude.toFixed(2),
+    current: "temperature_2m,weather_code",
+    daily: "temperature_2m_max,temperature_2m_min,precipitation_probability_max",
+    timezone: "auto",
+    forecast_days: "1",
+    temperature_unit: units,
+  }).toString();
+  const f = await getJson<Pick<Forecast, "current"> & { daily: Pick<Forecast["daily"], "temperature_2m_max" | "temperature_2m_min" | "precipitation_probability_max"> }>(url);
+  const deg = units === "fahrenheit" ? "°F" : "°C";
+  const rain = f.daily.precipitation_probability_max[0] ?? 0;
+  const line =
+    `${Math.round(f.current.temperature_2m)}${deg}, ${condition(f.current.weather_code)} · ` +
+    `${Math.round(f.daily.temperature_2m_min[0])} to ${Math.round(f.daily.temperature_2m_max[0])}${deg}` +
+    (rain >= 20 ? `, ${rain}% chance of rain` : "");
+  if (glanceCache.size > 100) glanceCache.clear();
+  glanceCache.set(key, { at: Date.now(), line });
+  return line;
 }
