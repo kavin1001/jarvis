@@ -37,7 +37,8 @@ if (pushSupported) Notifications.setNotificationCategoryAsync("reply", [
     identifier: "reply",
     buttonTitle: "Reply",
     textInput: { submitButtonTitle: "Send", placeholder: "Reply to Jarvis" },
-    options: { opensAppToForeground: true },
+    // Unlock the phone first, so nobody can message Jarvis from a locked phone's lock screen.
+    options: { opensAppToForeground: true, isAuthenticationRequired: true },
   },
 ]).catch(() => {});
 
