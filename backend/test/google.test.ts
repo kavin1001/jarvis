@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import { app } from "../src/app.js";
 import { decrypt, encrypt } from "../src/crypto.js";
 import { query, pool } from "../src/db.js";
-import { deleteContact, deleteDraft, freeSlots, googleStatus, nextBirthdays, restoreEvent, runGoogleTool, trashDriveFile, startGoogleAuth, unsubscribeLink } from "../src/google.js";
+import { deleteContact, deleteDraft, freeSlots, googleStatus, nextBirthdays, clearSheetRange, restoreEvent, runGoogleTool, trashDriveFile, startGoogleAuth, unsubscribeLink } from "../src/google.js";
 import { auth, resetDb } from "./helpers.js";
 
 const SECRET = "test-connector-secret";
@@ -429,6 +429,29 @@ describe("Google tools", () => {
     expect(JSON.parse(calls.at(-1)!.init!.body as string)).toEqual({ trashed: true });
     await expect(trashDriveFile("me", "gone_1234567890")).rejects.toThrow(/isn't in Drive/);
     await expect(trashDriveFile("me", "../x")).rejects.toThrow(/Not a Drive file id/);
+  });
+
+  it("adds rows to a sheet Jarvis made and clears them for undo", async () => {
+    await connect({ access_token: "at", expires_at: Date.now() + 3600_000 }, "email");
+    await expect(runGoogleTool("me", "sheet_append_rows", { file_id: "sheet_1234567890", rows: [["a"]] })).rejects.toThrow(/edit Google Sheets/);
+    await query("UPDATE connectors SET scopes = 'email https://www.googleapis.com/auth/drive.file'");
+    const calls = mockFetch({
+      "spreadsheets/sheet_1234567890/values/A1:append": () => ({ updates: { updatedRange: "Sheet1!A5:C5", updatedRows: 1 } }),
+      "spreadsheets/notmine_1234567890/values/A1:append": () => new Response("forbidden", { status: 403 }),
+      ":clear": () => ({}),
+    });
+    expect(await runGoogleTool("me", "sheet_append_rows", { file_id: "sheet_1234567890", rows: [["2026-10-29", "Lunch", 12.5]] })).toBe(
+      "Added 1 row to the sheet (id sheet_1234567890, range Sheet1!A5:C5).",
+    );
+    expect(calls[0].url).toContain("valueInputOption=USER_ENTERED");
+    expect(JSON.parse(calls[0].init!.body as string)).toEqual({ values: [["2026-10-29", "Lunch", 12.5]] });
+    await expect(runGoogleTool("me", "sheet_append_rows", { file_id: "notmine_1234567890", rows: [["a"]] })).rejects.toThrow(/only add rows to sheets it made/);
+    await expect(runGoogleTool("me", "sheet_append_rows", { file_id: "../x", rows: [["a"]] })).rejects.toThrow();
+
+    await clearSheetRange("me", "sheet_1234567890", "Sheet1!A5:C5");
+    expect(calls.at(-1)!.url).toBe("https://sheets.googleapis.com/v4/spreadsheets/sheet_1234567890/values/Sheet1!A5%3AC5:clear");
+    expect(calls.at(-1)!.init?.method).toBe("POST");
+    await expect(clearSheetRange("me", "sheet_1234567890", "A1:B2/../x")).rejects.toThrow(/Not a sheet range/);
   });
 
   it("makes a Google Sheet from CSV", async () => {

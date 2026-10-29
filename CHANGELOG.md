@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Keep a running log in a sheet: "log $12 for lunch in my expenses sheet", "add Sam to the guest list". Jarvis adds rows to the end of a Google Sheet it made, and **Undo** in Settings clears them again. It can't edit sheets it didn't make.
 - After writing up a recorded meeting, Jarvis offers to put the notes in a Google Doc you can share and to set reminders for action items that have a date.
 - Google Sheets: "make me a budget sheet for October", "put these flights in a spreadsheet to compare". Jarvis fills in the rows (formulas work) and gives you the link. **Undo** in Settings moves it to the bin. Uses the same permission as Google Docs.
 - Google Docs: "put that plan in a Google Doc", "make a doc of the meeting notes". Jarvis writes it with headings, lists and tables and gives you the link to open or share. **Undo** in Settings moves it to the bin. Add the `drive.file` scope to the consent screen (see `docs/DEPLOY.md`), then tap **Connect again** in Settings.

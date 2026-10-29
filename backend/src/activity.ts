@@ -25,7 +25,8 @@ export type Undo =
   | { tool: "gmail_delete_draft"; draft_id: string }
   | { tool: "delete_contact"; contact_id: string }
   | { tool: "restore_event"; copy_id: string }
-  | { tool: "trash_drive_file"; file_id: string };
+  | { tool: "trash_drive_file"; file_id: string }
+  | { tool: "clear_sheet_range"; file_id: string; range: string };
 
 const KEEP_DAYS = 90;
 // Undo is offered for a week; after that the mail or event has likely moved on.
@@ -73,6 +74,10 @@ export function describeAction(name: string, input: Input, timeZone = "UTC"): st
       return `Made the Google Doc "${str(input.title)}"`;
     case "drive_create_sheet":
       return `Made the Google Sheet "${str(input.title)}"`;
+    case "sheet_append_rows": {
+      const n = Array.isArray(input.rows) ? input.rows.length : 0;
+      return `Added ${n} row${n === 1 ? "" : "s"} to a Google Sheet`;
+    }
     case "contacts_save":
       return input.contact_id ? "Updated a contact" : `Saved ${str(input.name)} to your contacts`;
     case "calendar_create_event": {
@@ -133,6 +138,10 @@ export function undoFor(name: string, input: Input, result: string): Undo | null
     case "drive_create_sheet": {
       const id = result.match(/^Created the Google (?:Doc|Sheet) \(id ([\w-]{10,200})\)/)?.[1];
       return id ? { tool: "trash_drive_file", file_id: id } : null;
+    }
+    case "sheet_append_rows": {
+      const m = result.match(/\(id ([\w-]{10,200}), range (.+)\)\.$/);
+      return m ? { tool: "clear_sheet_range", file_id: m[1], range: m[2] } : null;
     }
     case "contacts_save": {
       const id = result.match(/^Saved a new contact \(id (people\/c?\d+)\)/)?.[1];

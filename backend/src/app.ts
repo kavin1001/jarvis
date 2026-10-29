@@ -13,7 +13,7 @@ import { runTurn, sourcesOf, type ChatEvent } from "./assistant.js";
 import { config } from "./config.js";
 import { query } from "./db.js";
 import { allowAttempt, authenticate, createPairingCode, isLimited, listDevices, redeemPairingCode, registerDevice, revokeDevice, type Caller } from "./devices.js";
-import { deleteContact, deleteDraft, disconnectGoogle, googleStatus, handleGoogleCallback, modifyMail, restoreEvent, runGoogleTool, startGoogleAuth, trashDriveFile, upcomingEvents } from "./google.js";
+import { clearSheetRange, deleteContact, deleteDraft, disconnectGoogle, googleStatus, handleGoogleCallback, modifyMail, restoreEvent, runGoogleTool, startGoogleAuth, trashDriveFile, upcomingEvents } from "./google.js";
 import { addServer, deleteServer, listServers, NewServer, setServerEnabled } from "./mcp.js";
 import { handleMcpCallback, startMcpOAuth } from "./mcpOAuth.js";
 import * as lists from "./lists.js";
@@ -422,6 +422,7 @@ app.post("/api/activity/:id/undo", async (c) => {
       else if (u.tool === "delete_contact") await deleteContact(config.userId, u.contact_id);
       else if (u.tool === "restore_event") await restoreEvent(config.userId, u.copy_id);
       else if (u.tool === "trash_drive_file") await trashDriveFile(config.userId, u.file_id);
+      else if (u.tool === "clear_sheet_range") await clearSheetRange(config.userId, u.file_id, u.range);
       else if (u.tool === "gmail_organize") await runGoogleTool(config.userId, "gmail_organize", { message_ids: u.message_ids, action: u.action, label: u.label });
       else if (u.tool === "calendar_update_event") await runGoogleTool(config.userId, "calendar_update_event", { event_id: u.event_id, start: u.start, end: u.end });
       else await runGoogleTool(config.userId, "calendar_delete_event", { event_id: u.event_id });

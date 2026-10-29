@@ -485,6 +485,19 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
     },
   },
   {
+    name: "sheet_append_rows",
+    description:
+      "Add rows to the end of a Google Sheet that Jarvis made with drive_create_sheet: \"log $12 for lunch in my expenses sheet\", \"add Sam to the guest list\". Find the sheet's id with drive_search (or from when you made it), read it with drive_read first if you need its columns, and give the cells in the same column order. Formulas work.",
+    input_schema: {
+      type: "object",
+      properties: {
+        file_id: { type: "string" },
+        rows: { type: "array", items: { type: "array", items: { type: ["string", "number"] } }, description: "One array of cells per row." },
+      },
+      required: ["file_id", "rows"],
+    },
+  },
+  {
     name: "gmail_snooze",
     description:
       "Snooze emails: archive them now and put them back in the inbox, unread, at a set time, with a notification (\"snooze this until Monday morning\", \"bring the Acme thread back after my trip\"). Ids from gmail_search. Cancel with cancel_reminder to bring them back early; list_reminders shows them.",
@@ -619,6 +632,10 @@ const inputs = {
   drive_read: z.object({ file_id: z.string().regex(/^[\w-]{10,200}$/, "must be a Drive file id") }),
   drive_create_doc: z.object({ title: z.string().trim().min(1).max(200), content: z.string().max(200_000) }),
   drive_create_sheet: z.object({ title: z.string().trim().min(1).max(200), csv: z.string().min(1).max(200_000) }),
+  sheet_append_rows: z.object({
+    file_id: z.string().regex(/^[\w-]{10,200}$/, "Not a Drive file id"),
+    rows: z.array(z.array(z.union([z.string().max(5000), z.number()])).min(1).max(50)).min(1).max(500),
+  }),
   calendar_respond_to_event: z.object({
     event_id: z.string().min(1),
     response: z.enum(["accepted", "declined", "tentative"]),
@@ -1090,6 +1107,21 @@ async function createDriveFile(userId: string, title: string, kind: "doc" | "she
   return (await res.json()) as { id: string; webViewLink: string };
 }
 
+const SHEETS = "https://sheets.googleapis.com/v4/spreadsheets";
+// A range the Sheets API reports back, like Sheet1!A5:C6 or 'My sheet'!A5:C6.
+const RANGE = /^(?:'(?:[^']|'')+'|[\w ]+)!\$?[A-Z]+\$?\d+(?::\$?[A-Z]+\$?\d+)?$/;
+
+/** Clears the rows Jarvis added to a sheet (undo from Settings). */
+export async function clearSheetRange(userId: string, fileId: string, range: string) {
+  if (!/^[\w-]{10,200}$/.test(fileId) || !RANGE.test(range)) throw new Error("Not a sheet range");
+  try {
+    await google(userId, `${SHEETS}/${fileId}/values/${encodeURIComponent(range)}:clear`, { method: "POST", body: {} });
+  } catch (err) {
+    if (/\b404\b/.test((err as Error).message)) throw new Error("That sheet isn't in Drive any more.");
+    throw err;
+  }
+}
+
 /** Moves a doc or sheet Jarvis made to the bin (undo from Settings). The user can still get it back from there for 30 days. */
 export async function trashDriveFile(userId: string, fileId: string) {
   if (!/^[\w-]{10,200}$/.test(fileId)) throw new Error("Not a Drive file id");
@@ -1401,6 +1433,26 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
       const { title, csv } = inputs.drive_create_sheet.parse(raw);
       const sheet = await createDriveFile(userId, title, "sheet", csv);
       return `Created the Google Sheet (id ${sheet.id}): ${sheet.webViewLink}`;
+    }
+    case "sheet_append_rows": {
+      if (!(await googleStatus(userId)).can_create_docs)
+        throw new Error("Jarvis needs permission to edit Google Sheets. In Settings, tap Connect again next to Google.");
+      const { file_id, rows } = inputs.sheet_append_rows.parse(raw);
+      let res: { updates?: { updatedRange?: string; updatedRows?: number } };
+      try {
+        // USER_ENTERED: Sheets reads "12.50" as a number and "=SUM(...)" as a formula, as if typed.
+        res = await google(userId, `${SHEETS}/${file_id}/values/A1:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS`, {
+          method: "POST",
+          body: { values: rows },
+        });
+      } catch (err) {
+        if (/\b40[34]\b/.test((err as Error).message))
+          throw new Error("Jarvis can only add rows to sheets it made. Offer to make a new sheet, or the user can add the rows themselves.");
+        throw err;
+      }
+      const n = res.updates?.updatedRows ?? rows.length;
+      const range = res.updates?.updatedRange;
+      return `Added ${n} row${n === 1 ? "" : "s"} to the sheet${range ? ` (id ${file_id}, range ${range})` : ""}.`;
     }
     case "calendar_respond_to_event": {
       const { event_id, response, note } = inputs.calendar_respond_to_event.parse(raw);
