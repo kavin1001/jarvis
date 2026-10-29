@@ -8,6 +8,7 @@ import * as memory from "./memory.js";
 import * as reminders from "./reminders.js";
 import { cancelTask, continueTask, listTasks, startTask, taskLaneConfigured } from "./tasks.js";
 import { describeNow } from "./time.js";
+import { findPlace, weatherReport } from "./weather.js";
 import { overDailyBudget, recordMessageUsage, warnNearBudget } from "./usage.js";
 
 let client = new Anthropic();
@@ -73,6 +74,7 @@ const TOOL_STATUS: Record<string, string> = {
   list_reminders: "Checking your reminders…",
   cancel_reminder: "Cancelling a reminder…",
   search_past_chats: "Looking through past chats…",
+  get_weather: "Checking the weather…",
   list_add: "Adding to your list…",
   list_show: "Checking your lists…",
   list_change: "Updating your list…",
@@ -104,7 +106,7 @@ const SYSTEM_PROMPT = `You are Jarvis, a personal assistant on the user's phone.
 Latency-sensitive; begin your visible answer immediately.
 
 How to work:
-- Answer directly when you can. When a message includes the user's approximate location, use it for "near me", weather and directions questions; don't mention it otherwise. Use web_search and web_fetch for anything current or factual you are unsure of.
+- Answer directly when you can. When a message includes the user's approximate location, use it for "near me", weather and directions questions (get_weather for weather); don't mention it otherwise. Use web_search and web_fetch for anything current or factual you are unsure of.
 - When a request needs real work on the web — logging into an account, filling forms, booking, comparing many pages, scraping, or anything that takes more than a minute — call start_task with complete, self-contained instructions, then tell the user in one short sentence that you are on it and they will get a notification.
 - Never ask the user for passwords or card numbers in chat. Logins live in a secure vault the background agent can use.
 - When the user refers to an earlier conversation that isn't in this chat, look it up with search_past_chats before saying you don't remember.
@@ -138,6 +140,15 @@ const ListAddInput = z.object({ list: z.string().min(1).max(60), items: z.array(
 const ListShowInput = z.object({ list: z.string().min(1).max(60).optional() });
 const ListChangeInput = z.object({ item_ids: z.array(z.string()).min(1).max(100), action: z.enum(["check", "uncheck", "remove"]) });
 const ListClearInput = z.object({ list: z.string().min(1).max(60), everything: z.boolean().default(false) });
+const WeatherInput = z
+  .object({
+    place: z.string().min(1).max(120).optional(),
+    latitude: z.number().min(-90).max(90).optional(),
+    longitude: z.number().min(-180).max(180).optional(),
+    days: z.number().int().min(1).max(7).default(2),
+    units: z.enum(["celsius", "fahrenheit"]).default("celsius"),
+  })
+  .refine((w) => w.place || (w.latitude !== undefined && w.longitude !== undefined), "Give a place or latitude and longitude");
 const StartTaskInput = z.object({
   instructions: z.string().min(1),
   summary: z.string().min(1).max(120),
@@ -217,6 +228,22 @@ const tools: Anthropic.Beta.BetaToolUnion[] = [
         limit: { type: "integer", description: "1-15, default 8" },
       },
       required: ["query"],
+    },
+  },
+  {
+    name: "get_weather",
+    description:
+      "Current weather, the next 12 hours and a daily forecast for up to 7 days. Use it for any weather question instead of web_search. For \"here\" pass the user's approximate location; otherwise pass the place.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        place: { type: "string", description: "City or town, optionally with region or country: \"Paris, Texas\"." },
+        latitude: { type: "number" },
+        longitude: { type: "number" },
+        days: { type: "integer", description: "1-7, default 2 (today and tomorrow)." },
+        units: { type: "string", enum: ["celsius", "fahrenheit"], description: "What the user is used to: fahrenheit in the US." },
+      },
     },
   },
   {
@@ -382,6 +409,18 @@ async function runClientTool(
             .map((h) => `${describeNow(tz, new Date(h.created_at))} · ${h.role === "user" ? "User" : "Jarvis"}${h.title ? ` · "${h.title}"` : ""}\n${h.snippet}`)
             .join("\n\n"),
         );
+      }
+      case "get_weather": {
+        const w = WeatherInput.parse(block.input);
+        try {
+          const place = w.place
+            ? await findPlace(w.place)
+            : { name: `${w.latitude!.toFixed(2)}, ${w.longitude!.toFixed(2)}`, latitude: w.latitude!, longitude: w.longitude! };
+          if (!place) return result(`No place called "${w.place}" found. Ask the user where they mean.`, true);
+          return result(await weatherReport(place, { days: w.days, units: w.units }));
+        } catch (err) {
+          return result(`The weather service didn't answer (${(err as Error).message}). Use web_search instead.`, true);
+        }
       }
       case "list_add": {
         const { list, items } = ListAddInput.parse(block.input);
