@@ -137,7 +137,8 @@ describe("task lane", () => {
     await until(async () => sent.length === 1);
     stream.push({ type: "agent.message", id: "evt_msg", content: [{ type: "text", text: "Saved a comparison." }] });
     stream.push({ type: "session.status_idle", id: "evt_idle", stop_reason: { type: "end_turn" } });
-    await until(async () => (await taskStatus(taskId)) === "done");
+    // The status flips before the files are listed and the update is written, so wait for the update.
+    await until(async () => (await memory.getMessages(conv)).some((m) => m.kind === "task_update"));
 
     expect(fileLists[0]).toMatchObject({ scope_id: "sesn_1" });
     const [update] = await memory.takePendingTaskUpdates(conv);
