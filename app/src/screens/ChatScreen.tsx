@@ -22,6 +22,14 @@ import { chooseAttachments, type Photo } from "../photos";
 import { askApproval } from "../usePush";
 import { createSpeaker, isStopPhrase, useVoice } from "../useVoice";
 
+// Shown on an empty chat so a new user sees what Jarvis can do.
+const SUGGESTIONS = [
+  "What's on my calendar today?",
+  "Summarize my unread email",
+  "Remind me to call Mom at 6pm",
+  "What did we talk about yesterday?",
+];
+
 export default function ChatScreen({
   settings,
   conversationId,
@@ -186,6 +194,16 @@ export default function ChatScreen({
         keyExtractor={(m) => m.id}
         contentContainerStyle={styles.list}
         onContentSizeChange={() => list.current?.scrollToEnd({ animated: true })}
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            <Text style={styles.emptyTitle}>How can I help?</Text>
+            {SUGGESTIONS.map((s) => (
+              <Pressable key={s} style={styles.suggestion} onPress={() => send(s, "text")} disabled={busy}>
+                <Text style={styles.suggestionText}>{s}</Text>
+              </Pressable>
+            ))}
+          </View>
+        }
         renderItem={({ item }) => (
           <Pressable
             onLongPress={() => {
@@ -313,4 +331,8 @@ const styles = StyleSheet.create({
   pillOn: { backgroundColor: "#2563eb" },
   pillText: { color: "#2563eb", fontSize: 14 },
   buttonText: { color: "white", fontWeight: "600" },
+  empty: { alignItems: "center", gap: 10, paddingTop: 48 },
+  emptyTitle: { fontSize: 18, fontWeight: "600", color: "#334155", marginBottom: 6 },
+  suggestion: { borderWidth: 1, borderColor: "#cbd5e1", borderRadius: 16, paddingHorizontal: 14, paddingVertical: 8 },
+  suggestionText: { color: "#334155" },
 });
