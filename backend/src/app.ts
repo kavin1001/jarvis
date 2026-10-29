@@ -18,6 +18,7 @@ import { addServer, deleteServer, listServers, NewServer, setServerEnabled } fro
 import * as memory from "./memory.js";
 import { savePushToken } from "./push.js";
 import { cancelReminder, createReminder, getTimezone, listReminders } from "./reminders.js";
+import { serverStatus } from "./status.js";
 import { firstOccurrence } from "./time.js";
 import { summarize } from "./usage.js";
 import { decideApproval, listTasks } from "./tasks.js";
@@ -165,6 +166,8 @@ app.post("/api/chat", async (c) => {
     }
   });
 });
+
+app.get("/api/status", async (c) => c.json(await serverStatus(config.userId)));
 
 app.get("/api/conversations", async (c) => c.json(await memory.listConversations(config.userId)));
 

@@ -48,6 +48,17 @@ export interface Reminder {
   repeat: "daily" | "weekdays" | "weekly" | null;
 }
 
+export interface ServerStatus {
+  claude: "ok" | "invalid_key" | "no_access" | "model_not_found" | "unreachable" | "error";
+  fast_model: string;
+  daily_budget_usd: number | null;
+  task_lane: boolean;
+  task_vault: boolean;
+  google: boolean;
+  connector_secret: boolean;
+  push_devices: number;
+}
+
 export interface Usage {
   today_usd: number;
   last_7_days_usd: number;
@@ -217,6 +228,7 @@ export const api = {
   renameConversation: (s: Settings, id: string, title: string) =>
     request(s, `/api/conversations/${id}`, { method: "PATCH", body: { title } }),
   usage: (s: Settings) => request<Usage>(s, "/api/usage"),
+  status: (s: Settings) => request<ServerStatus>(s, "/api/status"),
   reminders: (s: Settings) => request<Reminder[]>(s, "/api/reminders"),
   cancelReminder: (s: Settings, id: string) => request(s, `/api/reminders/${id}`, { method: "DELETE" }),
   facts: (s: Settings) => request<Fact[]>(s, "/api/facts"),

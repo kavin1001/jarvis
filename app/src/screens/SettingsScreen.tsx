@@ -5,6 +5,7 @@ import { Alert } from "../dialog";
 import { api, clearSettings, type Connectors, type Settings, type Usage } from "../api";
 import { locationSharingEnabled, setLocationSharing } from "../location";
 import { Devices } from "./Devices";
+import { SetupStatus } from "./SetupStatus";
 import { YourData } from "./YourData";
 import { McpServers } from "./McpServers";
 import { Header, LinkButton, useShared } from "../ui";
@@ -34,6 +35,7 @@ export default function SettingsScreen({
   const [usage, setUsage] = useState<Usage | null>(null);
   const [connectors, setConnectors] = useState<Connectors | null>(null);
   const [loading, setLoading] = useState(false);
+  const [statusKey, setStatusKey] = useState(0);
   const [shareLocation, setShareLocation] = useState(false);
   useEffect(() => {
     locationSharingEnabled().then(setShareLocation);
@@ -41,6 +43,7 @@ export default function SettingsScreen({
 
   const load = useCallback(async () => {
     setLoading(true);
+    setStatusKey((k) => k + 1);
     const [u, c] = await Promise.allSettled([api.usage(settings), api.connectors(settings)]);
     setUsage(u.status === "fulfilled" ? u.value : null);
     setConnectors(c.status === "fulfilled" ? c.value : null);
@@ -68,6 +71,8 @@ export default function SettingsScreen({
   return (
     <ScrollView refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}>
       <Header title="Settings" />
+
+      <SetupStatus settings={settings} refreshKey={statusKey} />
 
       <View style={styles.row}>
         <Text style={styles.rowMeta}>Spend today (estimated)</Text>
