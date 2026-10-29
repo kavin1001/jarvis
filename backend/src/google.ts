@@ -153,7 +153,8 @@ async function google<T>(userId: string, url: string, init: { method?: string; b
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
   });
   if (!res.ok) throw new Error(`Google API ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  return (await res.json()) as T;
+  // Deletes answer 204 with no body.
+  return (res.status === 204 ? undefined : await res.json()) as T;
 }
 
 // ---- Tools ---------------------------------------------------------------
@@ -197,7 +198,7 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
   },
   {
     name: "calendar_list_events",
-    description: "List events on the user's primary Google Calendar between two ISO 8601 times.",
+    description: "List events on the user's primary Google Calendar between two ISO 8601 times. Each line starts with the event id in brackets.",
     eager_input_streaming: true,
     input_schema: {
       type: "object",
@@ -226,6 +227,31 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
       required: ["summary", "start", "end"],
     },
   },
+  {
+    name: "calendar_update_event",
+    description:
+      "Change an event on the user's primary calendar: move it, rename it, or change its place or notes. Pass only the fields that change. No updates are sent to guests. Get the id from calendar_list_events.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        event_id: { type: "string" },
+        summary: { type: "string" },
+        start: { type: "string", description: "ISO 8601 with offset" },
+        end: { type: "string", description: "ISO 8601 with offset" },
+        location: { type: "string" },
+        description: { type: "string" },
+      },
+      required: ["event_id"],
+    },
+  },
+  {
+    name: "calendar_delete_event",
+    description:
+      "Delete an event from the user's primary calendar. Only after the user has clearly asked for that event to be removed; name it back to them if there could be any doubt. No cancellations are sent to guests.",
+    eager_input_streaming: true,
+    input_schema: { type: "object", properties: { event_id: { type: "string" } }, required: ["event_id"] },
+  },
 ];
 
 const isoDate = z.string().refine((v) => !Number.isNaN(Date.parse(v)), "must be an ISO 8601 date-time");
@@ -246,6 +272,17 @@ const inputs = {
     location: z.string().optional(),
     description: z.string().optional(),
   }),
+  calendar_update_event: z
+    .object({
+      event_id: z.string().min(1),
+      summary: z.string().min(1).optional(),
+      start: isoDate.optional(),
+      end: isoDate.optional(),
+      location: z.string().optional(),
+      description: z.string().optional(),
+    })
+    .refine((e) => Object.keys(e).length > 1, "Nothing to change"),
+  calendar_delete_event: z.object({ event_id: z.string().min(1) }),
 };
 
 export function isGoogleTool(name: string): name is keyof typeof inputs {
@@ -347,11 +384,11 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
         ...(q ? { q } : {}),
       });
       const res = await google<{
-        items: { summary?: string; location?: string; start: { dateTime?: string; date?: string }; end: { dateTime?: string; date?: string } }[];
+        items: { id: string; summary?: string; location?: string; start: { dateTime?: string; date?: string }; end: { dateTime?: string; date?: string } }[];
       }>(userId, `${CAL}?${params}`);
       if (!res.items.length) return "No events in that range.";
       return res.items
-        .map((ev) => `${ev.start.dateTime ?? ev.start.date} to ${ev.end.dateTime ?? ev.end.date}: ${ev.summary ?? "(no title)"}${ev.location ? ` @ ${ev.location}` : ""}`)
+        .map((ev) => `[${ev.id}] ${ev.start.dateTime ?? ev.start.date} to ${ev.end.dateTime ?? ev.end.date}: ${ev.summary ?? "(no title)"}${ev.location ? ` @ ${ev.location}` : ""}`)
         .join("\n");
     }
     case "calendar_create_event": {
@@ -367,6 +404,30 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
         },
       });
       return `Event created: ${created.htmlLink}`;
+    }
+    case "calendar_update_event": {
+      const { event_id, start, end, ...rest } = inputs.calendar_update_event.parse(raw);
+      const url = `${CAL}/${encodeURIComponent(event_id)}`;
+      const body: Record<string, unknown> = { ...rest };
+      if (start || end) {
+        // Moving only the start keeps the event's length.
+        const current = await google<{ start: { dateTime?: string }; end: { dateTime?: string } }>(userId, url);
+        const oldStart = Date.parse(current.start.dateTime ?? "");
+        const oldEnd = Date.parse(current.end.dateTime ?? "");
+        const newStart = start ? Date.parse(start) : oldStart;
+        const newEnd = end ? Date.parse(end) : newStart + (oldEnd - oldStart);
+        if (Number.isNaN(newStart) || Number.isNaN(newEnd)) throw new Error("This is an all-day event; give both start and end times.");
+        if (newEnd <= newStart) throw new Error("The end must be after the start.");
+        body.start = { dateTime: new Date(newStart).toISOString() };
+        body.end = { dateTime: new Date(newEnd).toISOString() };
+      }
+      const updated = await google<{ htmlLink: string }>(userId, `${url}?sendUpdates=none`, { method: "PATCH", body });
+      return `Event updated: ${updated.htmlLink}`;
+    }
+    case "calendar_delete_event": {
+      const { event_id } = inputs.calendar_delete_event.parse(raw);
+      await google(userId, `${CAL}/${encodeURIComponent(event_id)}?sendUpdates=none`, { method: "DELETE" });
+      return "Event deleted.";
     }
   }
 }

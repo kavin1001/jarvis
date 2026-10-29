@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Calendar: Jarvis can move, rename and delete events ("push my 3pm to 4"). Moving only the start keeps the event's length. Guests aren't notified, as with new events, and Jarvis deletes an event only when you've clearly asked.
 - Offline: messages you send while the server can't be reached wait above the message box and go out by themselves, in order, once it answers again (while the app stays open). Tap one to take it back and edit it. Before, the message went back into the box for you to send again.
 - Memory: tap a fact to **Edit** or **Forget** it. When something about you changes ("I moved to Boston"), Jarvis now corrects the saved fact instead of keeping both. `PATCH /api/facts/:id` takes `{ fact }`.
 - Settings has **Read replies aloud** (when you speak, always, or never) and **Speaking speed** (slower to fastest, with a sample when you pick one). Replies are read without Markdown symbols, voice input follows your phone's language and region, and speech no longer waits forever in browsers that have no voice list.

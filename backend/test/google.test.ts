@@ -153,6 +153,34 @@ describe("Google tools", () => {
     expect(raw).toContain("In-Reply-To: <abc@mail>");
   });
 
+  it("moves an event keeping its length, and deletes one", async () => {
+    await connect({ access_token: "at", expires_at: Date.now() + 3600_000 });
+    const calls = mockFetch({
+      "events/ev1": (_url, init) =>
+        init?.method === "PATCH"
+          ? { htmlLink: "https://calendar.example/ev1" }
+          : init?.method === "DELETE"
+            ? {}
+            : { start: { dateTime: "2026-10-29T15:00:00Z" }, end: { dateTime: "2026-10-29T15:30:00Z" } },
+      "calendar/v3": () => ({ items: [{ id: "ev1", summary: "Sync", start: { dateTime: "2026-10-29T15:00:00Z" }, end: { dateTime: "2026-10-29T15:30:00Z" } }] }),
+    });
+    const listed = await runGoogleTool("me", "calendar_list_events", { time_min: "2026-10-29T00:00:00Z", time_max: "2026-10-30T00:00:00Z" });
+    expect(listed).toMatch(/^\[ev1\] /);
+
+    expect(await runGoogleTool("me", "calendar_update_event", { event_id: "ev1", start: "2026-10-29T16:00:00Z" })).toContain("updated");
+    const patch = calls.find((c) => c.init?.method === "PATCH")!;
+    expect(patch.url).toContain("sendUpdates=none");
+    expect(JSON.parse(patch.init!.body as string)).toEqual({
+      start: { dateTime: "2026-10-29T16:00:00.000Z" },
+      end: { dateTime: "2026-10-29T16:30:00.000Z" },
+    });
+    await expect(runGoogleTool("me", "calendar_update_event", { event_id: "ev1" })).rejects.toThrow(/Nothing to change/);
+    await expect(runGoogleTool("me", "calendar_update_event", { event_id: "ev1", end: "2026-10-29T14:00:00Z" })).rejects.toThrow(/after the start/);
+
+    expect(await runGoogleTool("me", "calendar_delete_event", { event_id: "ev1" })).toBe("Event deleted.");
+    expect(calls.at(-1)!.init?.method).toBe("DELETE");
+  });
+
   it("asks to connect when Google is not linked", async () => {
     await expect(runGoogleTool("me", "gmail_search", { query: "x" })).rejects.toThrow(/not connected/);
   });
