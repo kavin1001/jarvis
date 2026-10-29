@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- If a screen crashes, Jarvis now shows "Chat hit a problem" with **Try again** instead of a blank screen, and the other tabs keep working. The error is sent to your server, so it shows in the backend's logs as `app error`. `POST /api/client-errors`.
 - Better drafts: "reply all and say Friday works", "copy Ana on it". Jarvis can now draft reply-alls and add people to copy. Subjects and names with accents or other alphabets ("Café plans", "José") no longer arrive garbled.
 - Follow-up nudges: "remind me if Sam hasn't replied by Friday". Jarvis watches your inbox and only notifies you if the email hasn't come by then, with an offer to draft a follow-up. If it does come, the nudge is dropped quietly. After drafting an email you're waiting on, Jarvis offers to set one. Nudges show in Tasks.
 - Meeting notes: tap **＋**, then **Record a meeting**. Jarvis transcribes as people talk, on the phone itself where it can, and when you tap **Stop and write up notes** it writes a summary, decisions and action items and saves them as a note. Keep the app open with the screen on while it records. Needs a new app build on iPhone (the web version has it now).

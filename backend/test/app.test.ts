@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { app } from "../src/app.js";
 import { pool } from "../src/db.js";
 import { auth, resetDb } from "./helpers.js";
@@ -182,5 +182,22 @@ describe("hardening", () => {
     const missing = await app.request("/nope");
     expect(missing.status).toBe(404);
     expect(await missing.json()).toEqual({ error: "Not found" });
+  });
+});
+
+describe("app error reports", () => {
+  it("logs a report, validates it, and limits a crash loop", async () => {
+    const logged: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((m: string) => void logged.push(m));
+    const post = (body: unknown) => app.request("/api/client-errors", { method: "POST", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    const report = { message: "Cannot read properties of undefined", stack: "at ChatScreen", where: "render", fatal: true, platform: "ios", version: "1.0.0" };
+    expect(await (await post(report)).json()).toEqual({ logged: true });
+    expect(logged).toEqual(["app error (render, fatal, ios 1.0.0): Cannot read properties of undefined\nat ChatScreen"]);
+    expect((await post({ ...report, where: "elsewhere" })).status).toBe(400);
+    expect((await post({ ...report, extra: 1 })).status).toBe(400);
+    for (let i = 0; i < 19; i++) await post(report);
+    expect((await post(report)).status).toBe(429);
+    expect(logged).toHaveLength(20);
+    spy.mockRestore();
   });
 });

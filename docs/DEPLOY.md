@@ -16,7 +16,7 @@ The repo has a Render Blueprint (`render.yaml`) that creates the web service and
 3. Render generates `JARVIS_APP_TOKEN`; copy it from the service's Environment tab, since the app needs it.
 4. After the deploy, open `https://<your-service>.onrender.com/health`. It should return `{"ok":true}`.
 
-The schema is applied automatically on every boot. Check plan names and prices on Render before creating; the blueprint asks for a small paid web service and database because free instances sleep, which would delay reminders and background tasks.
+The schema is applied automatically on every boot. If the app crashes or hits an error nothing caught, it sends the details to the backend, so they show in the service's **Logs** tab as lines starting `app error`. Check plan names and prices on Render before creating; the blueprint asks for a small paid web service and database because free instances sleep, which would delay reminders and background tasks.
 
 Any host that runs a Docker image works the same way (Fly.io, Railway, a VPS): build `backend/Dockerfile` and set the variables from `backend/.env.example`.
 

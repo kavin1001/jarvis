@@ -5,6 +5,8 @@ import { ActivityIndicator, AppState, Button, Platform, SafeAreaView, StyleSheet
 import { AppLock } from "./src/appLock";
 import { api, loadSettings, saveSettings, signIn, upgradeToDeviceToken, type Settings } from "./src/api";
 import { ConnectionProvider, OfflineBanner } from "./src/connection";
+import { installGlobalErrorReporting } from "./src/crashReport";
+import { ErrorBoundary } from "./src/ErrorBoundary";
 import { useDeepLinkCommand, type Command } from "./src/deepLink";
 import { syncPlaceReminders } from "./src/geofence";
 import { askCommand } from "./src/links";
@@ -20,13 +22,19 @@ import { usePush } from "./src/usePush";
 
 const CONVERSATION_KEY = "jarvis-conversation";
 
+installGlobalErrorReporting();
+
 export default function App() {
   return (
     <ThemeProvider>
-      <Root />
+      <ErrorBoundary>
+        <Root />
+      </ErrorBoundary>
     </ThemeProvider>
   );
 }
+
+const TAB_NAMES: Record<Tab, string> = { chat: "Chat", history: "History", tasks: "Tasks", lists: "Lists", memory: "Memory", settings: "Settings" };
 
 function Root() {
   const { colors, scheme } = useTheme();
@@ -109,26 +117,29 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
     <ConnectionProvider settings={settings}>
       <View style={styles.root}>
         <OfflineBanner />
-        <View style={styles.root}>
-          {tab === "chat" && (
-            <ChatScreen
-              settings={settings}
-              conversationId={conversationId}
-              onConversation={(id) => {
-                setConversationId(id);
-                if (id) SecureStore.setItemAsync(CONVERSATION_KEY, id);
-                else SecureStore.deleteItemAsync(CONVERSATION_KEY);
-              }}
-              refreshKey={refreshKey}
-              command={command}
-            />
-          )}
-          {tab === "history" && <HistoryScreen settings={settings} current={conversationId} onOpen={openConversation} />}
-          {tab === "tasks" && <TasksScreen settings={settings} refreshKey={refreshKey} />}
-          {tab === "lists" && <ListsScreen settings={settings} />}
-          {tab === "memory" && <MemoryScreen settings={settings} />}
-          {tab === "settings" && <SettingsScreen settings={settings} onSignOut={onSignOut} onErased={() => openConversation(undefined)} />}
-        </View>
+        {/* Keyed by tab: a crash in one tab leaves the tab bar working, and switching tabs clears it. */}
+        <ErrorBoundary key={tab} label={TAB_NAMES[tab]}>
+          <View style={styles.root}>
+            {tab === "chat" && (
+              <ChatScreen
+                settings={settings}
+                conversationId={conversationId}
+                onConversation={(id) => {
+                  setConversationId(id);
+                  if (id) SecureStore.setItemAsync(CONVERSATION_KEY, id);
+                  else SecureStore.deleteItemAsync(CONVERSATION_KEY);
+                }}
+                refreshKey={refreshKey}
+                command={command}
+              />
+            )}
+            {tab === "history" && <HistoryScreen settings={settings} current={conversationId} onOpen={openConversation} />}
+            {tab === "tasks" && <TasksScreen settings={settings} refreshKey={refreshKey} />}
+            {tab === "lists" && <ListsScreen settings={settings} />}
+            {tab === "memory" && <MemoryScreen settings={settings} />}
+            {tab === "settings" && <SettingsScreen settings={settings} onSignOut={onSignOut} onErased={() => openConversation(undefined)} />}
+          </View>
+        </ErrorBoundary>
         <TabBar tab={tab} onChange={setTab} badges={{ tasks: pendingApprovals }} />
       </View>
     </ConnectionProvider>

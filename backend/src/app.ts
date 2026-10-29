@@ -427,6 +427,27 @@ app.post("/api/activity/:id/undo", async (c) => {
     return c.json({ error: (err as Error).message }, 502);
   }
 });
+// Crashes and unhandled errors from the app, so they show up in the server logs without a crash-reporting service.
+const ClientError = z
+  .object({
+    message: z.string().max(2000),
+    stack: z.string().max(8000).optional(),
+    where: z.enum(["render", "global", "promise"]),
+    fatal: z.boolean().default(false),
+    platform: z.string().max(20),
+    version: z.string().max(40),
+  })
+  .strict();
+app.post("/api/client-errors", async (c) => {
+  const body = ClientError.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) return c.json({ error: "Invalid error report" }, 400);
+  // A crash loop shouldn't flood the logs.
+  const caller = c.get("caller");
+  if (!allowAttempt(`client-errors:${caller.kind === "device" ? caller.deviceId : "owner"}`, 20, 10 * 60_000)) return c.json({ logged: false }, 429);
+  const e = body.data;
+  console.error(`app error (${e.where}${e.fatal ? ", fatal" : ""}, ${e.platform} ${e.version}): ${e.message}${e.stack ? `\n${e.stack}` : ""}`);
+  return c.json({ logged: true });
+});
 app.get("/api/activity", async (c) => c.json(await recentActivity(config.userId, Math.min(200, Number(c.req.query("limit")) || 50))));
 app.get("/api/notes", async (c) => c.json(await notes.findNotes(config.userId, (c.req.query("q") ?? "").slice(0, 200))));
 const NewNote = z.object({ body: z.string().trim().min(1).max(notes.MAX_BODY), title: z.string().trim().max(120).optional() }).strict();
