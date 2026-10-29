@@ -14,6 +14,8 @@ export const config = {
   taskVaultId: process.env.TASK_VAULT_ID,
   approvalTimeoutMs: Number(process.env.APPROVAL_TIMEOUT_MINUTES ?? 30) * 60_000,
   port: Number(process.env.PORT ?? 8787),
+  // Jarvis stops answering (and starting tasks) once today's estimated spend reaches this.
+  dailyBudgetUsd: process.env.DAILY_BUDGET_USD ? Number(process.env.DAILY_BUDGET_USD) : null,
   // Single-user MVP: every request belongs to this user.
   userId: "me",
 };
