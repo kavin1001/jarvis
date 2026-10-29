@@ -1,6 +1,7 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { pool, query } from "../src/db.js";
+import { addServer } from "../src/mcp.js";
 import * as memory from "../src/memory.js";
 import { decideApproval, expireApprovals, listTasks, resumeTasks, setTaskClient, startTask } from "../src/tasks.js";
 import { resetDb } from "./helpers.js";
@@ -26,10 +27,28 @@ function liveStream() {
 function fakeTaskClient(opts: { history?: unknown[]; status?: string } = {}) {
   const stream = liveStream();
   const sent: unknown[] = [];
+  const created: Record<string, unknown>[] = [];
+  const vaults = { credentials: [] as unknown[], deleted: [] as string[] };
   const client = {
     beta: {
+      agents: {
+        retrieve: async (id: string) => ({
+          id,
+          version: 3,
+          tools: [{ type: "agent_toolset_20260401" }],
+          mcp_servers: [{ type: "url", name: "github", url: "https://gh.example/mcp" }],
+        }),
+      },
+      vaults: {
+        create: async () => ({ id: "vlt_task" }),
+        delete: async (id: string) => void vaults.deleted.push(id),
+        credentials: { create: async (_v: string, body: unknown) => void vaults.credentials.push(body) },
+      },
       sessions: {
-        create: async () => ({ id: "sesn_1" }),
+        create: async (params: Record<string, unknown>) => {
+          created.push(params);
+          return { id: "sesn_1" };
+        },
         retrieve: async () => ({ id: "sesn_1", status: opts.status ?? "running" }),
         events: {
           stream: async () => stream,
@@ -42,7 +61,7 @@ function fakeTaskClient(opts: { history?: unknown[]; status?: string } = {}) {
     },
   };
   setTaskClient(client as unknown as Anthropic);
-  return { stream, sent };
+  return { stream, sent, created, vaults };
 }
 
 const until = async (check: () => Promise<boolean>) => {
@@ -81,6 +100,56 @@ describe("task lane", () => {
     await until(async () => (await taskStatus(taskId)) === "done");
 
     expect(await memory.takePendingTaskUpdates(conv)).toEqual(['Task "Book dinner" finished.\n\nBooked for 7pm.']);
+  });
+
+  it("gives the task the user's MCP servers, with tokens in a vault it deletes afterwards", async () => {
+    process.env.CONNECTOR_SECRET = "s";
+    await addServer("me", { name: "notion", url: "https://notion.example/mcp", token: "tok-123" });
+    await addServer("me", { name: "github", url: "https://other.example/mcp" }); // the agent already has a "github"
+    const { stream, sent, created, vaults } = fakeTaskClient();
+    const conv = await memory.createConversation("me");
+    const taskId = await startTask("me", conv, "File my notes", "Notes");
+    await until(async () => sent.length === 1);
+
+    expect(created[0].vault_ids).toEqual(["vlt_task"]);
+    expect(created[0].agent).toMatchObject({
+      type: "agent_with_overrides",
+      version: 3,
+      tools: [{ type: "agent_toolset_20260401" }, { type: "mcp_toolset", mcp_server_name: "notion" }],
+      mcp_servers: [
+        { type: "url", name: "github", url: "https://gh.example/mcp" },
+        { type: "url", name: "notion", url: "https://notion.example/mcp" },
+      ],
+    });
+    expect(JSON.stringify(created[0])).not.toContain("tok-123");
+    expect(vaults.credentials).toEqual([
+      { display_name: "notion", auth: { type: "static_bearer", mcp_server_url: "https://notion.example/mcp", token: "tok-123" } },
+    ]);
+
+    stream.push({
+      type: "agent.mcp_tool_use",
+      id: "evt_mcp",
+      mcp_server_name: "notion",
+      name: "create_page",
+      input: { title: "Notes" },
+      evaluated_permission: "ask",
+    });
+    await until(async () => (await taskStatus(taskId)) === "waiting_approval");
+    const [task] = (await listTasks("me")) as { pending_approvals: { summary: string }[] }[];
+    expect(task.pending_approvals[0].summary).toMatch(/^Allow notion create_page\?/);
+
+    stream.push({ type: "session.status_idle", id: "evt_idle", stop_reason: { type: "end_turn" } });
+    await until(async () => (await taskStatus(taskId)) === "done");
+    expect(vaults.deleted).toEqual(["vlt_task"]);
+  });
+
+  it("uses the agent as is when the user has no MCP servers", async () => {
+    const { sent, created } = fakeTaskClient();
+    const conv = await memory.createConversation("me");
+    await startTask("me", conv, "Look something up", "Lookup");
+    await until(async () => sent.length === 1);
+    expect(typeof created[0].agent).not.toBe("object");
+    expect(created[0].vault_ids).toBeUndefined();
   });
 
   it("forwards tool confirmations and denies stale approvals", async () => {

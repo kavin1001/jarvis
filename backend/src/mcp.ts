@@ -74,3 +74,15 @@ export async function mcpRequestParts(userId: string): Promise<{
     toolsets: usable.map((r) => ({ type: "mcp_toolset", mcp_server_name: r.name })),
   };
 }
+
+/**
+ * The same servers for a background task. Managed Agents takes no tokens in
+ * the server list; they go into a vault, matched to each server by URL.
+ */
+export async function taskMcpParts(userId: string) {
+  const rows = await query<Row>("SELECT * FROM mcp_servers WHERE user_id = $1 AND enabled ORDER BY name", [userId]);
+  const key = secret();
+  return rows
+    .filter((r) => r.token === null || key !== null)
+    .map((r) => ({ name: r.name, url: r.url, token: r.token ? decrypt(r.token, key!) : null }));
+}

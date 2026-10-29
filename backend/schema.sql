@@ -163,3 +163,6 @@ CREATE TABLE IF NOT EXISTS pairing_codes (
 -- 0.8: full-text search over past chats (the search_past_chats tool and the History search box).
 CREATE INDEX IF NOT EXISTS messages_display_text_fts_idx
   ON messages USING GIN (to_tsvector('english', coalesce(display_text, '')));
+
+-- A vault Jarvis creates for one task to hold its MCP server tokens; deleted when the task ends.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS vault_id TEXT;

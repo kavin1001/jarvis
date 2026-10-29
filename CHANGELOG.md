@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Background tasks can use your connected apps (MCP servers) too. Each tool call asks for your OK first, and a server's token is kept in a vault that exists only while the task runs.
 - Signed-in devices: a browser sign-in is listed by browser and system, such as "Chrome on Mac" or "Safari on iPhone", instead of always "Safari".
 - **Dark mode**: Jarvis follows your phone's light or dark setting. Settings, **Appearance**, lets you pick Light or Dark instead.
 - A new chat shows suggestions you can tap, such as "What's on my calendar today?", so it is clear what Jarvis can do.

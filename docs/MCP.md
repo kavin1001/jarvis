@@ -17,6 +17,14 @@ Use the switch to turn a server off without deleting it.
 - Servers that accept a bearer token or carry the key in their URL. Examples are GitHub's remote MCP server with a fine-grained personal access token, or a Zapier or Pipedream MCP URL.
 - Tools only. MCP resources and prompts aren't supported by the connector.
 
+## Background tasks
+
+Tasks Jarvis runs in the background get the same enabled servers, for that task only. Every call to one of their tools waits for your OK, as a notification you approve or deny.
+
+A server's token is put in a vault Jarvis creates for that one task, so it never appears in the task's configuration or sandbox. The vault is deleted when the task ends. If the task agent already has a server with the same name, the agent's own one is used.
+
+The task sandbox has to be allowed to reach MCP servers. `scripts/setup-agent.ts` turns this on (`allow_mcp_servers`), so you don't need to list their hosts.
+
 ## What doesn't (yet)
 
 - Servers that require a full browser OAuth sign-in, such as some official Notion or Linear servers. Jarvis doesn't run that OAuth flow yet. Use a server that takes an API token, or paste a token you got elsewhere.

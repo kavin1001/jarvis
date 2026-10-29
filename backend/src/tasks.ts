@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { config } from "./config.js";
 import { query } from "./db.js";
+import { taskMcpParts } from "./mcp.js";
 import * as memory from "./memory.js";
 import { sendPush } from "./push.js";
 
@@ -22,6 +23,7 @@ interface TaskRow {
   status: "queued" | "running" | "waiting_approval" | "done" | "failed";
   session_id: string | null;
   last_message: string | null;
+  vault_id: string | null;
 }
 
 interface ApprovalRow {
@@ -76,11 +78,13 @@ export async function startTask(
 
 async function launch(taskId: string) {
   const task = await getTask(taskId);
+  const { agent, vaultId } = await agentWithUserServers(task);
+  const vaults = [config.taskVaultId, vaultId].filter((v): v is string => Boolean(v));
   const session = await client.beta.sessions.create({
-    agent: config.taskAgentId!,
+    agent,
     environment_id: config.taskEnvironmentId!,
     title: task.summary ?? "Jarvis task",
-    ...(config.taskVaultId ? { vault_ids: [config.taskVaultId] } : {}),
+    ...(vaults.length ? { vault_ids: vaults } : {}),
   });
   await setStatus(taskId, "running", session.id);
 
@@ -90,6 +94,55 @@ async function launch(taskId: string) {
     events: [{ type: "user.message", content: [{ type: "text", text: TASK_PREAMBLE + task.instructions }] }],
   });
   await follow(taskId, stream);
+}
+
+type AgentRef = Anthropic.Beta.Sessions.SessionCreateParams["agent"];
+type ToolParam = NonNullable<Anthropic.Beta.Sessions.BetaManagedAgentsAgentWithOverridesParams["tools"]>[number];
+
+/**
+ * Gives the task agent the user's connected MCP servers for this session only.
+ * Their calls keep the default always-ask policy, so each one waits for the user's OK.
+ */
+async function agentWithUserServers(task: TaskRow): Promise<{ agent: AgentRef; vaultId: string | null }> {
+  const servers = await taskMcpParts(task.user_id);
+  if (servers.length === 0) return { agent: config.taskAgentId!, vaultId: null };
+
+  const base = await client.beta.agents.retrieve(config.taskAgentId!);
+  const taken = new Set(base.mcp_servers.map((s) => s.name));
+  const extra = servers.filter((s) => !taken.has(s.name)).slice(0, Math.max(0, 20 - taken.size));
+  if (extra.length === 0) return { agent: config.taskAgentId!, vaultId: null };
+
+  let vaultId: string | null = null;
+  const withTokens = extra.filter((s) => s.token);
+  if (withTokens.length) {
+    const vault = await client.beta.vaults.create({ display_name: `Jarvis task ${task.id}` });
+    vaultId = vault.id;
+    await query("UPDATE tasks SET vault_id = $2 WHERE id = $1", [task.id, vaultId]);
+    for (const s of withTokens) {
+      await client.beta.vaults.credentials.create(vaultId, {
+        display_name: s.name,
+        auth: { type: "static_bearer", mcp_server_url: s.url, token: s.token! },
+      });
+    }
+  }
+  return {
+    agent: {
+      type: "agent_with_overrides",
+      id: base.id,
+      version: base.version,
+      // Overrides replace the whole list, so keep the agent's own tools and servers.
+      tools: [...(base.tools as ToolParam[]), ...extra.map((s) => ({ type: "mcp_toolset" as const, mcp_server_name: s.name }))],
+      mcp_servers: [...base.mcp_servers, ...extra.map((s) => ({ type: "url" as const, name: s.name, url: s.url }))],
+    },
+    vaultId,
+  };
+}
+
+/** Deletes a task's own vault, and the tokens in it, once the task is over. */
+async function dropVault(task: TaskRow) {
+  if (!task.vault_id) return;
+  await client.beta.vaults.delete(task.vault_id).catch((err) => console.warn(`could not delete vault for task ${task.id}`, err));
+  await query("UPDATE tasks SET vault_id = NULL WHERE id = $1", [task.id]);
 }
 
 /** Handles one session event. Safe to call twice for the same event. Returns true when the task is over. */
@@ -121,7 +174,8 @@ async function handleEvent(taskId: string, event: SessionEvent): Promise<boolean
     case "agent.mcp_tool_use":
       // The auto policy pauses calls it can't classify; the user decides.
       if (event.evaluated_permission === "ask") {
-        const ask = `Allow ${event.name}? ${JSON.stringify(event.input).slice(0, 140)}`;
+        const tool = event.type === "agent.mcp_tool_use" ? `${event.mcp_server_name} ${event.name}` : event.name;
+        const ask = `Allow ${tool}? ${JSON.stringify(event.input).slice(0, 140)}`;
         await recordApproval(taskId, event.id, "tool_confirmation", ask);
       }
       return false;
@@ -245,6 +299,7 @@ async function failTask(taskId: string, err: unknown) {
 }
 
 async function report(task: TaskRow, status: "done" | "failed", result: string) {
+  await dropVault(task);
   const summary = task.summary ?? "Background task";
   const update = `Task "${summary}" ${status === "done" ? "finished" : "failed"}.\n\n${result}`;
   await memory.appendMessage(task.conversation_id, "assistant", [{ type: "text", text: update }], update, "system", "task_update");

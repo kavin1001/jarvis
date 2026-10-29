@@ -20,7 +20,6 @@ Goal: a personal agent on your phone that answers instantly, remembers you, and 
 ## Later
 
 - OAuth sign-in for MCP servers that need it (Notion, Linear)
-- Give the background task agent the same MCP servers
 - Multi-user accounts (Sign in with Apple) if Jarvis is ever shared
 - Streaming speech provider for more natural voice; barge-in (interrupt Jarvis while it talks)
 - Native App Intents so Siri answers without opening the app
