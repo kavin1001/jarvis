@@ -4,6 +4,8 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- **Stop**: while Jarvis is answering, the Send/Talk button becomes Stop. The part already shown is kept in history, so the next message picks up from what you saw.
+- Your data: Settings, **Export as JSON** downloads every conversation, fact, reminder, task and connected app, with no secrets included. **Erase everything** deletes all of it and disconnects Google. Your devices and spend history stay.
 - History titles: Jarvis names each new conversation in a few words after its first reply, instead of using the first 60 characters. `TITLE_MODEL` picks the model, defaulting to `FAST_MODEL`.
 - Tasks: running tasks show the agent's latest message, and each task shows what it cost.
 - Files: tap ＋, then **Choose a file**, to send up to 2 PDFs or text files (txt, md, csv, json) and ask about them. PDFs go through the Files API once, and text goes inline.

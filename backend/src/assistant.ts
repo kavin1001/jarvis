@@ -327,6 +327,8 @@ async function runTurnNow(opts: {
   images?: ImageInput[];
   documents?: DocumentInput[];
   location?: ApproxLocation;
+  /** Aborted when the user taps Stop (or the app disconnects). */
+  signal?: AbortSignal;
 }): Promise<string> {
   const { conversationId, text, source, emit } = opts;
   if (opts.timezone) await reminders.setTimezone(config.userId, opts.timezone);
@@ -378,7 +380,7 @@ async function runTurnNow(opts: {
   let jsonRetries = 0;
   let finalText = "";
 
-  for (let iteration = 0; iteration < 10; iteration++) {
+  for (let iteration = 0; iteration < 10 && !opts.signal?.aborted; iteration++) {
     const stream = client.beta.messages.stream({
       model: config.fastModel,
       max_tokens: 16000,
@@ -392,14 +394,27 @@ async function runTurnNow(opts: {
       system,
       tools: turnTools,
       messages,
+    }, { signal: opts.signal });
+    let partial = "";
+    stream.on("text", (delta) => {
+      partial += delta;
+      emit({ type: "text", text: delta });
     });
-    stream.on("text", (delta) => emit({ type: "text", text: delta }));
 
     let message: Anthropic.Beta.BetaMessage;
     try {
       message = await stream.finalMessage();
       jsonRetries = 0;
     } catch (err) {
+      if (opts.signal?.aborted) {
+        // Keep what the user already saw, so the next turn's history matches the screen.
+        if (partial.trim()) {
+          const content = [{ type: "text" as const, text: partial }];
+          await memory.appendMessage(conversationId, "assistant", content, `${partial} …(stopped)`);
+          finalText = partial;
+        }
+        break;
+      }
       // Only an unparseable eager tool input is retried; API errors propagate.
       if (err instanceof Anthropic.APIError || jsonRetries++ >= 2) throw err;
       continue;

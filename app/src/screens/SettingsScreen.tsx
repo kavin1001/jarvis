@@ -5,12 +5,22 @@ import { Alert } from "../dialog";
 import { api, clearSettings, type Connectors, type Settings, type Usage } from "../api";
 import { locationSharingEnabled, setLocationSharing } from "../location";
 import { Devices } from "./Devices";
+import { YourData } from "./YourData";
 import { McpServers } from "./McpServers";
 import { colors, Header, LinkButton, styles } from "../ui";
 
 const usd = (n: number) => `$${n < 1 ? n.toFixed(3) : n.toFixed(2)}`;
 
-export default function SettingsScreen({ settings, onSignOut }: { settings: Settings; onSignOut: () => void }) {
+export default function SettingsScreen({
+  settings,
+  onSignOut,
+  onErased,
+}: {
+  settings: Settings;
+  onSignOut: () => void;
+  /** After "Erase everything": start a fresh chat. */
+  onErased: () => void;
+}) {
   const [usage, setUsage] = useState<Usage | null>(null);
   const [connectors, setConnectors] = useState<Connectors | null>(null);
   const [loading, setLoading] = useState(false);
@@ -114,6 +124,14 @@ export default function SettingsScreen({ settings, onSignOut }: { settings: Sett
       </View>
 
       <McpServers settings={settings} />
+
+      <YourData
+        settings={settings}
+        onErased={() => {
+          Alert.alert("Erased", "Jarvis has forgotten everything.");
+          onErased();
+        }}
+      />
 
       <Devices settings={settings} onSignOut={() => clearSettings().then(onSignOut)} />
 

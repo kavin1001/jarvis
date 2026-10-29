@@ -8,6 +8,7 @@ import { logger } from "hono/logger";
 import { secureHeaders } from "hono/secure-headers";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
+import { deleteAllData, exportData } from "./account.js";
 import { runTurn, type ChatEvent } from "./assistant.js";
 import { config } from "./config.js";
 import { query } from "./db.js";
@@ -140,6 +141,9 @@ app.post("/api/chat", async (c) => {
   const id = conversationId;
 
   return streamSSE(c, async (stream) => {
+    // The app closes the request when the user taps Stop.
+    const stop = new AbortController();
+    stream.onAbort(() => stop.abort());
     const send = (e: ChatEvent | { type: "conversation"; conversationId: string }) =>
       stream.writeSSE({ event: e.type, data: JSON.stringify(e) });
     await send({ type: "conversation", conversationId: id });
@@ -152,6 +156,7 @@ app.post("/api/chat", async (c) => {
         images: body.data.images,
         documents: body.data.documents,
         location: body.data.location,
+        signal: stop.signal,
         emit: (e) => void send(e),
       });
     } catch (err) {
@@ -291,6 +296,19 @@ app.delete("/api/devices/:id", async (c) => {
   return c.json({ revoked: id.success && (await revokeDevice(config.userId, id.data)) });
 });
 app.post("/api/devices/pair-codes", async (c) => c.json(await createPairingCode(config.userId)));
+
+app.get("/api/export", async (c) => {
+  c.header("Content-Disposition", `attachment; filename="jarvis-export-${new Date().toISOString().slice(0, 10)}.json"`);
+  return c.json(await exportData(config.userId));
+});
+const ConfirmDelete = z.object({ confirm: z.literal("DELETE") });
+app.delete("/api/data", async (c) => {
+  if (!ConfirmDelete.safeParse(await c.req.json().catch(() => null)).success) {
+    return c.json({ error: 'Send {"confirm":"DELETE"} to erase everything' }, 400);
+  }
+  await deleteAllData(config.userId);
+  return c.json({ deleted: true });
+});
 
 // The web build of the app, when present (the Docker image puts it in ./public). Same origin, so no CORS.
 const webDir = process.env.WEB_DIR ?? "public";

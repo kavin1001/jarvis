@@ -223,4 +223,32 @@ describe("runTurn", () => {
     const [conv] = (await memory.listConversations("me")).filter((c) => c.id === id);
     expect(conv.title).toBe("Sushi in Austin");
   });
+
+  it("stops mid-reply and keeps the part already shown", async () => {
+    const stop = new AbortController();
+    setClient({
+      beta: {
+        messages: {
+          stream(_params: unknown, opts: { signal?: AbortSignal }) {
+            return {
+              on(event: string, fn: (delta: string) => void) {
+                if (event === "text") fn("The best sushi in Austin is");
+              },
+              finalMessage: () =>
+                new Promise((_resolve, reject) => opts.signal?.addEventListener("abort", () => reject(new Error("aborted")))),
+            };
+          },
+        },
+      },
+    } as unknown as Anthropic);
+    const id = await memory.createConversation("me");
+    const events: ChatEvent[] = [];
+    const turn = runTurn({ conversationId: id, text: "sushi?", source: "text", emit: (e) => events.push(e), signal: stop.signal });
+    setTimeout(() => stop.abort(), 20);
+    expect(await turn).toBe("The best sushi in Austin is");
+    expect(events.at(-1)).toEqual({ type: "done" });
+    const stored = await memory.getMessages(id);
+    expect(stored.map((m) => m.role)).toEqual(["user", "assistant"]);
+    expect(stored[1].display_text).toBe("The best sushi in Austin is …(stopped)");
+  });
 });

@@ -93,7 +93,7 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
         {tab === "history" && <HistoryScreen settings={settings} current={conversationId} onOpen={openConversation} />}
         {tab === "tasks" && <TasksScreen settings={settings} refreshKey={refreshKey} />}
         {tab === "memory" && <MemoryScreen settings={settings} />}
-        {tab === "settings" && <SettingsScreen settings={settings} onSignOut={onSignOut} />}
+        {tab === "settings" && <SettingsScreen settings={settings} onSignOut={onSignOut} onErased={() => openConversation(undefined)} />}
       </View>
       <TabBar tab={tab} onChange={setTab} badges={{ tasks: pendingApprovals }} />
     </View>

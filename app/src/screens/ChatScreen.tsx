@@ -16,6 +16,7 @@ import * as Haptics from "expo-haptics";
 import type { Command } from "../deepLink";
 import { approximateLocation } from "../location";
 import { Markdown } from "../Markdown";
+import * as Speech from "expo-speech";
 import type { Doc } from "../documents";
 import { chooseAttachments, type Photo } from "../photos";
 import { askApproval } from "../usePush";
@@ -43,6 +44,7 @@ export default function ChatScreen({
   const [busy, setBusy] = useState(false);
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const list = useRef<FlatList<ChatMessage>>(null);
+  const inFlight = useRef<AbortController | null>(null);
   // Hands-free: after Jarvis finishes speaking, listen again until silence or "stop".
   const [handsFree, setHandsFreeState] = useState(false);
   const handsFreeRef = useRef(false);
@@ -80,6 +82,8 @@ export default function ChatScreen({
     const appendReply = (delta: string) =>
       setMessages((m) => m.map((msg) => (msg.id === replyId ? { ...msg, text: msg.text + delta } : msg)));
 
+    const controller = new AbortController();
+    inFlight.current = controller;
     try {
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const location = await approximateLocation();
@@ -99,11 +103,14 @@ export default function ChatScreen({
             appendReply(`\n\n${e.message}`);
             break;
         }
-      });
+      }, controller.signal);
     } catch (err) {
-      appendReply(`\n\nCould not reach Jarvis: ${String(err)}`);
+      if (controller.signal.aborted) appendReply(" …(stopped)");
+      else appendReply(`\n\nCould not reach Jarvis: ${String(err)}`);
     } finally {
-      speaker?.flush();
+      inFlight.current = null;
+      if (controller.signal.aborted) Speech.stop();
+      else speaker?.flush();
       setBusy(false);
     }
   }
@@ -248,7 +255,18 @@ export default function ChatScreen({
           multiline
           editable={!busy}
         />
-        {draft || photos.length || docs.length ? (
+        {busy ? (
+          <Pressable
+            style={[styles.button, styles.listening]}
+            onPress={() => {
+              setHandsFree(false);
+              inFlight.current?.abort();
+            }}
+            accessibilityLabel="Stop Jarvis"
+          >
+            <Text style={styles.buttonText}>Stop</Text>
+          </Pressable>
+        ) : draft || photos.length || docs.length ? (
           <Pressable style={styles.button} onPress={() => send(draft, "text")} disabled={busy}>
             <Text style={styles.buttonText}>Send</Text>
           </Pressable>
