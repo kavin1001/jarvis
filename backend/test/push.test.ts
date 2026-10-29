@@ -13,7 +13,7 @@ describe("push", () => {
   it("sends the category and forgets uninstalled phones", async () => {
     await savePushToken("me", "ExponentPushToken[live]");
     await savePushToken("me", "ExponentPushToken[gone]");
-    let sent: { to: string; categoryId?: string }[] = [];
+    let sent: { to: string; categoryId?: string; badge?: number }[] = [];
     vi.stubGlobal(
       "fetch",
       vi.fn(async (_url: string, init: RequestInit) => {
@@ -27,6 +27,9 @@ describe("push", () => {
     );
     await sendPush("me", "Jarvis needs your OK", "Book it?", { approvalId: "a" }, "approval");
     expect(sent.every((m) => m.categoryId === "approval")).toBe(true);
+    expect(sent.every((m) => !("badge" in m))).toBe(true);
+    await sendPush("me", "Jarvis needs your OK", "Book it?", {}, "approval", undefined, 2);
+    expect(sent.map((m) => m.badge)).toEqual([2]);
     expect((await query<{ token: string }>("SELECT token FROM push_tokens")).map((r) => r.token)).toEqual(["ExponentPushToken[live]"]);
   });
 });

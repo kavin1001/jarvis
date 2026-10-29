@@ -14,7 +14,8 @@ if (pushSupported) Notifications.setNotificationHandler({
     shouldShowBanner: true,
     shouldShowList: true,
     shouldPlaySound: true,
-    shouldSetBadge: false,
+    // Approval notifications carry the waiting count for the app icon; others leave it alone.
+    shouldSetBadge: true,
   }),
 });
 

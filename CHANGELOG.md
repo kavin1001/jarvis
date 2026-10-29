@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- The app icon shows how many approvals are waiting for you, like the Tasks tab does, and clears when you've answered them. Needs a new app build.
 - Save contacts: "save Ana's number, 555 0101", "add Sam's work email to his contact", "Mum's birthday is March 15, add it". Jarvis adds to what's there and never removes anything, and a new contact can be undone from Settings. Add the `contacts` scope to the consent screen (see `docs/DEPLOY.md`), then tap **Connect again** in Settings.
 - Gmail labels: "label these as Receipts", "put the flight emails under Travel", "take the Work label off that". Jarvis makes the label if it doesn't exist yet. It can be undone from Settings like archiving. Uses the archive permission you already gave.
 - VoiceOver and TalkBack: rows and links in Tasks, History, Memory, Lists and Settings now announce themselves as buttons, and the Talk button says to hold it while you talk.

@@ -244,7 +244,12 @@ async function recordApproval(taskId: string, eventId: string, kind: ApprovalRow
   if (inserted.length === 0) return; // already recorded (replay after restart)
   if (!(await setStatus(taskId, "waiting_approval"))) return; // the task already ended
   const task = await getTask(taskId);
-  await sendPush(task.user_id, "Jarvis needs your OK", summary, { taskId, approvalId: inserted[0].id }, "approval");
+  // The app icon shows how many approvals are waiting, as the Tasks tab does.
+  const [{ waiting }] = await query<{ waiting: number }>(
+    "SELECT count(*)::int AS waiting FROM approvals a JOIN tasks t ON t.id = a.task_id WHERE t.user_id = $1 AND a.decision IS NULL",
+    [task.user_id],
+  );
+  await sendPush(task.user_id, "Jarvis needs your OK", summary, { taskId, approvalId: inserted[0].id }, "approval", undefined, waiting);
 }
 
 /** Records the user's answer and passes it straight to the agent's session. */

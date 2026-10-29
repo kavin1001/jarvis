@@ -40,6 +40,8 @@ export async function sendPush(
   categoryId?: string,
   /** Skipped when the user turned this kind of notification off in Settings. */
   topic?: Topic,
+  /** The number on the app icon (iOS); left as it is when not given. */
+  badge?: number,
 ) {
   if (topic && !(await getNotifySettings(userId))[topic]) return;
   const tokens = await query<{ token: string }>("SELECT token FROM push_tokens WHERE user_id = $1", [
@@ -50,7 +52,15 @@ export async function sendPush(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(
-      tokens.map((t) => ({ to: t.token, title, body: body.slice(0, 180), data, sound: "default", ...(categoryId ? { categoryId } : {}) })),
+      tokens.map((t) => ({
+        to: t.token,
+        title,
+        body: body.slice(0, 180),
+        data,
+        sound: "default",
+        ...(categoryId ? { categoryId } : {}),
+        ...(badge === undefined ? {} : { badge }),
+      })),
     ),
   });
   if (!response.ok) return console.error("push failed", response.status, await response.text());

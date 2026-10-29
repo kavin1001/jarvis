@@ -1,4 +1,5 @@
 import * as SecureStore from "./src/storage";
+import * as Notifications from "expo-notifications";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, AppState, Button, Platform, SafeAreaView, StyleSheet, View } from "react-native";
@@ -83,6 +84,10 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
       .then((tasks) => setPendingApprovals(tasks.reduce((n, t) => n + t.pending_approvals.length, 0)))
       .catch(() => {});
   }, [settings, refreshKey, tab]);
+  // The number on the app icon: approvals still waiting. Approval notifications set it too.
+  useEffect(() => {
+    if (Platform.OS !== "web") Notifications.setBadgeCountAsync(pendingApprovals).catch(() => {});
+  }, [pendingApprovals]);
 
   // Pick up place reminders set in chat (or cancelled) so the phone watches the right places.
   useEffect(() => {
