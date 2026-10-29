@@ -131,7 +131,8 @@ describe("task lane", () => {
   });
 
   it("sends a follow-up to a finished task in the same session", async () => {
-    const { stream, sent } = fakeTaskClient();
+    // The first run's idle event, as the session history would list it.
+    const { stream, sent } = fakeTaskClient({ history: [{ type: "session.status_idle", id: "evt_2", stop_reason: { type: "end_turn" } }] });
     const conv = await memory.createConversation("me");
     const taskId = await startTask("me", conv, "Find flights to Denver", "Flights");
     await until(async () => sent.length === 1);
@@ -142,6 +143,8 @@ describe("task lane", () => {
     await memory.takePendingTaskUpdates(conv);
 
     expect(await continueTask("me", taskId, "Book the cheapest")).toBe(true);
+    stream.push({ type: "session.status_idle", id: "evt_2", stop_reason: { type: "end_turn" } }); // replayed: ignored
+    await new Promise((r) => setTimeout(r, 50));
     expect(await taskStatus(taskId)).toBe("running");
     expect(JSON.stringify(sent.at(-1))).toContain("Book the cheapest");
     stream.push({ type: "agent.message", id: "evt_3", content: [{ type: "text", text: "Booked." }] });

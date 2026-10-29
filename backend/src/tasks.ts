@@ -396,10 +396,13 @@ export async function continueTask(userId: string, taskId: string, instructions:
   if (!task) return false;
   try {
     const stream = await client.beta.sessions.events.stream(task.session_id!);
+    // Skip everything from the first run, so its idle event can't end the follow-up.
+    const seen = new Set<string>();
+    for await (const event of client.beta.sessions.events.list(task.session_id!)) seen.add(event.id);
     await client.beta.sessions.events.send(task.session_id!, {
       events: [{ type: "user.message", content: [{ type: "text", text: `Follow-up from the user, same rules as before:\n${instructions}` }] }],
     });
-    follow(task.id, stream).catch((err) => failTask(task.id, err));
+    follow(task.id, stream, seen).catch((err) => failTask(task.id, err));
   } catch (err) {
     await failTask(task.id, err);
   }
