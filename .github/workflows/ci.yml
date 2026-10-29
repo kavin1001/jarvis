@@ -23,7 +23,7 @@ jobs:
     env:
       TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/jarvis_test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -39,7 +39,7 @@ jobs:
       run:
         working-directory: app
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -60,7 +60,7 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: docker build -f backend/Dockerfile -t jarvis-backend .
 
   # The web app against a real backend and database: sign in, every tab, lists, notes, settings.
@@ -76,7 +76,7 @@ jobs:
         options: >-
           --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -114,7 +114,7 @@ jobs:
           JARVIS_URL: http://localhost:8799
           JARVIS_APP_TOKEN: e2e-token
       - if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: smoke-failures
           path: |
