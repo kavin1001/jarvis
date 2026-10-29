@@ -154,6 +154,24 @@ describe("runTurn", () => {
     expect(r).toMatchObject({ text: "Stretch", repeat: "daily", action: "notify", timezone: "Europe/Paris" });
   });
 
+  it("sets a timer from a number of seconds", async () => {
+    fakeClient([
+      {
+        content: [{ type: "tool_use", id: "tu_t", name: "set_reminder", input: { text: "10-minute timer: pasta", in_seconds: 600 } } as never],
+        stop_reason: "tool_use",
+      },
+      { content: [{ type: "text", text: "Timer set.", citations: null }], stop_reason: "end_turn" },
+    ]);
+    const id = await memory.createConversation("me");
+    const before = Date.now();
+    await runTurn({ conversationId: id, text: "timer for 10 minutes", source: "text", emit: () => {} });
+    const { listReminders } = await import("../src/reminders.js");
+    const [r] = await listReminders("me");
+    const due = new Date(r.due_at).getTime();
+    expect(due).toBeGreaterThanOrEqual(before + 600_000 - 1000); // stored to the second
+    expect(due).toBeLessThan(Date.now() + 600_000 + 1000);
+  });
+
   it("uploads photos and sends them as file references", async () => {
     const requests = fakeClient([{ content: [{ type: "text", text: "A cat.", citations: null }], stop_reason: "end_turn" }]);
     const id = await memory.createConversation("me");
