@@ -1,4 +1,3 @@
-import * as SecureStore from "expo-secure-store";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   FlatList,
@@ -10,14 +9,22 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { api, streamChat, type ChatMessage, type PendingApproval, type Settings } from "./api";
-import { askApproval, usePush } from "./usePush";
-import { createSpeaker, useVoice } from "./useVoice";
+import { api, streamChat, type ChatMessage, type PendingApproval, type Settings } from "../api";
+import { askApproval } from "../usePush";
+import { createSpeaker, useVoice } from "../useVoice";
 
-const CONVERSATION_KEY = "jarvis-conversation";
-
-export default function ChatScreen({ settings }: { settings: Settings }) {
-  const [conversationId, setConversationId] = useState<string | undefined>();
+export default function ChatScreen({
+  settings,
+  conversationId,
+  onConversation,
+  refreshKey,
+}: {
+  settings: Settings;
+  conversationId: string | undefined;
+  onConversation: (id: string | undefined) => void;
+  /** Bumped by the parent when a push says something changed. */
+  refreshKey: number;
+}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -27,16 +34,12 @@ export default function ChatScreen({ settings }: { settings: Settings }) {
   const refresh = useCallback(async () => {
     const tasks = await api.tasks(settings).catch(() => []);
     setApprovals(tasks.flatMap((t) => t.pending_approvals));
-    if (conversationId) setMessages(await api.messages(settings, conversationId));
+    setMessages(conversationId ? await api.messages(settings, conversationId) : []);
   }, [settings, conversationId]);
 
   useEffect(() => {
-    SecureStore.getItemAsync(CONVERSATION_KEY).then((id) => setConversationId(id ?? undefined));
-  }, []);
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-  usePush(settings, refresh);
+    if (!busy) refresh();
+  }, [refresh, refreshKey]);
 
   async function send(text: string, source: "text" | "voice") {
     if (!text.trim() || busy) return;
@@ -56,10 +59,7 @@ export default function ChatScreen({ settings }: { settings: Settings }) {
       await streamChat(settings, { conversationId, text, source }, (e) => {
         switch (e.type) {
           case "conversation":
-            if (e.conversationId !== conversationId) {
-              setConversationId(e.conversationId);
-              SecureStore.setItemAsync(CONVERSATION_KEY, e.conversationId);
-            }
+            if (e.conversationId !== conversationId) onConversation(e.conversationId);
             break;
           case "text":
             appendReply(e.text);
@@ -83,17 +83,12 @@ export default function ChatScreen({ settings }: { settings: Settings }) {
 
   const voice = useVoice((transcript) => send(transcript, "voice"));
 
-  function newChat() {
-    SecureStore.deleteItemAsync(CONVERSATION_KEY);
-    setConversationId(undefined);
-    setMessages([]);
-  }
 
   return (
     <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <View style={styles.header}>
         <Text style={styles.title}>Jarvis</Text>
-        <Pressable onPress={newChat}>
+        <Pressable onPress={() => onConversation(undefined)}>
           <Text style={styles.link}>New chat</Text>
         </Pressable>
       </View>

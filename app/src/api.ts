@@ -22,8 +22,22 @@ export interface PendingApproval {
 export interface Task {
   id: string;
   status: "queued" | "running" | "waiting_approval" | "done" | "failed";
+  summary: string | null;
+  instructions: string;
   result: string | null;
+  created_at: string;
   pending_approvals: PendingApproval[];
+}
+
+export interface Conversation {
+  id: string;
+  title: string | null;
+  updated_at: string;
+}
+
+export interface Fact {
+  id: string;
+  fact: string;
 }
 
 export type StreamEvent =
@@ -44,6 +58,10 @@ export async function saveSettings(settings: Settings) {
   await SecureStore.setItemAsync(KEY, JSON.stringify(settings));
 }
 
+export async function clearSettings() {
+  await SecureStore.deleteItemAsync(KEY);
+}
+
 async function request<T>(s: Settings, path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   const res = await fetch(`${s.url}${path}`, {
     method: init.method ?? "GET",
@@ -55,6 +73,11 @@ async function request<T>(s: Settings, path: string, init: { method?: string; bo
 }
 
 export const api = {
+  conversations: (s: Settings) => request<Conversation[]>(s, "/api/conversations"),
+  deleteConversation: (s: Settings, id: string) => request(s, `/api/conversations/${id}`, { method: "DELETE" }),
+  facts: (s: Settings) => request<Fact[]>(s, "/api/facts"),
+  addFact: (s: Settings, fact: string) => request<Fact>(s, "/api/facts", { method: "POST", body: { fact } }),
+  deleteFact: (s: Settings, id: string) => request(s, `/api/facts/${id}`, { method: "DELETE" }),
   messages: (s: Settings, conversationId: string) =>
     request<ChatMessage[]>(s, `/api/conversations/${conversationId}/messages`),
   tasks: (s: Settings) => request<Task[]>(s, "/api/tasks"),
