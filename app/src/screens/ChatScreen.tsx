@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  AppState,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -66,6 +67,8 @@ export default function ChatScreen({
   const list = useRef<FlatList<ChatMessage>>(null);
   const [sheet, setSheet] = useState<SheetAction[] | null>(null);
   const inFlight = useRef<AbortController | null>(null);
+  // The conversation the reply in flight belongs to, known once the server names it.
+  const replyConversation = useRef<string | undefined>(undefined);
   // Hands-free: after Jarvis finishes speaking, listen again until silence or "stop".
   const [handsFree, setHandsFreeState] = useState(false);
   const handsFreeRef = useRef(false);
@@ -94,6 +97,17 @@ export default function ChatScreen({
   useEffect(() => {
     if (!busy) refresh();
   }, [refresh, refreshKey]);
+
+  // Back in the app: pick up a reply that finished while it was in the background.
+  const refreshSoon = useRef(false);
+  useEffect(() => {
+    if (!busy && refreshSoon.current) {
+      refreshSoon.current = false;
+      refresh();
+    }
+    const sub = AppState.addEventListener("change", (state) => state === "active" && !inFlight.current && refresh());
+    return () => sub.remove();
+  }, [refresh, busy]);
 
   async function send(text: string, source: "text" | "voice") {
     if ((!text.trim() && photos.length === 0 && docs.length === 0) || busy) return;
@@ -124,6 +138,7 @@ export default function ChatScreen({
         heard = true;
         switch (e.type) {
           case "conversation":
+            replyConversation.current = e.conversationId;
             if (e.conversationId !== conversationId) onConversation(e.conversationId);
             break;
           case "text":
@@ -150,6 +165,10 @@ export default function ChatScreen({
         setDraft(text);
         setPhotos(photos);
         setDocs(documents);
+      } else if (heard) {
+        // The connection dropped mid-reply (often the app going to the background). The
+        // server finishes the reply anyway, so show what it has instead of an error.
+        refreshSoon.current = true;
       } else appendReply(`\n\nCould not reach Jarvis: ${String(err)}`);
     } finally {
       inFlight.current = null;
@@ -388,8 +407,13 @@ export default function ChatScreen({
         {busy ? (
           <Pressable
             style={[styles.button, styles.listening]}
-            onPress={() => {
+            onPress={async () => {
               setHandsFree(false);
+              Speech.stop();
+              // Tell the server first: just closing the connection lets the reply finish
+              // (so a locked phone still gets its answer as a notification).
+              const id = replyConversation.current;
+              if (id) await api.stopReply(settings, id).catch(() => {});
               inFlight.current?.abort();
             }}
             accessibilityLabel="Stop Jarvis"

@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Lock your phone or switch apps mid-reply and Jarvis still finishes. The answer arrives as a "Jarvis replied" notification, and it's in the chat when you come back. Only the Stop button stops a reply now, through `POST /api/conversations/:id/stop`.
 - Security: after 20 failed sign-ins in a minute from one address, the API answers 429 for the rest of that minute, which makes a short `JARVIS_APP_TOKEN` much harder to guess. Every response now has standard security headers. Rate limits use the address your host's proxy adds, which a client can't fake.
 - Stop a background task: open it in Tasks and tap **Stop this task**, or ask Jarvis ("stop the price watch"). Jarvis interrupts the agent, closes any approval it was waiting on, and notes it in the chat. Tasks have a new **Cancelled** status, and `POST /api/tasks/:id/cancel` does the same.
 - History: hold a chat and choose **Share transcript** to send the whole conversation as text. Browsers without a share sheet copy it instead. VoiceOver and TalkBack read each message as "You: …" or "Jarvis: …", and offer the copy, read aloud and share actions. Buttons in the chat screen are labelled.

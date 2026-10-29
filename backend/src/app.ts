@@ -17,7 +17,7 @@ import { disconnectGoogle, googleStatus, handleGoogleCallback, startGoogleAuth }
 import { addServer, deleteServer, listServers, NewServer, setServerEnabled } from "./mcp.js";
 import { handleMcpCallback, startMcpOAuth } from "./mcpOAuth.js";
 import * as memory from "./memory.js";
-import { savePushToken } from "./push.js";
+import { savePushToken, sendPush } from "./push.js";
 import { cancelReminder, createReminder, getTimezone, listReminders, snoozeReminder } from "./reminders.js";
 import { serverStatus } from "./status.js";
 import { firstOccurrence } from "./time.js";
@@ -169,14 +169,21 @@ app.post("/api/chat", async (c) => {
   const id = conversationId;
 
   return streamSSE(c, async (stream) => {
-    // The app closes the request when the user taps Stop.
+    // Stop comes from POST /api/conversations/:id/stop. A dropped connection (the
+    // phone locked, the app went to the background) lets the reply finish and
+    // sends it as a notification instead.
     const stop = new AbortController();
-    stream.onAbort(() => stop.abort());
+    turnsInFlight.set(id, stop);
+    let detached = false;
+    stream.onAbort(() => {
+      detached = true;
+    });
     const send = (e: ChatEvent | { type: "conversation"; conversationId: string }) =>
-      stream.writeSSE({ event: e.type, data: JSON.stringify(e) });
+      detached ? Promise.resolve() : stream.writeSSE({ event: e.type, data: JSON.stringify(e) }).catch(() => {});
     await send({ type: "conversation", conversationId: id });
+    let reply = "";
     try {
-      await runTurn({
+      reply = await runTurn({
         conversationId: id,
         text: body.data.text,
         source: body.data.source,
@@ -190,8 +197,23 @@ app.post("/api/chat", async (c) => {
     } catch (err) {
       console.error("chat turn failed", err);
       await send({ type: "error", message: describeChatError(err) });
+    } finally {
+      if (turnsInFlight.get(id) === stop) turnsInFlight.delete(id);
+    }
+    if (detached && !stop.signal.aborted && reply.trim()) {
+      const preview = reply.length > 180 ? `${reply.slice(0, 177)}…` : reply;
+      await sendPush(config.userId, "Jarvis replied", preview, { conversationId: id }).catch((err) => console.warn("reply push failed", err));
     }
   });
+});
+
+/** The reply being written in each conversation, so Stop can end it. */
+const turnsInFlight = new Map<string, AbortController>();
+
+app.post("/api/conversations/:id/stop", async (c) => {
+  const turn = turnsInFlight.get(c.req.param("id"));
+  turn?.abort();
+  return c.json({ stopped: Boolean(turn) });
 });
 
 app.get("/api/status", async (c) => c.json(await serverStatus(config.userId)));

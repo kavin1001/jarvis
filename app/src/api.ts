@@ -238,6 +238,8 @@ export const api = {
   reminders: (s: Settings) => request<Reminder[]>(s, "/api/reminders"),
   cancelReminder: (s: Settings, id: string) => request(s, `/api/reminders/${id}`, { method: "DELETE" }),
   cancelTask: (s: Settings, id: string) => request(s, `/api/tasks/${id}/cancel`, { method: "POST" }),
+  stopReply: (s: Settings, conversationId: string) =>
+    request<{ stopped: boolean }>(s, `/api/conversations/${conversationId}/stop`, { method: "POST" }),
   snoozeReminder: (s: Settings, id: string, minutes: number) =>
     request<{ id: string }>(s, `/api/reminders/${id}/snooze`, { method: "POST", body: { minutes } }),
   facts: (s: Settings) => request<Fact[]>(s, "/api/facts"),
