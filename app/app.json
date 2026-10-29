@@ -29,6 +29,7 @@
       ],
       "expo-notifications",
       "expo-secure-store"
-    ]
+    ],
+    "scheme": "jarvis"
   }
 }

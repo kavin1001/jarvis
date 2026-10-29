@@ -14,12 +14,13 @@ Goal: a personal agent on your phone that answers instantly, remembers you, and 
 | Usage and cost tracking | Know what Jarvis costs per day |
 | Deploy setup (Docker, Render blueprint) | Run the backend somewhere your phone can reach |
 | Gmail and Calendar connectors | Read your inbox and schedule; draft, don't send |
+| Siri / Shortcuts / Action button links, tap-to-talk | Reach Jarvis without opening the app |
 
 ## Later
 
 - Sign in with Apple/Google instead of the shared app token
-- Streaming speech provider for more natural voice; hands-free mode
-- Siri App Shortcut and Action button launch
+- Streaming speech provider for more natural voice; continuous conversation mode
+- Native App Intents so Siri answers without opening the app
 - Share sheet: send a link or screenshot to Jarvis
 
 ## Needs Kavin (can't be done from code alone)

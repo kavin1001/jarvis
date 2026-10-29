@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 import { api, streamChat, type ChatMessage, type PendingApproval, type Settings } from "../api";
+import type { Command } from "../deepLink";
 import { choosePhotos, type Photo } from "../photos";
 import { askApproval } from "../usePush";
 import { createSpeaker, useVoice } from "../useVoice";
@@ -20,12 +21,15 @@ export default function ChatScreen({
   conversationId,
   onConversation,
   refreshKey,
+  command,
 }: {
   settings: Settings;
   conversationId: string | undefined;
   onConversation: (id: string | undefined) => void;
   /** Bumped by the parent when a push says something changed. */
   refreshKey: number;
+  /** A shortcut or Siri link to act on once. */
+  command?: Command | null;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
@@ -90,6 +94,30 @@ export default function ChatScreen({
 
   const voice = useVoice((transcript) => send(transcript, "voice"));
 
+  // Each command runs once, after the screen is ready.
+  const handled = useRef(0);
+  useEffect(() => {
+    if (!command || command.id === handled.current || busy) return;
+    handled.current = command.id;
+    if (command.kind === "new") onConversation(undefined);
+    else if (command.kind === "listen") voice.start();
+    else send(command.text, command.voice ? "voice" : "text");
+  }, [command, busy]);
+
+  // Tap to talk hands-free (stops on silence, or tap again), or hold and release.
+  const pressedAt = useRef<number | null>(null);
+  const micIn = () => {
+    if (voice.listening) {
+      pressedAt.current = null;
+      voice.stop();
+    } else {
+      pressedAt.current = Date.now();
+      voice.start();
+    }
+  };
+  const micOut = () => {
+    if (pressedAt.current !== null && Date.now() - pressedAt.current > 400) voice.stop();
+  };
 
   return (
     <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === "ios" ? "padding" : undefined}>
@@ -164,11 +192,12 @@ export default function ChatScreen({
         ) : (
           <Pressable
             style={[styles.button, voice.listening && styles.listening]}
-            onPressIn={voice.start}
-            onPressOut={voice.stop}
+            onPressIn={micIn}
+            onPressOut={micOut}
             disabled={busy}
+            accessibilityLabel={voice.listening ? "Stop listening" : "Talk to Jarvis"}
           >
-            <Text style={styles.buttonText}>{voice.listening ? "●" : "Hold"}</Text>
+            <Text style={styles.buttonText}>{voice.listening ? "●" : "Talk"}</Text>
           </Pressable>
         )}
       </View>

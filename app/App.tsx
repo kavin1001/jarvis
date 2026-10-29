@@ -3,6 +3,7 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useState } from "react";
 import { Button, SafeAreaView, StyleSheet, Text, TextInput, View } from "react-native";
 import { api, loadSettings, saveSettings, type Settings } from "./src/api";
+import { useDeepLinkCommand } from "./src/deepLink";
 import ChatScreen from "./src/screens/ChatScreen";
 import HistoryScreen from "./src/screens/HistoryScreen";
 import MemoryScreen from "./src/screens/MemoryScreen";
@@ -54,6 +55,11 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
       .catch(() => {});
   }, [settings, refreshKey, tab]);
 
+  const command = useDeepLinkCommand();
+  useEffect(() => {
+    if (command) setTab("chat");
+  }, [command]);
+
   const bump = useCallback(() => setRefreshKey((k) => k + 1), []);
   usePush(settings, bump);
 
@@ -77,6 +83,7 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
               else SecureStore.deleteItemAsync(CONVERSATION_KEY);
             }}
             refreshKey={refreshKey}
+            command={command}
           />
         )}
         {tab === "history" && <HistoryScreen settings={settings} current={conversationId} onOpen={openConversation} />}
