@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Jarvis has an app icon and a launch screen. Added to an iPhone home screen, the web version opens full screen with that icon. On Android it installs from Chrome and shows up in the share sheet: sharing a link or text to Jarvis puts it in the message box. The web app also takes `/ask?text=`, `/listen` and `/new` links, like the `jarvis://` ones.
 - Background tasks can use your connected apps (MCP servers) too. Each tool call asks for your OK first, and a server's token is kept in a vault that exists only while the task runs.
 - Signed-in devices: a browser sign-in is listed by browser and system, such as "Chrome on Mac" or "Safari on iPhone", instead of always "Safari".
 - **Dark mode**: Jarvis follows your phone's light or dark setting. Settings, **Appearance**, lets you pick Light or Dark instead.

@@ -3,16 +3,21 @@
  * jarvis://listen         open and start listening (add ?handsfree=1 to keep the conversation going)
  * jarvis://new            start a new chat
  * Used by the iOS Shortcuts app, Siri ("Hey Siri, Ask Jarvis") and the Action button.
+ *
+ * The web app takes the same paths on its own address (https://your-backend/ask?text=...),
+ * plus /share?title=&text=&url=, which Android's share sheet opens once Jarvis is installed
+ * from the browser. A share fills in the message box instead of sending.
  */
 export type Command =
   | { id: number; kind: "ask"; text: string; voice: boolean }
   | { id: number; kind: "listen"; handsFree: boolean }
-  | { id: number; kind: "new" };
+  | { id: number; kind: "new" }
+  | { id: number; kind: "draft"; text: string };
 
 let nextId = 1;
 
 export function parseLink(url: string): Command | null {
-  const match = url.match(/^jarvis:\/\/\/?([^?#]*)(?:\?([^#]*))?/i);
+  const match = url.match(/^(?:jarvis:\/\/\/?|https?:\/\/[^/?#]+\/)([^?#]*)(?:\?([^#]*))?/i);
   if (!match) return null;
   const path = match[1].replace(/\/$/, "").toLowerCase();
   const params = new URLSearchParams(match[2] ?? "");
@@ -28,6 +33,12 @@ export function parseLink(url: string): Command | null {
       return { id: nextId++, kind: "listen", handsFree: flag("handsfree") };
     case "new":
       return { id: nextId++, kind: "new" };
+    case "share": {
+      // Apps fill these in differently: a link may arrive as url, or inside text.
+      const parts = [params.get("title"), params.get("text"), params.get("url")].map((p) => p?.trim()).filter(Boolean);
+      const text = [...new Set(parts)].join("\n");
+      return text ? { id: nextId++, kind: "draft", text: text.slice(0, 20_000) } : null;
+    }
     default:
       return null;
   }

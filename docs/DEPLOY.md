@@ -22,7 +22,7 @@ Any host that runs a Docker image works the same way (Fly.io, Railway, a VPS): b
 
 ## Try it in a browser first (free, no Apple account)
 
-The backend image also serves the web version of the app. Once Render is up, open your backend URL (e.g. `https://jarvis-backend.onrender.com`) in Safari or Chrome and enter `JARVIS_APP_TOKEN`. On an iPhone, tap Share, then **Add to Home Screen**, for an app icon.
+The backend image also serves the web version of the app. Once Render is up, open your backend URL (e.g. `https://jarvis-backend.onrender.com`) in Safari or Chrome and enter `JARVIS_APP_TOKEN`. On an iPhone, tap Share, then **Add to Home Screen**, for an app icon. It then opens full screen, with its own icon, like an installed app. On Android, Chrome offers **Install app**; once installed, Jarvis appears in the share sheet, so you can share a link or text to it and ask about it.
 
 The web version does chat, photos, history, memory, tasks, connectors and settings. Voice input works in Chrome and Safari through the browser's speech recognition, and answers are read aloud. What it can't do: push notifications (open the Tasks tab instead), Siri and Shortcuts links, and secure storage (the device token is kept in the browser's local storage, so use it only on your own devices).
 

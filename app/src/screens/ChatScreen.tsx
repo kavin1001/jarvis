@@ -137,6 +137,7 @@ export default function ChatScreen({
     if (!command || command.id === handled.current || busy) return;
     handled.current = command.id;
     if (command.kind === "new") onConversation(undefined);
+    else if (command.kind === "draft") setDraft(command.text);
     else if (command.kind === "listen") {
       setHandsFree(command.handsFree);
       voice.start();

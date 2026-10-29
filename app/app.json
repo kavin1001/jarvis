@@ -10,7 +10,11 @@
       "supportsTablet": false
     },
     "android": {
-      "package": "com.kavin.jarvis"
+      "package": "com.kavin.jarvis",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#2563eb"
+      }
     },
     "plugins": [
       [
@@ -34,8 +38,25 @@
         {
           "locationWhenInUsePermission": "Jarvis uses your approximate location for questions like \"what's open near me\", only when you turn it on in Settings."
         }
-      ]
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 160,
+          "backgroundColor": "#2563eb"
+        }
+      ],
+      "expo-system-ui"
     ],
-    "scheme": "jarvis"
+    "scheme": "jarvis",
+    "icon": "./assets/icon.png",
+    "web": {
+      "favicon": "./public/favicon.png",
+      "name": "Jarvis",
+      "shortName": "Jarvis",
+      "themeColor": "#2563eb",
+      "backgroundColor": "#ffffff"
+    }
   }
 }
