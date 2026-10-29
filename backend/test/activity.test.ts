@@ -57,6 +57,13 @@ describe("activity log", () => {
     const snooze = "0b6f5a1e-2c3d-4e5f-8a9b-0c1d2e3f4a5b";
     expect(undoFor("gmail_snooze", {}, `Snoozed ${snooze}: archived 1 email, back Monday.`)).toEqual({ tool: "unsnooze", snooze_id: snooze });
     expect(undoFor("calendar_delete_event", { event_id: "e" }, "Event deleted.")).toBeNull();
+    expect(undoFor("calendar_update_event", { event_id: "work@x/ev1", start: "2026-10-29T16:00:00Z" }, "Event updated (it was 2026-10-29T15:00:00.000Z to 2026-10-29T15:30:00.000Z): https://c")).toEqual({
+      tool: "calendar_update_event",
+      event_id: "work@x/ev1",
+      start: "2026-10-29T15:00:00.000Z",
+      end: "2026-10-29T15:30:00.000Z",
+    });
+    expect(undoFor("calendar_update_event", { event_id: "ev1", location: "Room 2" }, "Event updated: https://c")).toBeNull();
   });
 
   it("undoes an entry once, and lets it be tried again when undoing fails", async () => {

@@ -996,6 +996,7 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
       const { event_id, start, end, ...rest } = inputs.calendar_update_event.parse(raw);
       const { url } = parseEventRef(event_id);
       const body: Record<string, unknown> = { ...rest };
+      let was = "";
       if (start || end) {
         // Moving only the start keeps the event's length.
         const current = await google<{ start: { dateTime?: string }; end: { dateTime?: string } }>(userId, url);
@@ -1007,9 +1008,11 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
         if (newEnd <= newStart) throw new Error("The end must be after the start.");
         body.start = { dateTime: new Date(newStart).toISOString() };
         body.end = { dateTime: new Date(newEnd).toISOString() };
+        // The old times, so the move can be undone from Settings.
+        was = ` (it was ${new Date(oldStart).toISOString()} to ${new Date(oldEnd).toISOString()})`;
       }
       const updated = await google<{ htmlLink: string }>(userId, `${url}?sendUpdates=none`, { method: "PATCH", body });
-      return `Event updated: ${updated.htmlLink}`;
+      return `Event updated${was}: ${updated.htmlLink}`;
     }
     case "calendar_delete_event": {
       const { event_id } = inputs.calendar_delete_event.parse(raw);

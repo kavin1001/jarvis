@@ -412,13 +412,14 @@ app.put("/api/instructions", async (c) => {
   if (!body.success) return c.json({ error: `instructions must be text up to ${memory.MAX_INSTRUCTIONS} characters, or null` }, 400);
   return c.json({ instructions: await memory.setInstructions(config.userId, body.data.instructions) });
 });
-// Settings, Undo: puts archived mail back, deletes an event Jarvis added, ends a snooze.
+// Settings, Undo: puts archived mail back, deletes an event Jarvis added or moves one back, ends a snooze.
 app.post("/api/activity/:id/undo", async (c) => {
   try {
     const undone = await undoActivity(config.userId, c.req.param("id"), async (u) => {
       if (u.tool === "unsnooze") {
         if (!(await mailSnooze.unsnooze(config.userId, u.snooze_id, modifyMail))) throw new Error("That email is already back in the inbox.");
       } else if (u.tool === "gmail_organize") await runGoogleTool(config.userId, "gmail_organize", { message_ids: u.message_ids, action: u.action });
+      else if (u.tool === "calendar_update_event") await runGoogleTool(config.userId, "calendar_update_event", { event_id: u.event_id, start: u.start, end: u.end });
       else await runGoogleTool(config.userId, "calendar_delete_event", { event_id: u.event_id });
     });
     return undone ? c.json({ undone: true }) : c.json({ error: "There's nothing to undo there any more." }, 404);

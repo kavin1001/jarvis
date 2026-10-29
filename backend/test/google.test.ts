@@ -196,7 +196,9 @@ describe("Google tools", () => {
     const listed = await runGoogleTool("me", "calendar_list_events", { time_min: "2026-10-29T00:00:00Z", time_max: "2026-10-30T00:00:00Z" });
     expect(listed).toMatch(/^\[ev1\] /);
 
-    expect(await runGoogleTool("me", "calendar_update_event", { event_id: "ev1", start: "2026-10-29T16:00:00Z" })).toContain("updated");
+    expect(await runGoogleTool("me", "calendar_update_event", { event_id: "ev1", start: "2026-10-29T16:00:00Z" })).toBe(
+      "Event updated (it was 2026-10-29T15:00:00.000Z to 2026-10-29T15:30:00.000Z): https://calendar.example/ev1",
+    );
     const patch = calls.find((c) => c.init?.method === "PATCH")!;
     expect(patch.url).toContain("sendUpdates=none");
     expect(JSON.parse(patch.init!.body as string)).toEqual({

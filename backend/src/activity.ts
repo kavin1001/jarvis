@@ -20,6 +20,7 @@ export interface Activity {
 export type Undo =
   | { tool: "gmail_organize"; message_ids: string[]; action: string }
   | { tool: "calendar_delete_event"; event_id: string }
+  | { tool: "calendar_update_event"; event_id: string; start: string; end: string }
   | { tool: "unsnooze"; snooze_id: string };
 
 const KEEP_DAYS = 90;
@@ -100,6 +101,14 @@ export function undoFor(name: string, input: Input, result: string): Undo | null
     case "calendar_create_event": {
       const id = result.match(/^Event created \(id ([^)\s]+)\)/)?.[1];
       return id ? { tool: "calendar_delete_event", event_id: id } : null;
+    }
+    case "calendar_update_event": {
+      const was = result.match(/^Event updated \(it was (\S+) to (\S+)\)/);
+      return was && typeof input.event_id === "string" ? { tool: "calendar_update_event", event_id: input.event_id, start: was[1], end: was[2] } : null;
+    }
+    case "calendar_update_event": {
+      const was = result.match(/^Event updated \(it was (\S+) to (\S+)\)/);
+      return was && typeof input.event_id === "string" ? { tool: "calendar_update_event", event_id: input.event_id, start: was[1], end: was[2] } : null;
     }
     case "gmail_snooze": {
       const id = result.match(/^Snoozed ([0-9a-f-]{36}):/)?.[1];
