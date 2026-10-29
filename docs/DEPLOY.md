@@ -46,7 +46,7 @@ npx eas init                       # links the project and adds the projectId pu
 npx eas build --profile preview --platform ios
 ```
 
-EAS walks you through certificates and push keys. Install the build from the link it prints (or use `--profile production` and `npx eas submit` for TestFlight). On first launch, enter your backend URL and `JARVIS_APP_TOKEN`.
+EAS walks you through certificates and push keys. Install the build from the link it prints (or use `--profile production` and `npx eas submit` for TestFlight). On first launch, enter your backend URL and `JARVIS_APP_TOKEN`. The app swaps it for its own device token and doesn't keep the master. To add another phone or iPad, tap **Settings**, then **Pair another device**, and enter that code on the new device.
 
 For day-to-day development: `npx eas build --profile development --platform ios` once, then `npx expo start` and open the dev build.
 

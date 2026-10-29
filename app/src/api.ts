@@ -1,5 +1,7 @@
 import { fetch } from "expo/fetch";
+import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
+import { Platform } from "react-native";
 
 export interface Settings {
   url: string;
@@ -79,6 +81,44 @@ export async function clearSettings() {
   await SecureStore.deleteItemAsync(KEY);
 }
 
+export interface Device {
+  id: string;
+  name: string;
+  created_at: string;
+  last_seen_at: string | null;
+  current: boolean;
+}
+
+const isDeviceToken = (token: string) => token.startsWith("jvd_");
+const PAIRING_CODE = /^[2-9a-z]{4}[-\s]?[2-9a-z]{4}$/i;
+export const deviceName = () => Constants.deviceName ?? `Jarvis on ${Platform.OS}`;
+
+/**
+ * Signs this phone in. A pairing code from another device, or the master app
+ * token, is traded for this device's own token; the master is never stored.
+ */
+export async function signIn(url: string, secret: string): Promise<Settings> {
+  const base = url.trim().replace(/\/$/, "");
+  const trimmed = secret.trim();
+  const pairing = PAIRING_CODE.test(trimmed);
+  const res = await fetch(`${base}${pairing ? "/pair" : "/api/devices"}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(pairing ? {} : { Authorization: `Bearer ${trimmed}` }) },
+    body: JSON.stringify(pairing ? { code: trimmed, name: deviceName() } : { name: deviceName() }),
+  });
+  const body = (await res.json().catch(() => ({}))) as { token?: string; error?: string };
+  if (!res.ok || !body.token) throw new Error(body.error ?? (res.status === 401 ? "Wrong app token" : `Sign-in failed (${res.status})`));
+  return { url: base, token: body.token };
+}
+
+/** Older installs stored the master token; swap it for a device token once. */
+export async function upgradeToDeviceToken(settings: Settings): Promise<Settings> {
+  if (isDeviceToken(settings.token)) return settings;
+  const upgraded = await signIn(settings.url, settings.token);
+  await saveSettings(upgraded);
+  return upgraded;
+}
+
 async function request<T>(s: Settings, path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   const res = await fetch(`${s.url}${path}`, {
     method: init.method ?? "GET",
@@ -105,6 +145,9 @@ export interface Connectors {
 }
 
 export const api = {
+  devices: (s: Settings) => request<Device[]>(s, "/api/devices"),
+  revokeDevice: (s: Settings, id: string) => request(s, `/api/devices/${id}`, { method: "DELETE" }),
+  pairingCode: (s: Settings) => request<{ code: string; expires_at: string }>(s, "/api/devices/pair-codes", { method: "POST" }),
   mcpServers: (s: Settings) => request<McpServer[]>(s, "/api/mcp-servers"),
   addMcpServer: (s: Settings, body: { name: string; url: string; token?: string }) =>
     request<{ id: string }>(s, "/api/mcp-servers", { method: "POST", body }),

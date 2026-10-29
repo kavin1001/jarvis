@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Per-device sign-in: the app swaps `JARVIS_APP_TOKEN` for its own device token at setup, and existing installs upgrade on next launch. **Pair another device** in Settings shows a one-time 8-character code that's valid for 10 minutes, and **Signed-in devices** lists each one so you can sign it out. Pairing is rate limited, and "Disconnect this phone" now revokes its token too.
 - Hands-free conversations: tap **Hands-free** in chat, or open `jarvis://listen?handsfree=1`. After each spoken answer Jarvis listens again. The conversation ends when you go quiet or say "stop", "that's all" or "thanks Jarvis".
 - Connected apps: add any remote MCP server (URL plus an optional token) in Settings, and Jarvis can use its tools through the Claude API's MCP connector. Tokens are encrypted at rest and never sent back to the app. You can switch servers on and off or remove them. See `docs/MCP.md`.
 - App: error messages from the backend now show up in alerts instead of a bare status code.

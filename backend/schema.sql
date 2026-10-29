@@ -142,3 +142,20 @@ CREATE TABLE IF NOT EXISTS mcp_servers (
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (user_id, name)
 );
+
+-- 0.7: per-device tokens, so the master JARVIS_APP_TOKEN never has to live on a phone.
+CREATE TABLE IF NOT EXISTS devices (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id       TEXT NOT NULL,
+  name          TEXT NOT NULL,
+  token_hash    TEXT NOT NULL UNIQUE,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_seen_at  TIMESTAMPTZ,
+  revoked_at    TIMESTAMPTZ
+);
+
+CREATE TABLE IF NOT EXISTS pairing_codes (
+  code_hash   TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL,
+  expires_at  TIMESTAMPTZ NOT NULL
+);

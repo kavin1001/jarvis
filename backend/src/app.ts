@@ -1,10 +1,10 @@
 import { Hono } from "hono";
-import { bearerAuth } from "hono/bearer-auth";
 import { logger } from "hono/logger";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { runTurn, type ChatEvent } from "./assistant.js";
 import { config } from "./config.js";
+import { allowAttempt, authenticate, createPairingCode, listDevices, redeemPairingCode, registerDevice, revokeDevice, type Caller } from "./devices.js";
 import { disconnectGoogle, googleStatus, handleGoogleCallback, startGoogleAuth } from "./google.js";
 import { addServer, deleteServer, listServers, NewServer, setServerEnabled } from "./mcp.js";
 import * as memory from "./memory.js";
@@ -13,12 +13,31 @@ import { cancelReminder, getTimezone, listReminders } from "./reminders.js";
 import { summarize } from "./usage.js";
 import { decideApproval, listTasks } from "./tasks.js";
 
-export const app = new Hono();
+export const app = new Hono<{ Variables: { caller: Caller } }>();
 
 if (process.env.NODE_ENV !== "test") app.use(logger());
 
 app.get("/health", (c) => c.json({ ok: true }));
-app.use("/api/*", bearerAuth({ token: config.appToken }));
+app.use("/api/*", async (c, next) => {
+  const token = c.req.header("Authorization")?.match(/^Bearer (.+)$/)?.[1];
+  const caller = token ? await authenticate(token) : null;
+  if (!caller) return c.json({ error: "Unauthorized" }, 401);
+  c.set("caller", caller);
+  await next();
+});
+
+const DeviceName = z.object({ name: z.string().trim().min(1).max(60) });
+const Pair = DeviceName.extend({ code: z.string().min(8).max(20) });
+
+// A new device trades a one-time code (shown on a signed-in device) for its own token.
+app.post("/pair", async (c) => {
+  const ip = c.req.header("x-forwarded-for")?.split(",")[0].trim() ?? "local";
+  if (!allowAttempt(`pair:${ip}`)) return c.json({ error: "Too many attempts. Wait a minute." }, 429);
+  const body = Pair.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) return c.json({ error: "Enter the code and a device name" }, 400);
+  const device = await redeemPairingCode(body.data.code, body.data.name);
+  return device ? c.json(device) : c.json({ error: "That code is wrong or expired" }, 400);
+});
 
 const page = (title: string, body: string) =>
   `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>` +
@@ -174,3 +193,22 @@ app.delete("/api/mcp-servers/:id", async (c) => {
   const id = z.string().uuid().safeParse(c.req.param("id"));
   return c.json({ deleted: id.success && (await deleteServer(config.userId, id.data)) });
 });
+
+// The owner token can mint a device token, so the app swaps it for one at setup and forgets the master.
+app.post("/api/devices", async (c) => {
+  if (c.get("caller").kind !== "owner") return c.json({ error: "Only the app token can register devices" }, 403);
+  const body = DeviceName.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) return c.json({ error: body.error.message }, 400);
+  return c.json(await registerDevice(config.userId, body.data.name));
+});
+app.get("/api/devices", async (c) => {
+  const caller = c.get("caller");
+  const current = caller.kind === "device" ? caller.deviceId : null;
+  const rows = await listDevices(config.userId);
+  return c.json(rows.map((d) => ({ ...d, current: d.id === current })));
+});
+app.delete("/api/devices/:id", async (c) => {
+  const id = z.string().uuid().safeParse(c.req.param("id"));
+  return c.json({ revoked: id.success && (await revokeDevice(config.userId, id.data)) });
+});
+app.post("/api/devices/pair-codes", async (c) => c.json(await createPairingCode(config.userId)));

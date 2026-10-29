@@ -2,6 +2,7 @@ import Constants from "expo-constants";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, AppState, Linking, RefreshControl, ScrollView, Text, View } from "react-native";
 import { api, clearSettings, type Connectors, type Settings, type Usage } from "../api";
+import { Devices } from "./Devices";
 import { McpServers } from "./McpServers";
 import { colors, Header, LinkButton, styles } from "../ui";
 
@@ -93,6 +94,8 @@ export default function SettingsScreen({ settings, onSignOut }: { settings: Sett
 
       <McpServers settings={settings} />
 
+      <Devices settings={settings} onSignOut={() => clearSettings().then(onSignOut)} />
+
       <View style={styles.row}>
         <Text style={styles.rowMeta}>Backend</Text>
         <Text>{settings.url}</Text>
@@ -106,9 +109,19 @@ export default function SettingsScreen({ settings, onSignOut }: { settings: Sett
           label="Disconnect this phone"
           danger
           onPress={() =>
-            Alert.alert("Disconnect?", "You'll need the backend URL and token to connect again.", [
+            Alert.alert("Disconnect?", "You'll need the backend URL and a pairing code (or the app token) to connect again.", [
               { text: "Cancel", style: "cancel" },
-              { text: "Disconnect", style: "destructive", onPress: () => clearSettings().then(onSignOut) },
+              {
+                text: "Disconnect",
+                style: "destructive",
+                onPress: async () => {
+                  // Also revoke this phone's token on the server, if it's reachable.
+                  const current = (await api.devices(settings).catch(() => [])).find((d) => d.current);
+                  if (current) await api.revokeDevice(settings, current.id).catch(() => {});
+                  await clearSettings();
+                  onSignOut();
+                },
+              },
             ])
           }
         />
