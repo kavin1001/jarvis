@@ -81,3 +81,22 @@ describe("MCP servers API", () => {
     expect(await del.json()).toEqual({ deleted: true });
   });
 });
+
+describe("hardening", () => {
+  it("reports database health", async () => {
+    const res = await app.request("/health");
+    expect(await res.json()).toEqual({ ok: true });
+  });
+
+  it("rejects oversized bodies and returns JSON for unknown routes", async () => {
+    const big = await app.request("/api/facts", {
+      method: "POST",
+      headers: { ...auth, "Content-Type": "application/json", "Content-Length": String(2 * 1024 * 1024) },
+      body: JSON.stringify({ fact: "x".repeat(2 * 1024 * 1024) }),
+    });
+    expect(big.status).toBe(413);
+    const missing = await app.request("/nope");
+    expect(missing.status).toBe(404);
+    expect(await missing.json()).toEqual({ error: "Not found" });
+  });
+});

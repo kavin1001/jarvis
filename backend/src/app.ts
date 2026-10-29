@@ -1,9 +1,12 @@
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { logger } from "hono/logger";
+import { secureHeaders } from "hono/secure-headers";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { runTurn, type ChatEvent } from "./assistant.js";
 import { config } from "./config.js";
+import { query } from "./db.js";
 import { allowAttempt, authenticate, createPairingCode, listDevices, redeemPairingCode, registerDevice, revokeDevice, type Caller } from "./devices.js";
 import { disconnectGoogle, googleStatus, handleGoogleCallback, startGoogleAuth } from "./google.js";
 import { addServer, deleteServer, listServers, NewServer, setServerEnabled } from "./mcp.js";
@@ -18,7 +21,27 @@ export const app = new Hono<{ Variables: { caller: Caller } }>();
 
 if (process.env.NODE_ENV !== "test") app.use(logger());
 
-app.get("/health", (c) => c.json({ ok: true }));
+// Render restarts the instance when this fails, so it checks the database too.
+app.get("/health", async (c) => {
+  try {
+    await query("SELECT 1");
+    return c.json({ ok: true });
+  } catch {
+    return c.json({ ok: false, error: "database unreachable" }, 503);
+  }
+});
+
+// Chat carries up to 4 base64 photos; everything else is small JSON.
+const tooLarge = (c: { json: (b: unknown, s: 413) => Response }) => c.json({ error: "Request too large" }, 413);
+app.use("/api/chat", bodyLimit({ maxSize: 32 * 1024 * 1024, onError: tooLarge }));
+app.use("*", async (c, next) => (c.req.path === "/api/chat" ? next() : bodyLimit({ maxSize: 1024 * 1024, onError: tooLarge })(c, next)));
+app.use("/oauth/*", secureHeaders());
+
+app.onError((err, c) => {
+  console.error(`${c.req.method} ${c.req.path} failed`, err);
+  return c.json({ error: "Something went wrong" }, 500);
+});
+app.notFound((c) => c.json({ error: "Not found" }, 404));
 app.use("/api/*", async (c, next) => {
   const token = c.req.header("Authorization")?.match(/^Bearer (.+)$/)?.[1];
   const caller = token ? await authenticate(token) : null;

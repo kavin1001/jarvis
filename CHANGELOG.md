@@ -4,6 +4,8 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Reliability: overlapping turns in one conversation (a double send, or a scheduled job landing mid-reply) now queue instead of interleaving. `/health` checks the database, so Render restarts a broken instance. Request bodies are size limited (32 MB for chat with photos, 1 MB elsewhere). Errors and unknown routes return JSON without internals. The OAuth page sends secure headers.
+- Dependabot opens weekly backend dependency updates.
 - Approve or deny a background task's request right from the notification. Approving requires Face ID or your passcode.
 - Tapping a task or reminder notification opens its conversation, including when the app was closed.
 - Routines: **Add routine** in the Tasks tab sets up a weekday morning briefing or a daily evening wrap-up in one tap. `POST /api/reminders` takes a local `HH:MM` time.

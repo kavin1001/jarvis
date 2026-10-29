@@ -264,8 +264,23 @@ function textOf(content: Anthropic.Beta.BetaContentBlock[]): string {
     .join("");
 }
 
-/** One user turn: store it, stream Claude's reply, run tools, store everything. */
-export async function runTurn(opts: {
+type TurnOptions = Parameters<typeof runTurnNow>[0];
+const inFlight = new Map<string, Promise<unknown>>();
+
+/**
+ * One user turn: store it, stream Claude's reply, run tools, store everything.
+ * Turns in the same conversation run one after another (a double-tap, or a
+ * scheduled job landing mid-reply), so history always alternates correctly.
+ */
+export function runTurn(opts: TurnOptions): Promise<string> {
+  const previous = inFlight.get(opts.conversationId) ?? Promise.resolve();
+  const turn = previous.catch(() => {}).then(() => runTurnNow(opts));
+  inFlight.set(opts.conversationId, turn);
+  turn.finally(() => inFlight.get(opts.conversationId) === turn && inFlight.delete(opts.conversationId)).catch(() => {});
+  return turn;
+}
+
+async function runTurnNow(opts: {
   conversationId: string;
   text: string;
   source: "text" | "voice" | "scheduled";

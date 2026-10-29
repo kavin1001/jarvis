@@ -171,4 +171,18 @@ describe("runTurn", () => {
       { type: "mcp_toolset", mcp_server_name: "notion" },
     ]);
   });
+
+  it("runs overlapping turns in one conversation one after another", async () => {
+    const requests = fakeClient([
+      { content: [{ type: "text", text: "first", citations: null }], stop_reason: "end_turn" },
+      { content: [{ type: "text", text: "second", citations: null }], stop_reason: "end_turn" },
+    ]);
+    const id = await memory.createConversation("me");
+    await Promise.all([
+      runTurn({ conversationId: id, text: "one", source: "text", emit: () => {} }),
+      runTurn({ conversationId: id, text: "two", source: "text", emit: () => {} }),
+    ]);
+    // The second request already sees the first exchange, so roles alternate.
+    expect(requests[1].messages.map((m) => m.role)).toEqual(["user", "assistant", "user"]);
+  });
 });
