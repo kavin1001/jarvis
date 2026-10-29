@@ -262,3 +262,14 @@ CREATE TABLE IF NOT EXISTS ask_sessions (
   conversation_id  UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- What Jarvis did on the user's accounts (drafts, calendar changes, connected apps), for Settings.
+CREATE TABLE IF NOT EXISTS activity (
+  id               BIGSERIAL PRIMARY KEY,
+  user_id          TEXT NOT NULL,
+  conversation_id  UUID,
+  kind             TEXT NOT NULL,
+  summary          TEXT NOT NULL,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS activity_user_created ON activity (user_id, created_at DESC);

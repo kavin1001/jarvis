@@ -6,6 +6,7 @@ import { Alert } from "../dialog";
 import { appLockAvailable, useAppLockSetting } from "../appLock";
 import { api, clearSettings, type Connectors, type Settings, type Usage } from "../api";
 import { locationSharingEnabled, setLocationSharing } from "../location";
+import { Activity } from "./Activity";
 import { Devices } from "./Devices";
 import { SetupStatus } from "./SetupStatus";
 import { YourData } from "./YourData";
@@ -155,6 +156,7 @@ export default function SettingsScreen({
       ) : null}
 
       <McpServers settings={settings} />
+      <Activity settings={settings} refreshKey={statusKey} />
 
       <Section title="Voice and appearance" />
       <View style={styles.row}>

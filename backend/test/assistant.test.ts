@@ -377,4 +377,28 @@ describe("runTurn", () => {
     const history = JSON.stringify(await memory.getApiHistory(id));
     expect(history).toContain(`[${task.id}] Price watch (running)`);
   });
+
+  it("logs actions on the user's accounts, not reads or failed calls", async () => {
+    const id = await memory.createConversation("me");
+    fakeClient([
+      {
+        content: [
+          { type: "mcp_tool_use", id: "mcp_1", name: "create_page", server_name: "notion", input: {} } as never,
+          { type: "mcp_tool_result", tool_use_id: "mcp_1", is_error: false, content: [] } as never,
+          { type: "tool_use", id: "tu_1", name: "list_tasks", input: {}, caller: undefined } as never,
+          { type: "tool_use", id: "tu_2", name: "cancel_task", input: { task_id: "00000000-0000-0000-0000-000000000000" }, caller: undefined } as never,
+        ],
+        stop_reason: "tool_use",
+      },
+      { content: [{ type: "text", text: "Done.", citations: null }], stop_reason: "end_turn" },
+    ]);
+    await runTurn({ conversationId: id, text: "make a page", source: "text", emit: () => {} });
+    // The log is written off the reply's path.
+    let logged: { summary: string; conversation_id: string }[] = [];
+    for (let i = 0; i < 20 && logged.length === 0; i++) {
+      await new Promise((r) => setTimeout(r, 25));
+      logged = (await pool.query("SELECT summary, conversation_id FROM activity")).rows;
+    }
+    expect(logged).toEqual([{ summary: "Used notion: create page", conversation_id: id }]);
+  });
 });

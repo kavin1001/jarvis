@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Settings, **What Jarvis did on your accounts**: a log of the drafts it saved, mail it archived or marked, calendar events it added, moved or deleted, background tasks it started or stopped, and every call to your connected apps (Notion, Linear…). Reads such as searching your mail aren't listed, and neither are calls that failed. Kept for 90 days, and included in export and erase. `GET /api/activity`.
 - Calendar: "when am I free Thursday afternoon?", "find me an hour next week for a haircut". Jarvis works out the open slots from your Google Calendar within your day (9 to 6 on weekdays unless you say otherwise), in your time zone. Events marked free, all-day events and invitations you declined don't count as busy. No new Google permission is needed.
 - Notes: "take a note: the gate code is 4821", "jot down these meeting notes", "what was that pancake recipe I saved?". Jarvis keeps longer text as notes and finds them again by any words in them. Hold a reply and tap **Save as note** to keep it. Notes live in the Lists tab under **📝 Notes**, where you can search, read, edit, share and delete them. Included in export and erase. `GET/POST /api/notes`, `PATCH/DELETE /api/notes/:id`.
 - Reading a table aloud (or sharing it as text) keeps each row on its own line; before, the header and first row ran together. The app now has unit tests (`npm test` in `app/`, run in CI) for how replies are read aloud, link parsing, place-reminder crossings, file sizes and relative times.

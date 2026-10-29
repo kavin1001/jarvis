@@ -18,6 +18,7 @@ import { addServer, deleteServer, listServers, NewServer, setServerEnabled } fro
 import { handleMcpCallback, startMcpOAuth } from "./mcpOAuth.js";
 import * as lists from "./lists.js";
 import * as notes from "./notes.js";
+import { recentActivity } from "./activity.js";
 import * as memory from "./memory.js";
 import * as places from "./places.js";
 import { getNotifySettings, savePushToken, sendPush, setNotifySettings } from "./push.js";
@@ -369,6 +370,7 @@ app.patch("/api/list-items/:id", async (c) => {
   return item ? c.json(item) : c.json({ error: "Not found" }, 404);
 });
 app.delete("/api/list-items/:id", async (c) => c.json({ deleted: (await lists.removeItems(config.userId, [c.req.param("id")])) > 0 }));
+app.get("/api/activity", async (c) => c.json(await recentActivity(config.userId, Math.min(200, Number(c.req.query("limit")) || 50))));
 app.get("/api/notes", async (c) => c.json(await notes.findNotes(config.userId, (c.req.query("q") ?? "").slice(0, 200))));
 const NewNote = z.object({ body: z.string().trim().min(1).max(notes.MAX_BODY), title: z.string().trim().max(120).optional() }).strict();
 app.post("/api/notes", async (c) => {

@@ -5,6 +5,7 @@ import { googleStatus, googleTools, isGoogleTool, runGoogleTool } from "./google
 import { mcpRequestParts } from "./mcp.js";
 import * as lists from "./lists.js";
 import * as notes from "./notes.js";
+import { describeAction, recordActivity } from "./activity.js";
 import * as memory from "./memory.js";
 import * as places from "./places.js";
 import * as reminders from "./reminders.js";
@@ -429,6 +430,26 @@ async function buildSystem(): Promise<Anthropic.Beta.BetaTextBlockParam[]> {
   ];
 }
 
+/** What this response did on the user's accounts, for the activity log in Settings. */
+function accountActions(
+  content: Anthropic.Beta.BetaContentBlock[],
+  toolUses: Anthropic.Beta.BetaToolUseBlock[],
+  results: Anthropic.Beta.BetaToolResultBlockParam[],
+  timeZone: string,
+) {
+  const entries: { kind: string; summary: string }[] = [];
+  toolUses.forEach((b, i) => {
+    if (results[i]?.is_error) return;
+    const summary = describeAction(b.name, b.input as Record<string, unknown>, timeZone);
+    if (summary) entries.push({ kind: b.name, summary });
+  });
+  // Calls to the user's own MCP servers can read or change anything there, so all of them are listed.
+  for (const b of content) {
+    if (b.type === "mcp_tool_use") entries.push({ kind: "mcp", summary: `Used ${b.server_name}: ${b.name.replace(/_/g, " ")}` });
+  }
+  return entries;
+}
+
 async function runClientTool(
   block: Anthropic.Beta.BetaToolUseBlock,
   conversationId: string,
@@ -809,6 +830,9 @@ async function runTurnNow(opts: {
     }
     // Run tools before storing, so a failure never leaves a tool_use without its result.
     const results = await Promise.all(toolUses.map((b) => runClientTool(b, conversationId, emit)));
+    recordActivity(config.userId, conversationId, accountActions(message.content, toolUses, results, timezone)).catch((err) =>
+      console.warn("activity log failed", err),
+    );
 
     finalText = textOf(message.content) || finalText;
     messages.push({ role: "assistant", content: message.content });
