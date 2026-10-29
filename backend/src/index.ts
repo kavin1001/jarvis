@@ -4,6 +4,8 @@ import { runTurn } from "./assistant.js";
 import { config } from "./config.js";
 import { pool } from "./db.js";
 import { migrate } from "./migrate.js";
+import { searchMail } from "./google.js";
+import { checkMailWatches } from "./mailWatch.js";
 import { fireDueReminders } from "./reminders.js";
 import { sweepOldChats } from "./retention.js";
 import { expireApprovals, resumeTasks, taskLaneConfigured } from "./tasks.js";
@@ -29,6 +31,9 @@ const runScheduled = (conversationId: string, text: string) =>
 // Every 5 seconds, so a "10 minute timer" goes off on time. Each reminder is claimed
 // in one UPDATE, so overlapping sweeps can't fire it twice.
 timers.push(setInterval(() => fireDueReminders(runScheduled).catch((err) => console.error("reminder sweep failed", err)), 5_000));
+
+// Email watches ("tell me when Sam replies"); each is checked every five minutes.
+timers.push(setInterval(() => checkMailWatches((userId, q) => searchMail(userId, q, 10)).catch((err) => console.error("mail watch sweep failed", err)), 60_000));
 
 // Chats past the user's "keep chats for" setting, once at boot and then hourly.
 const sweep = () =>

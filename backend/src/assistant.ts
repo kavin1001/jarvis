@@ -1,7 +1,8 @@
 import Anthropic, { toFile } from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { config } from "./config.js";
-import { googleStatus, googleTools, isGoogleTool, runGoogleTool, type GoogleAttachment } from "./google.js";
+import { googleStatus, googleTools, isGoogleTool, runGoogleTool, searchMail, type GoogleAttachment } from "./google.js";
+import * as mailWatch from "./mailWatch.js";
 import { mcpRequestParts } from "./mcp.js";
 import * as lists from "./lists.js";
 import * as notes from "./notes.js";
@@ -113,6 +114,7 @@ const TOOL_STATUS: Record<string, string> = {
   gmail_organize: "Tidying your inbox…",
   calendar_delete_event: "Removing it from your calendar…",
   calendar_respond_to_event: "Replying to the invitation…",
+  watch_email: "Setting up the email alert…",
 };
 
 /** A short line for the app while a tool runs, e.g. "Searching the web…". */
@@ -158,6 +160,12 @@ const SetReminderInput = z
   .refine((r) => r.due_at || r.in_seconds, "Give due_at or in_seconds");
 const SearchChatsInput = z.object({ query: z.string().min(1).max(200), limit: z.number().int().min(1).max(15).default(8) });
 const CancelReminderInput = z.object({ reminder_id: z.string() });
+const WatchEmailInput = z.object({
+  query: z.string().trim().min(3).max(300),
+  about: z.string().trim().min(1).max(100),
+  once: z.boolean().default(true),
+  days: z.number().int().min(1).max(30).default(7),
+});
 const CancelTaskInput = z.object({ task_id: z.string().uuid() });
 const ContinueTaskInput = z.object({ task_id: z.string().uuid(), instructions: z.string().min(1).max(4000) });
 const ListAddInput = z.object({ list: z.string().min(1).max(60), items: z.array(z.string().min(1).max(200)).min(1).max(50) });
@@ -510,11 +518,13 @@ async function runClientTool(
         const tz = await reminders.getTimezone(config.userId);
         const rows = await reminders.listReminders(config.userId);
         const atPlaces = await places.listPlaceReminders(config.userId);
-        if (rows.length === 0 && atPlaces.length === 0) return result("No upcoming reminders.");
+        const watches = await mailWatch.listMailWatches(config.userId);
+        if (rows.length === 0 && atPlaces.length === 0 && watches.length === 0) return result("No upcoming reminders.");
         return result(
           [
             ...rows.map((r) => `[${r.id}] ${describeNow(tz, new Date(r.due_at))}${r.repeat ? ` (${r.repeat})` : ""} ${r.action}: ${r.text}`),
             ...atPlaces.map((r) => `[${r.id}] ${places.describePlaceReminder(r)}: ${r.text}`),
+            ...watches.map((w) => `[${w.id}] ${mailWatch.describeMailWatch(w, tz)}`),
           ].join("\n"),
         );
       }
@@ -522,6 +532,7 @@ async function runClientTool(
         const { reminder_id } = CancelReminderInput.parse(block.input);
         const ok =
           (await places.cancelPlaceReminder(config.userId, reminder_id)) ||
+          (await mailWatch.cancelMailWatch(config.userId, reminder_id)) ||
           (/^[0-9a-f-]{36}$/i.test(reminder_id) && (await reminders.cancelReminder(config.userId, reminder_id)));
         return result(ok ? "Cancelled." : "No upcoming reminder with that id.", !ok);
       }
@@ -661,6 +672,33 @@ async function runClientTool(
         const { task_id, instructions } = ContinueTaskInput.parse(block.input);
         const ok = await continueTask(config.userId, task_id, instructions);
         return result(ok ? "Sent. The agent is working on it; the user gets a notification when it's done." : "No finished task with that id.", !ok);
+      }
+      case "watch_email": {
+        const w = WatchEmailInput.parse(block.input);
+        // What already matches isn't news; say so, in case it's what the user is waiting for.
+        let already;
+        try {
+          already = await searchMail(config.userId, `(${w.query}) -from:me newer_than:7d`, 10);
+        } catch (err) {
+          return result(`Couldn't search Gmail: ${(err as Error).message}`, true);
+        }
+        let id;
+        try {
+          id = await mailWatch.createMailWatch({ userId: config.userId, conversationId, ...w, seenIds: already.map((m) => m.id) });
+        } catch (err) {
+          return result((err as Error).message, true);
+        }
+        const tz = await reminders.getTimezone(config.userId);
+        const [watch] = (await mailWatch.listMailWatches(config.userId)).filter((x) => x.id === id);
+        return result(
+          `Set ${id}: ${mailWatch.describeMailWatch(watch, tz)}. Checked every few minutes; the user gets a notification.` +
+            (already.length
+              ? `\nAlready in the inbox from the last 7 days (not announced again):\n${already
+                  .slice(0, 3)
+                  .map((m) => `- ${m.date}, from ${m.from}: ${m.subject}`)
+                  .join("\n")}`
+              : ""),
+        );
       }
       default:
         if (isGoogleTool(block.name)) {

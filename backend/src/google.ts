@@ -176,6 +176,26 @@ async function google<T>(userId: string, url: string, init: { method?: string; b
   return (res.status === 204 ? undefined : await res.json()) as T;
 }
 
+export interface MailHit {
+  id: string;
+  date: string;
+  from: string;
+  subject: string;
+  snippet: string;
+}
+
+/** The newest emails matching a Gmail search, with their headers. */
+export async function searchMail(userId: string, q: string, max = 5): Promise<MailHit[]> {
+  const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
+  const list = await google<{ messages?: { id: string }[] }>(userId, `${GMAIL}/messages?${new URLSearchParams({ q, maxResults: String(max) })}`);
+  const metas = await Promise.all(
+    (list.messages ?? []).map((m) =>
+      google<GmailMessage>(userId, `${GMAIL}/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`),
+    ),
+  );
+  return metas.map((m) => ({ id: m.id, date: header(m, "Date"), from: header(m, "From"), subject: header(m, "Subject"), snippet: m.snippet ?? "" }));
+}
+
 // ---- Tools ---------------------------------------------------------------
 
 export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
@@ -334,6 +354,22 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
       "Delete an event from the user's primary calendar. Only after the user has clearly asked for that event to be removed; name it back to them if there could be any doubt. No cancellations are sent to guests.",
     eager_input_streaming: true,
     input_schema: { type: "object", properties: { event_id: { type: "string" } }, required: ["event_id"] },
+  },
+  {
+    name: "watch_email",
+    description:
+      "Watch the user's inbox and notify them when a matching email arrives: \"tell me when Sam replies\", \"let me know when the passport office emails\", \"ping me about any email from my landlord this week\". Checked every few minutes. Cancel with cancel_reminder; list_reminders shows them.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "A Gmail search for the email, e.g. \"from:sam@example.com\" or \"from:passport subject:appointment\". Look the address up first when you only have a name." },
+        about: { type: "string", description: "A few words for the notification, e.g. \"Sam's reply about the lease\"." },
+        once: { type: "boolean", description: "Stop after the first match (default). False notifies for every match until it ends." },
+        days: { type: "integer", description: "How long to watch, 1-30 days. Default 7." },
+      },
+      required: ["query", "about"],
+    },
   },
   {
     name: "calendar_respond_to_event",
@@ -702,22 +738,9 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
     }
     case "gmail_search": {
       const { query: q, max_results } = inputs.gmail_search.parse(raw);
-      const list = await google<{ messages?: { id: string }[] }>(
-        userId,
-        `${GMAIL}/messages?${new URLSearchParams({ q, maxResults: String(max_results) })}`,
-      );
-      if (!list.messages?.length) return "No matching emails.";
-      const metas = await Promise.all(
-        list.messages.map((m) =>
-          google<GmailMessage>(
-            userId,
-            `${GMAIL}/messages/${m.id}?format=metadata&metadataHeaders=From&metadataHeaders=Subject&metadataHeaders=Date`,
-          ),
-        ),
-      );
-      return metas
-        .map((m) => `[${m.id}] ${header(m, "Date")}\nFrom: ${header(m, "From")}\nSubject: ${header(m, "Subject")}\n${m.snippet}`)
-        .join("\n\n");
+      const found = await searchMail(userId, q, max_results);
+      if (!found.length) return "No matching emails.";
+      return found.map((m) => `[${m.id}] ${m.date}\nFrom: ${m.from}\nSubject: ${m.subject}\n${m.snippet}`).join("\n\n");
     }
     case "gmail_read": {
       const { message_id } = inputs.gmail_read.parse(raw);

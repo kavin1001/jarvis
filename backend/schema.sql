@@ -289,3 +289,19 @@ CREATE UNIQUE INDEX IF NOT EXISTS conversations_import_ref ON conversations (use
 
 -- How long to keep chats, in days since they were last used. NULL keeps them for good.
 ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS chat_retention_days INTEGER CHECK (chat_retention_days > 0);
+
+-- "Tell me when Sam replies": a Gmail search checked every few minutes, with a notification for each new match.
+CREATE TABLE IF NOT EXISTS mail_watches (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id          TEXT NOT NULL,
+  conversation_id  UUID REFERENCES conversations(id) ON DELETE SET NULL,
+  query            TEXT NOT NULL,
+  about            TEXT NOT NULL,
+  once             BOOLEAN NOT NULL DEFAULT true,
+  status           TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'done', 'cancelled', 'expired')),
+  seen_ids         TEXT[] NOT NULL DEFAULT '{}',
+  checked_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at       TIMESTAMPTZ NOT NULL,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS mail_watches_active ON mail_watches (checked_at) WHERE status = 'active';

@@ -79,6 +79,14 @@ export interface PlaceReminder {
   every_time: boolean;
 }
 
+export interface MailWatch {
+  id: string;
+  about: string;
+  query: string;
+  once: boolean;
+  expires_at: string;
+}
+
 export interface AgendaEvent {
   summary: string;
   /** ISO date-time, or a plain date for all-day events. */
@@ -358,6 +366,8 @@ export const api = {
   deletePlace: (s: Settings, name: string) => request(s, `/api/places/${encodeURIComponent(name)}`, { method: "DELETE" }),
   placeReminders: (s: Settings) => request<PlaceReminder[]>(s, "/api/place-reminders"),
   cancelPlaceReminder: (s: Settings, id: string) => request(s, `/api/place-reminders/${id}`, { method: "DELETE" }),
+  mailWatches: (s: Settings) => request<MailWatch[]>(s, "/api/mail-watches"),
+  cancelMailWatch: (s: Settings, id: string) => request(s, `/api/mail-watches/${id}`, { method: "DELETE" }),
   triggerPlaceReminder: (s: Settings, id: string, event: "arrive" | "leave") =>
     request<{ sent: boolean }>(s, `/api/place-reminders/${id}/trigger`, { method: "POST", body: { event } }),
   moveReminder: (s: Settings, id: string, dueAt: Date) =>
