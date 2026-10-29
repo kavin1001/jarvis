@@ -28,6 +28,8 @@ Jarvis app (Expo)  ──►  backend (Hono + Postgres)  ──►  Fast lane: C
 
 ## Run it
 
+To put Jarvis on your phone for real, follow [docs/DEPLOY.md](docs/DEPLOY.md). The steps below are for running it locally.
+
 ### Backend
 
 1. Get an API key from the [Claude Console](https://platform.claude.com). A Pro/Max subscription login won't work here.

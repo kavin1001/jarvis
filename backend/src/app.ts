@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { bearerAuth } from "hono/bearer-auth";
+import { logger } from "hono/logger";
 import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { runTurn, type ChatEvent } from "./assistant.js";
@@ -11,6 +12,8 @@ import { summarize } from "./usage.js";
 import { decideApproval, listTasks } from "./tasks.js";
 
 export const app = new Hono();
+
+if (process.env.NODE_ENV !== "test") app.use(logger());
 
 app.get("/health", (c) => c.json({ ok: true }));
 app.use("/api/*", bearerAuth({ token: config.appToken }));

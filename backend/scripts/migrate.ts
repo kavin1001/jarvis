@@ -1,6 +1,6 @@
-import { readFileSync } from "node:fs";
 import { pool } from "../src/db.js";
+import { migrate } from "../src/migrate.js";
 
-await pool.query(readFileSync("./schema.sql", "utf8"));
+await migrate();
 console.log("Schema applied.");
 await pool.end();
