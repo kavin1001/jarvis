@@ -30,6 +30,10 @@ export async function listConversations(userId: string) {
   );
 }
 
+export async function setTitle(conversationId: string, title: string) {
+  await query("UPDATE conversations SET title = $2 WHERE id = $1", [conversationId, title]);
+}
+
 export async function conversationBelongsTo(conversationId: string, userId: string) {
   const rows = await query("SELECT 1 FROM conversations WHERE id = $1 AND user_id = $2", [
     conversationId,
@@ -67,7 +71,7 @@ export async function appendMessage(
     [conversationId, role, kind, JSON.stringify(content), displayText, source],
   );
   await query(
-    "UPDATE conversations SET updated_at = now(), title = COALESCE(title, left($2, 60)) WHERE id = $1",
+    "UPDATE conversations SET updated_at = now(), title = COALESCE(title, NULLIF(left($2, 60), '')) WHERE id = $1",
     [conversationId, displayText ?? ""],
   );
   return row.id;

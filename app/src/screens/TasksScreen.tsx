@@ -122,7 +122,15 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
                 {STATUS_LABEL[item.status]}
               </Text>
             </View>
-            <Text style={styles.rowMeta}>{relativeTime(item.created_at)}</Text>
+            <Text style={styles.rowMeta}>
+              {relativeTime(item.created_at)}
+              {item.cost_usd > 0 ? ` · $${item.cost_usd.toFixed(2)}` : ""}
+            </Text>
+            {item.status === "running" && item.last_message ? (
+              <Text style={styles.rowMeta} numberOfLines={open === item.id ? undefined : 2}>
+                Latest: {item.last_message}
+              </Text>
+            ) : null}
             {item.pending_approvals.map((a) => (
               <Pressable
                 key={a.id}

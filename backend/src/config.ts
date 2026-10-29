@@ -8,6 +8,8 @@ export const config = {
   databaseUrl: required("DATABASE_URL"),
   appToken: required("JARVIS_APP_TOKEN"),
   fastModel: process.env.FAST_MODEL ?? "claude-opus-5-5",
+  // Names new conversations after the first exchange; set a cheaper model here if you like.
+  titleModel: process.env.TITLE_MODEL ?? process.env.FAST_MODEL ?? "claude-opus-5-5",
   fastEffort: (process.env.FAST_EFFORT ?? "low") as "low" | "medium" | "high",
   taskAgentId: process.env.TASK_AGENT_ID,
   taskEnvironmentId: process.env.TASK_ENVIRONMENT_ID,

@@ -276,6 +276,25 @@ async function runClientTool(
   }
 }
 
+async function nameConversation(conversationId: string, question: string, answer: string) {
+  const message = await client.beta.messages.create({
+    model: config.titleModel,
+    max_tokens: 1000,
+    output_config: { effort: "low" },
+    system: "You name chat conversations for a history list. Reply with only a 2 to 6 word title in sentence case, no quotes or punctuation at the end.",
+    messages: [
+      {
+        role: "user",
+        content: `<user>${question.slice(0, 2000)}</user>\n<assistant>${answer.slice(0, 2000)}</assistant>\n\nTitle for this conversation:`,
+      },
+    ],
+  });
+  await recordMessageUsage(config.userId, message);
+  if (message.stop_reason === "refusal") return;
+  const title = textOf(message.content).split("\n")[0].replace(/^["'“”\s]+|["'“”.\s]+$/g, "").slice(0, 80);
+  if (title) await memory.setTitle(conversationId, title);
+}
+
 function textOf(content: Anthropic.Beta.BetaContentBlock[]): string {
   return content
     .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
@@ -355,6 +374,7 @@ async function runTurnNow(opts: {
   const mcp = await mcpRequestParts(config.userId);
   const turnTools = [...tools, ...(google.available && google.connected ? googleTools : []), ...mcp.toolsets];
   const messages = await memory.getApiHistory(conversationId);
+  const firstTurn = messages.length === 1;
   let jsonRetries = 0;
   let finalText = "";
 
@@ -414,5 +434,9 @@ async function runTurnNow(opts: {
   }
 
   emit({ type: "done" });
+  // Off the reply's critical path: name the conversation after its first exchange.
+  if (firstTurn && source !== "scheduled" && finalText) {
+    nameConversation(conversationId, text, finalText).catch((err) => console.warn("titling failed", err));
+  }
   return finalText;
 }

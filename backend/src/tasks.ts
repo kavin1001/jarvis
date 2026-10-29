@@ -289,7 +289,8 @@ async function resume(task: TaskRow) {
 
 export async function listTasks(userId: string) {
   return query(
-    `SELECT t.id, t.status, t.summary, t.instructions, t.result, t.created_at, t.updated_at,
+    `SELECT t.id, t.status, t.summary, t.instructions, t.result, t.last_message, t.cost_usd::float AS cost_usd,
+            t.created_at, t.updated_at,
             COALESCE(json_agg(json_build_object('id', a.id, 'summary', a.summary))
                      FILTER (WHERE a.id IS NOT NULL AND a.decision IS NULL), '[]') AS pending_approvals
      FROM tasks t LEFT JOIN approvals a ON a.task_id = t.id

@@ -4,6 +4,8 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- History titles: Jarvis names each new conversation in a few words after its first reply, instead of using the first 60 characters. `TITLE_MODEL` picks the model, defaulting to `FAST_MODEL`.
+- Tasks: running tasks show the agent's latest message, and each task shows what it cost.
 - Files: tap ＋, then **Choose a file**, to send up to 2 PDFs or text files (txt, md, csv, json) and ask about them. PDFs go through the Files API once, and text goes inline.
 - Voice: replies use the best installed voice for your language. Download a Premium or Enhanced Siri voice in iOS Settings, under Accessibility, Spoken Content, Voices, for a more natural Jarvis.
 - Web version: the backend now serves the app at its own URL, so you can use Jarvis in a browser, or add it to your iPhone home screen, before setting up an Apple Developer account. It uses browser dialogs and local storage where phones use native ones, and skips push. The Docker image builds it, and CI exports it.

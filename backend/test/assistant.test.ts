@@ -15,6 +15,13 @@ function fakeClient(responses: Msg[]) {
     files: { upload: async () => ({ id: "file_123" }) },
     beta: {
       messages: {
+        // Conversation titling.
+        create: async () => ({
+          model: "claude-opus-5-5",
+          stop_reason: "end_turn",
+          content: [{ type: "text", text: "\"Sushi in Austin.\"" }],
+          usage: { input_tokens: 50, output_tokens: 5, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, server_tool_use: null },
+        }),
         stream(params: Anthropic.Beta.MessageCreateParams) {
           requests.push(structuredClone(params));
           const scripted = responses.shift();
@@ -206,5 +213,14 @@ describe("runTurn", () => {
     ]);
     const [stored] = await memory.getMessages(id);
     expect(stored.display_text).toBe("📄 lease.pdf\n📄 notes.txt\ncompare these");
+  });
+
+  it("names a new conversation after its first exchange", async () => {
+    fakeClient([{ content: [{ type: "text", text: "Try Uchi.", citations: null }], stop_reason: "end_turn" }]);
+    const id = await memory.createConversation("me");
+    await runTurn({ conversationId: id, text: "good sushi around here?", source: "text", emit: () => {} });
+    await new Promise((r) => setTimeout(r, 50));
+    const [conv] = (await memory.listConversations("me")).filter((c) => c.id === id);
+    expect(conv.title).toBe("Sushi in Austin");
   });
 });

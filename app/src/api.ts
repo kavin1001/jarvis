@@ -27,6 +27,9 @@ export interface Task {
   summary: string | null;
   instructions: string;
   result: string | null;
+  /** The agent's latest message while it works. */
+  last_message: string | null;
+  cost_usd: number;
   created_at: string;
   pending_approvals: PendingApproval[];
 }
