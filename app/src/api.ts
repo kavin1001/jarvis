@@ -238,7 +238,12 @@ export const api = {
   connectors: (s: Settings) => request<Connectors>(s, "/api/connectors"),
   startGoogle: (s: Settings) => request<{ url: string }>(s, "/api/connectors/google/start", { method: "POST" }),
   disconnectGoogle: (s: Settings) => request(s, "/api/connectors/google", { method: "DELETE" }),
-  conversations: (s: Settings) => request<Conversation[]>(s, "/api/conversations"),
+  /** Pinned chats and the newest 50 others; pass the last chat shown for the next, older page. */
+  conversations: (s: Settings, before?: Conversation) =>
+    request<Conversation[]>(
+      s,
+      before ? `/api/conversations?${new URLSearchParams({ before: before.updated_at, before_id: before.id })}` : "/api/conversations",
+    ),
   deleteConversation: (s: Settings, id: string) => request(s, `/api/conversations/${id}`, { method: "DELETE" }),
   pinConversation: (s: Settings, id: string, pinned: boolean) =>
     request(s, `/api/conversations/${id}`, { method: "PATCH", body: { pinned } }),

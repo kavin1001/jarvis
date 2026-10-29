@@ -54,6 +54,9 @@ const clientIp = (c: { req: { header: (name: string) => string | undefined } }) 
 const FAILED_SIGN_IN_LIMIT = 20;
 
 app.onError((err, c) => {
+  // A malformed id (Postgres can't read it as a uuid or number) can't match anything.
+  if ((err as { code?: string }).code === "22P02") return c.json({ error: "Not found" }, 404);
+  if (err instanceof SyntaxError) return c.json({ error: "The request body isn't valid JSON." }, 400);
   console.error(`${c.req.method} ${c.req.path} failed`, err);
   return c.json({ error: "Something went wrong" }, 500);
 });
@@ -228,7 +231,13 @@ app.get("/api/agenda", async (c) =>
   }),
 );
 
-app.get("/api/conversations", async (c) => c.json(await memory.listConversations(config.userId)));
+// ?before=<updated_at>&before_id=<id> of the last chat shown loads the next, older page.
+app.get("/api/conversations", async (c) => {
+  const updated_at = c.req.query("before");
+  const id = c.req.query("before_id");
+  if (updated_at && Number.isNaN(Date.parse(updated_at))) return c.json({ error: "before must be a date" }, 400);
+  return c.json(await memory.listConversations(config.userId, updated_at && id ? { updated_at, id } : undefined));
+});
 
 app.get("/api/search", async (c) => {
   const q = c.req.query("q")?.trim();

@@ -70,14 +70,35 @@ export default function HistoryScreen({
     return () => clearTimeout(timer);
   }, [q, settings]);
 
+  // The server sends 50 unpinned chats a page; a full page means there may be more.
+  const PAGE = 50;
+  const [more, setMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setItems(await api.conversations(settings));
+      const list = await api.conversations(settings);
+      setItems(list);
+      setMore(list.filter((c) => !c.pinned).length >= PAGE);
     } finally {
       setLoading(false);
     }
   }, [settings]);
+
+  async function loadOlder() {
+    const last = items.at(-1);
+    if (!last || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const page = await api.conversations(settings, last);
+      setItems((all) => [...all, ...page.filter((c) => !all.some((a) => a.id === c.id))]);
+      setMore(page.length >= PAGE);
+    } catch (err) {
+      Alert.alert("Couldn't load older chats", String(err));
+    } finally {
+      setLoadingMore(false);
+    }
+  }
   useEffect(() => {
     load();
   }, [load]);
@@ -163,6 +184,13 @@ export default function HistoryScreen({
           extraData={renaming}
           refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
           ListEmptyComponent={loading ? undefined : <Empty text="No conversations yet." />}
+          ListFooterComponent={
+            more ? (
+              <View style={{ padding: 16, alignItems: "center" }}>
+                <LinkButton label={loadingMore ? "Loading…" : "Load older chats"} onPress={loadOlder} />
+              </View>
+            ) : undefined
+          }
           renderItem={({ item }) => (
             <Pressable
               style={styles.row}

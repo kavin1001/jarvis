@@ -23,11 +23,29 @@ export async function createConversation(userId: string): Promise<string> {
   return row.id;
 }
 
-export async function listConversations(userId: string) {
-  return query<{ id: string; title: string | null; updated_at: string; pinned: boolean }>(
-    "SELECT id, title, updated_at, pinned FROM conversations WHERE user_id = $1 ORDER BY pinned DESC, updated_at DESC LIMIT 50",
-    [userId],
-  );
+export const PAGE_SIZE = 50;
+
+/**
+ * Pinned chats, then the newest 50 others. With `before` (the last chat of the
+ * previous page), the next 50 unpinned chats older than it. Times are compared to
+ * the millisecond, as the app sees them, with the id breaking ties.
+ */
+export async function listConversations(userId: string, before?: { updated_at: string; id: string }) {
+  const cols = "id, title, updated_at, pinned";
+  const order = "ORDER BY date_trunc('milliseconds', updated_at) DESC, id DESC";
+  type Row = { id: string; title: string | null; updated_at: string; pinned: boolean };
+  if (before) {
+    return query<Row>(
+      `SELECT ${cols} FROM conversations WHERE user_id = $1 AND NOT pinned
+         AND (date_trunc('milliseconds', updated_at), id) < ($2::timestamptz, $3::uuid) ${order} LIMIT ${PAGE_SIZE}`,
+      [userId, before.updated_at, before.id],
+    );
+  }
+  const [pinned, rest] = await Promise.all([
+    query<Row>(`SELECT ${cols} FROM conversations WHERE user_id = $1 AND pinned ${order}`, [userId]),
+    query<Row>(`SELECT ${cols} FROM conversations WHERE user_id = $1 AND NOT pinned ${order} LIMIT ${PAGE_SIZE}`, [userId]),
+  ]);
+  return [...pinned, ...rest];
 }
 
 export async function setTitle(conversationId: string, title: string) {

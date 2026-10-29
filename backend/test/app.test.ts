@@ -104,6 +104,26 @@ describe("renaming a conversation", () => {
     expect((await rename("00000000-0000-0000-0000-000000000000", "x")).status).toBe(404);
   });
 
+  it("pages through older chats and 404s malformed ids", async () => {
+    const { createConversation } = await import("../src/memory.js");
+    const ids: string[] = [];
+    for (let i = 0; i < 53; i++) ids.push(await createConversation("me"));
+    // Same timestamp for a run of chats, so the id has to break the tie.
+    await pool.query("UPDATE conversations SET updated_at = '2026-01-01T00:00:00.123456Z' WHERE id = ANY($1)", [ids.slice(0, 5)]);
+    const list = async (qs = "") => (await (await app.request(`/api/conversations${qs}`, { headers: auth })).json()) as { id: string; updated_at: string }[];
+    const first = await list();
+    expect(first).toHaveLength(50);
+    const last = first.at(-1)!;
+    const second = await list(`?before=${encodeURIComponent(last.updated_at)}&before_id=${last.id}`);
+    expect(second).toHaveLength(3);
+    expect(new Set([...first, ...second].map((c) => c.id)).size).toBe(53);
+    expect((await app.request("/api/conversations?before=yesterday&before_id=x", { headers: auth })).status).toBe(400);
+
+    expect((await app.request("/api/conversations/not-a-uuid/messages", { headers: auth })).status).toBe(404);
+    const bad = await app.request("/api/facts", { method: "POST", headers: json, body: "{not json" });
+    expect(bad.status).toBe(400);
+  });
+
   it("pins a chat to the top of the list", async () => {
     const { createConversation, listConversations } = await import("../src/memory.js");
     const older = await createConversation("me");
