@@ -4,12 +4,14 @@ import { z } from "zod";
 import { decrypt, encrypt } from "./crypto.js";
 import { query } from "./db.js";
 
-// Read mail, save drafts (never send), read and add calendar events.
+// Read mail, save drafts (never send), archive and mark mail, read and change calendar events.
+const MODIFY_SCOPE = "https://www.googleapis.com/auth/gmail.modify";
 const SCOPES = [
   "openid",
   "email",
   "https://www.googleapis.com/auth/gmail.readonly",
   "https://www.googleapis.com/auth/gmail.compose",
+  MODIFY_SCOPE,
   "https://www.googleapis.com/auth/calendar.events",
 ];
 
@@ -35,11 +37,17 @@ export function googleConfigured() {
 }
 
 export async function googleStatus(userId: string) {
-  const [row] = await query<{ account_email: string | null; updated_at: string }>(
-    "SELECT account_email, updated_at FROM connectors WHERE user_id = $1 AND provider = 'google'",
+  const [row] = await query<{ account_email: string | null; scopes: string }>(
+    "SELECT account_email, scopes FROM connectors WHERE user_id = $1 AND provider = 'google'",
     [userId],
   );
-  return { available: googleConfigured(), connected: Boolean(row), email: row?.account_email ?? null };
+  return {
+    available: googleConfigured(),
+    connected: Boolean(row),
+    email: row?.account_email ?? null,
+    // Connections made before archiving was added lack the scope until reconnected.
+    can_organize: Boolean(row?.scopes.split(" ").includes(MODIFY_SCOPE)),
+  };
 }
 
 /** Returns the Google consent URL. The state ties the callback to this user and expires in 10 minutes. */
@@ -197,6 +205,20 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
     },
   },
   {
+    name: "gmail_organize",
+    description:
+      "Tidy the user's inbox: archive, mark read or unread, star or unstar, or move back to the inbox, for up to 50 emails at once (ids from gmail_search). Archiving only removes the Inbox label; nothing is deleted. Say what you did and how many.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        message_ids: { type: "array", items: { type: "string" } },
+        action: { type: "string", enum: ["archive", "move_to_inbox", "mark_read", "mark_unread", "star", "unstar"] },
+      },
+      required: ["message_ids", "action"],
+    },
+  },
+  {
     name: "calendar_list_events",
     description: "List events on the user's primary Google Calendar between two ISO 8601 times. Each line starts with the event id in brackets.",
     eager_input_streaming: true,
@@ -264,6 +286,10 @@ const inputs = {
     body: z.string(),
     reply_to_message_id: z.string().optional(),
   }),
+  gmail_organize: z.object({
+    message_ids: z.array(z.string().min(1)).min(1).max(50),
+    action: z.enum(["archive", "move_to_inbox", "mark_read", "mark_unread", "star", "unstar"]),
+  }),
   calendar_list_events: z.object({ time_min: isoDate, time_max: isoDate, query: z.string().optional() }),
   calendar_create_event: z.object({
     summary: z.string().min(1),
@@ -320,6 +346,16 @@ function plainText(part: GmailPart): string {
   return "";
 }
 
+// Labels added and removed for each gmail_organize action.
+const ORGANIZE: Record<z.infer<typeof inputs.gmail_organize>["action"], [string[], string[]]> = {
+  archive: [[], ["INBOX"]],
+  move_to_inbox: [["INBOX"], []],
+  mark_read: [[], ["UNREAD"]],
+  mark_unread: [["UNREAD"], []],
+  star: [["STARRED"], []],
+  unstar: [[], ["STARRED"]],
+};
+
 // Header values must not carry line breaks (header injection).
 const oneLine = (s: string) => s.replace(/[\r\n]+/g, " ");
 
@@ -372,6 +408,17 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
         body: { message: { raw: rawMessage, ...(threadId ? { threadId } : {}) } },
       });
       return `Draft ${draft.id} saved in Gmail. It has not been sent; the user can review and send it from Gmail.`;
+    }
+    case "gmail_organize": {
+      const { message_ids, action } = inputs.gmail_organize.parse(raw);
+      if (!(await googleStatus(userId)).can_organize)
+        throw new Error("Jarvis needs one more permission for this. In Settings, disconnect Google and connect it again.");
+      const [add, remove] = ORGANIZE[action];
+      await google(userId, `${GMAIL}/messages/batchModify`, {
+        method: "POST",
+        body: { ids: message_ids, addLabelIds: add, removeLabelIds: remove },
+      });
+      return `Done: ${action.replace(/_/g, " ")} for ${message_ids.length} email${message_ids.length === 1 ? "" : "s"}.`;
     }
     case "calendar_list_events": {
       const { time_min, time_max, query: q } = inputs.calendar_list_events.parse(raw);

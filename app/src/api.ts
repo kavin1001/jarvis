@@ -216,7 +216,7 @@ export interface McpServer {
 }
 
 export interface Connectors {
-  google: { available: boolean; connected: boolean; email: string | null };
+  google: { available: boolean; connected: boolean; email: string | null; can_organize: boolean };
 }
 
 export const api = {

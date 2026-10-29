@@ -81,6 +81,7 @@ const TOOL_STATUS: Record<string, string> = {
   calendar_list_events: "Checking your calendar…",
   calendar_create_event: "Adding to your calendar…",
   calendar_update_event: "Updating your calendar…",
+  gmail_organize: "Tidying your inbox…",
   calendar_delete_event: "Removing it from your calendar…",
 };
 

@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Gmail: Jarvis can archive, mark read or unread, and star email, up to 50 at a time ("archive all the newsletters from this week"). Nothing is deleted. If you connected Google before this change, Settings asks you to **Connect again** to grant the new permission, and the Google consent screen needs the `gmail.modify` scope (docs/DEPLOY.md, section 5).
 - Settings, **Lock Jarvis** (iPhone and Android): Jarvis asks for Face ID, Touch ID or your passcode when you open it, and again after more than a minute away. The app switcher shows a blank screen instead of your chats. A reply that's still coming in keeps going behind the lock. Needs a new app build, since it adds a native module.
 - History is no longer cut off at 50 chats: **Load older chats** at the bottom brings in the next 50. `GET /api/conversations` takes `?before=&before_id=` from the last chat shown. A malformed id in a URL now gets a 404 instead of a server error, and a body that isn't JSON gets a 400.
 - History: hold a chat and choose **Pin to top** to keep it above newer chats, marked 📌. `PATCH /api/conversations/:id` takes `{ pinned }` as well as `{ title }`.

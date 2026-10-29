@@ -35,9 +35,10 @@ function mockFetch(routes: Record<string, Handler>) {
   return calls;
 }
 
-async function connect(tokens: { access_token: string; refresh_token?: string; expires_at: number }) {
-  await query("INSERT INTO connectors (user_id, provider, account_email, tokens, scopes) VALUES ('me', 'google', 'k@example.com', $1, '')", [
+async function connect(tokens: { access_token: string; refresh_token?: string; expires_at: number }, scopes = "") {
+  await query("INSERT INTO connectors (user_id, provider, account_email, tokens, scopes) VALUES ('me', 'google', 'k@example.com', $1, $2)", [
     encrypt(JSON.stringify(tokens), SECRET),
+    scopes,
   ]);
 }
 
@@ -81,7 +82,7 @@ describe("Google OAuth", () => {
 
   it("exposes status, start and disconnect to the app", async () => {
     const status = await app.request("/api/connectors", { headers: auth });
-    expect(await status.json()).toEqual({ google: { available: true, connected: false, email: null } });
+    expect(await status.json()).toEqual({ google: { available: true, connected: false, email: null, can_organize: false } });
     const start = await app.request("/api/connectors/google/start", { method: "POST", headers: auth });
     expect((await start.json()).url).toMatch(/^https:\/\/accounts\.google\.com\//);
 
@@ -179,6 +180,19 @@ describe("Google tools", () => {
 
     expect(await runGoogleTool("me", "calendar_delete_event", { event_id: "ev1" })).toBe("Event deleted.");
     expect(calls.at(-1)!.init?.method).toBe("DELETE");
+  });
+
+  it("archives and marks email, and asks to reconnect an old connection", async () => {
+    await connect({ access_token: "at", expires_at: Date.now() + 3600_000 }, "email https://www.googleapis.com/auth/gmail.readonly");
+    await expect(runGoogleTool("me", "gmail_organize", { message_ids: ["m1"], action: "archive" })).rejects.toThrow(/connect it again/);
+
+    await query("UPDATE connectors SET scopes = scopes || ' https://www.googleapis.com/auth/gmail.modify'");
+    const calls = mockFetch({ batchModify: () => ({}) });
+    expect(await runGoogleTool("me", "gmail_organize", { message_ids: ["m1", "m2"], action: "archive" })).toBe("Done: archive for 2 emails.");
+    expect(JSON.parse(calls[0].init!.body as string)).toEqual({ ids: ["m1", "m2"], addLabelIds: [], removeLabelIds: ["INBOX"] });
+    await runGoogleTool("me", "gmail_organize", { message_ids: ["m3"], action: "mark_read" });
+    expect(JSON.parse(calls[1].init!.body as string)).toMatchObject({ removeLabelIds: ["UNREAD"] });
+    await expect(runGoogleTool("me", "gmail_organize", { message_ids: [], action: "archive" })).rejects.toThrow();
   });
 
   it("asks to connect when Google is not linked", async () => {
