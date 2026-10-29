@@ -10,7 +10,7 @@ import {
   StyleSheet,
   View,
 } from "react-native";
-import { api, streamChat, type ChatMessage, type PendingApproval, type Reminder, type Settings, type Task } from "../api";
+import { api, streamChat, type AgendaEvent, type ChatMessage, type PendingApproval, type Reminder, type Settings, type Task } from "../api";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import type { Command } from "../deepLink";
@@ -33,11 +33,17 @@ const SUGGESTIONS = [
   "What did we talk about yesterday?",
 ];
 
-/** "Today 6:00 PM" or "Tomorrow 8:00 AM", for the next day of reminders. */
+/** "Today 6:00 PM" or "Tomorrow 8:00 AM", for the next day of reminders and events. */
 function whenLabel(iso: string) {
   const due = new Date(iso);
   const time = due.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   return due.toDateString() === new Date().toDateString() ? `Today ${time}` : `Tomorrow ${time}`;
+}
+
+/** "Today" or "Tomorrow" for an all-day event's plain date (YYYY-MM-DD, in local time). */
+function dayLabel(date: string) {
+  const [y, m, d] = date.split("-").map(Number);
+  return new Date(y, m - 1, d).toDateString() === new Date().toDateString() ? "Today" : "Tomorrow";
 }
 
 export default function ChatScreen({
@@ -78,7 +84,11 @@ export default function ChatScreen({
   };
 
   // What's coming up, shown on an empty chat.
-  const [upcoming, setUpcoming] = useState<{ reminders: Reminder[]; working: Task[] }>({ reminders: [], working: [] });
+  const [upcoming, setUpcoming] = useState<{ events: AgendaEvent[]; reminders: Reminder[]; working: Task[] }>({
+    events: [],
+    reminders: [],
+    working: [],
+  });
 
   const refresh = useCallback(async () => {
     const tasks = await api.tasks(settings).catch(() => []);
@@ -86,8 +96,12 @@ export default function ChatScreen({
     setMessages(conversationId ? await api.messages(settings, conversationId) : []);
     if (!conversationId) {
       const dayAhead = Date.now() + 24 * 3600_000;
-      const reminders = await api.reminders(settings).catch(() => []);
+      const [reminders, agenda] = await Promise.all([
+        api.reminders(settings).catch(() => []),
+        api.agenda(settings).catch(() => ({ events: [] })),
+      ]);
       setUpcoming({
+        events: agenda.events,
         reminders: reminders.filter((r) => Date.parse(r.due_at) <= dayAhead).slice(0, 3),
         working: tasks.filter((t) => t.status === "queued" || t.status === "running" || t.status === "waiting_approval").slice(0, 3),
       });
@@ -295,8 +309,13 @@ export default function ChatScreen({
         onContentSizeChange={() => list.current?.scrollToEnd({ animated: true })}
         ListEmptyComponent={
           <View style={styles.empty}>
-            {upcoming.reminders.length > 0 || upcoming.working.length > 0 ? (
+            {upcoming.events.length > 0 || upcoming.reminders.length > 0 || upcoming.working.length > 0 ? (
               <View style={styles.today}>
+                {upcoming.events.map((e, i) => (
+                  <Text key={`${e.start}-${i}`} style={styles.todayLine} numberOfLines={1}>
+                    📅 {e.all_day ? dayLabel(e.start) : whenLabel(e.start)} · {e.summary}
+                  </Text>
+                ))}
                 {upcoming.reminders.map((r) => (
                   <Text key={r.id} style={styles.todayLine} numberOfLines={1}>
                     ⏰ {whenLabel(r.due_at)} · {r.text}

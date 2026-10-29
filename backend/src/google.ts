@@ -370,3 +370,34 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
     }
   }
 }
+
+export interface AgendaEvent {
+  summary: string;
+  start: string;
+  all_day: boolean;
+  location: string | null;
+}
+
+/** The next few calendar events, for the app's "coming up" card. Empty when Google isn't connected. */
+export async function upcomingEvents(userId: string, hours = 24, max = 3): Promise<AgendaEvent[]> {
+  if (!env()) return [];
+  const [row] = await query("SELECT 1 FROM connectors WHERE user_id = $1 AND provider = 'google'", [userId]);
+  if (!row) return [];
+  const now = new Date();
+  const params = new URLSearchParams({
+    timeMin: now.toISOString(),
+    timeMax: new Date(now.getTime() + hours * 3600_000).toISOString(),
+    singleEvents: "true",
+    orderBy: "startTime",
+    maxResults: String(max),
+  });
+  const res = await google<{
+    items: { summary?: string; location?: string; start: { dateTime?: string; date?: string } }[];
+  }>(userId, `https://www.googleapis.com/calendar/v3/calendars/primary/events?${params}`);
+  return res.items.map((e) => ({
+    summary: e.summary ?? "(No title)",
+    start: e.start.dateTime ?? e.start.date ?? "",
+    all_day: !e.start.dateTime,
+    location: e.location ?? null,
+  }));
+}

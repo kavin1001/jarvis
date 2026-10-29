@@ -48,6 +48,14 @@ export interface Reminder {
   repeat: "daily" | "weekdays" | "weekly" | null;
 }
 
+export interface AgendaEvent {
+  summary: string;
+  /** ISO date-time, or a plain date for all-day events. */
+  start: string;
+  all_day: boolean;
+  location: string | null;
+}
+
 export interface ServerStatus {
   claude: "ok" | "invalid_key" | "no_access" | "model_not_found" | "unreachable" | "error";
   fast_model: string;
@@ -235,6 +243,7 @@ export const api = {
     request(s, `/api/conversations/${id}`, { method: "PATCH", body: { title } }),
   usage: (s: Settings) => request<Usage>(s, "/api/usage"),
   status: (s: Settings) => request<ServerStatus>(s, "/api/status"),
+  agenda: (s: Settings) => request<{ events: AgendaEvent[] }>(s, "/api/agenda"),
   reminders: (s: Settings) => request<Reminder[]>(s, "/api/reminders"),
   cancelReminder: (s: Settings, id: string) => request(s, `/api/reminders/${id}`, { method: "DELETE" }),
   cancelTask: (s: Settings, id: string) => request(s, `/api/tasks/${id}/cancel`, { method: "POST" }),

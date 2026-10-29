@@ -13,7 +13,7 @@ import { runTurn, type ChatEvent } from "./assistant.js";
 import { config } from "./config.js";
 import { query } from "./db.js";
 import { allowAttempt, authenticate, createPairingCode, isLimited, listDevices, redeemPairingCode, registerDevice, revokeDevice, type Caller } from "./devices.js";
-import { disconnectGoogle, googleStatus, handleGoogleCallback, startGoogleAuth } from "./google.js";
+import { disconnectGoogle, googleStatus, handleGoogleCallback, startGoogleAuth, upcomingEvents } from "./google.js";
 import { addServer, deleteServer, listServers, NewServer, setServerEnabled } from "./mcp.js";
 import { handleMcpCallback, startMcpOAuth } from "./mcpOAuth.js";
 import * as memory from "./memory.js";
@@ -217,6 +217,16 @@ app.post("/api/conversations/:id/stop", async (c) => {
 });
 
 app.get("/api/status", async (c) => c.json(await serverStatus(config.userId)));
+
+// Next events for the home card. A Google error leaves the card empty rather than failing the screen.
+app.get("/api/agenda", async (c) =>
+  c.json({
+    events: await upcomingEvents(config.userId).catch((err) => {
+      console.warn("agenda failed", err instanceof Error ? err.message : err);
+      return [];
+    }),
+  }),
+);
 
 app.get("/api/conversations", async (c) => c.json(await memory.listConversations(config.userId)));
 

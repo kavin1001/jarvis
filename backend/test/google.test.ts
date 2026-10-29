@@ -156,4 +156,23 @@ describe("Google tools", () => {
   it("asks to connect when Google is not linked", async () => {
     await expect(runGoogleTool("me", "gmail_search", { query: "x" })).rejects.toThrow(/not connected/);
   });
+
+  it("lists the next events for the home card, and nothing when not connected", async () => {
+    expect(await (await app.request("/api/agenda", { headers: auth })).json()).toEqual({ events: [] });
+    await connect({ access_token: "at", expires_at: Date.now() + 3600_000 });
+    const calls = mockFetch({
+      "calendar/v3": () => ({
+        items: [
+          { summary: "Dentist", location: "Main St", start: { dateTime: "2026-10-29T14:00:00-05:00" } },
+          { start: { date: "2026-10-30" } },
+        ],
+      }),
+    });
+    const body = await (await app.request("/api/agenda", { headers: auth })).json();
+    expect(body.events).toEqual([
+      { summary: "Dentist", start: "2026-10-29T14:00:00-05:00", all_day: false, location: "Main St" },
+      { summary: "(No title)", start: "2026-10-30", all_day: true, location: null },
+    ]);
+    expect(new URL(calls[0].url).searchParams.get("maxResults")).toBe("3");
+  });
 });
