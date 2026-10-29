@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Follow up on a finished background task: "now book the cheapest one" goes back to the same agent, which still has everything it found. The task shows as running again, and you get a notification when it's done. Connected-app sign-ins aren't passed to a follow-up; start a new task when it needs them.
 - Timers: "set a timer for 10 minutes" goes off within a few seconds of the right time. Jarvis now schedules "in N minutes" from the exact second, and the server checks for due reminders every 5 seconds instead of every 30.
 - Settings, **Notifications**: turn off notifications for replies, finished tasks or spending. Approvals and reminders always notify. `GET` and `PATCH /api/notifications`.
 - Background tasks can hand you files. When the agent makes a spreadsheet, report, chart or document, it shows up under the task in **Tasks**. Tap it to save or share it from the phone's share sheet, or to download it in a browser. The finished-task message lists the file names, and **Erase everything** deletes the files too. Needs a new app build, since it adds `expo-sharing`.

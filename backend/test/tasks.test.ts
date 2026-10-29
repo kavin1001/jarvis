@@ -7,6 +7,7 @@ import { deleteAllData } from "../src/account.js";
 import { app } from "../src/app.js";
 import {
   cancelTask,
+  continueTask,
   decideApproval,
   expireApprovals,
   listTasks,
@@ -127,6 +128,29 @@ describe("task lane", () => {
     await until(async () => (await taskStatus(taskId)) === "done");
 
     expect(await memory.takePendingTaskUpdates(conv)).toEqual(['Task "Book dinner" finished.\n\nBooked for 7pm.']);
+  });
+
+  it("sends a follow-up to a finished task in the same session", async () => {
+    const { stream, sent } = fakeTaskClient();
+    const conv = await memory.createConversation("me");
+    const taskId = await startTask("me", conv, "Find flights to Denver", "Flights");
+    await until(async () => sent.length === 1);
+    expect(await continueTask("me", taskId, "Book the cheapest")).toBe(false); // still running
+    stream.push({ type: "agent.message", id: "evt_1", content: [{ type: "text", text: "Cheapest is $254." }] });
+    stream.push({ type: "session.status_idle", id: "evt_2", stop_reason: { type: "end_turn" } });
+    await until(async () => (await memory.getMessages(conv)).some((m) => m.kind === "task_update"));
+    await memory.takePendingTaskUpdates(conv);
+
+    expect(await continueTask("me", taskId, "Book the cheapest")).toBe(true);
+    expect(await taskStatus(taskId)).toBe("running");
+    expect(JSON.stringify(sent.at(-1))).toContain("Book the cheapest");
+    stream.push({ type: "agent.message", id: "evt_3", content: [{ type: "text", text: "Booked." }] });
+    stream.push({ type: "session.status_idle", id: "evt_4", stop_reason: { type: "end_turn" } });
+    await until(async () => (await memory.getMessages(conv)).filter((m) => m.kind === "task_update").length === 2);
+    expect(await memory.takePendingTaskUpdates(conv)).toEqual(['Task "Flights" finished.\n\nBooked.']);
+    const [task] = (await listTasks("me")) as { instructions: string }[];
+    expect(task.instructions).toBe("Find flights to Denver\n\nFollow-up: Book the cheapest");
+    expect(await continueTask("other-user", taskId, "x")).toBe(false);
   });
 
   it("keeps the files the agent saved and serves them to the app", async () => {

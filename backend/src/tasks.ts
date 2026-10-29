@@ -382,6 +382,31 @@ export async function cancelTask(userId: string, taskId: string) {
 }
 
 /**
+ * Sends a follow-up to a finished task ("now book the cheapest one"). The agent keeps
+ * its session, so it remembers what it found. Connected-app tokens aren't given again,
+ * since their vault was dropped when the task first finished.
+ */
+export async function continueTask(userId: string, taskId: string, instructions: string) {
+  const [task] = await query<TaskRow>(
+    `UPDATE tasks SET status = 'running', result = NULL, last_message = NULL, updated_at = now(),
+            instructions = instructions || E'\n\nFollow-up: ' || $3
+     WHERE id = $1 AND user_id = $2 AND status IN ('done', 'failed') AND session_id IS NOT NULL RETURNING *`,
+    [taskId, userId, instructions],
+  );
+  if (!task) return false;
+  try {
+    const stream = await client.beta.sessions.events.stream(task.session_id!);
+    await client.beta.sessions.events.send(task.session_id!, {
+      events: [{ type: "user.message", content: [{ type: "text", text: `Follow-up from the user, same rules as before:\n${instructions}` }] }],
+    });
+    follow(task.id, stream).catch((err) => failTask(task.id, err));
+  } catch (err) {
+    await failTask(task.id, err);
+  }
+  return true;
+}
+
+/**
  * After a restart: re-read each in-flight session's history to catch events
  * that arrived while the server was down, then keep following it live.
  */

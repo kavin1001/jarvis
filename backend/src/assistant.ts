@@ -5,7 +5,7 @@ import { googleStatus, googleTools, isGoogleTool, runGoogleTool } from "./google
 import { mcpRequestParts } from "./mcp.js";
 import * as memory from "./memory.js";
 import * as reminders from "./reminders.js";
-import { cancelTask, listTasks, startTask, taskLaneConfigured } from "./tasks.js";
+import { cancelTask, continueTask, listTasks, startTask, taskLaneConfigured } from "./tasks.js";
 import { describeNow } from "./time.js";
 import { overDailyBudget, recordMessageUsage, warnNearBudget } from "./usage.js";
 
@@ -75,6 +75,7 @@ const TOOL_STATUS: Record<string, string> = {
   start_task: "Starting a background task…",
   list_tasks: "Checking your tasks…",
   cancel_task: "Stopping that task…",
+  continue_task: "Passing that on to the task…",
   gmail_search: "Checking your email…",
   gmail_read: "Reading an email…",
   gmail_create_draft: "Drafting an email…",
@@ -126,6 +127,7 @@ const SetReminderInput = z
 const SearchChatsInput = z.object({ query: z.string().min(1).max(200), limit: z.number().int().min(1).max(15).default(8) });
 const CancelReminderInput = z.object({ reminder_id: z.string() });
 const CancelTaskInput = z.object({ task_id: z.string().uuid() });
+const ContinueTaskInput = z.object({ task_id: z.string().uuid(), instructions: z.string().min(1).max(4000) });
 const StartTaskInput = z.object({
   instructions: z.string().min(1),
   summary: z.string().min(1).max(120),
@@ -235,6 +237,16 @@ const tools: Anthropic.Beta.BetaToolUnion[] = [
     description: "Stop a background task the user no longer wants. Get the id from start_task's result or list_tasks.",
     input_schema: { type: "object", properties: { task_id: { type: "string" } }, required: ["task_id"] },
   },
+  {
+    name: "continue_task",
+    description:
+      "Send a follow-up to a finished or failed background task (\"now book the cheapest one\", \"try again with my work email\"). The same agent picks up with everything it already found. Prefer this over start_task when the request builds on an earlier task.",
+    input_schema: {
+      type: "object",
+      properties: { task_id: { type: "string" }, instructions: { type: "string", description: "Complete, self-contained follow-up instructions." } },
+      required: ["task_id", "instructions"],
+    },
+  },
 ];
 
 async function buildSystem(): Promise<Anthropic.Beta.BetaTextBlockParam[]> {
@@ -337,6 +349,11 @@ async function runClientTool(
         const { task_id } = CancelTaskInput.parse(block.input);
         const ok = await cancelTask(config.userId, task_id);
         return result(ok ? "Stopped." : "No running task with that id.", !ok);
+      }
+      case "continue_task": {
+        const { task_id, instructions } = ContinueTaskInput.parse(block.input);
+        const ok = await continueTask(config.userId, task_id, instructions);
+        return result(ok ? "Sent. The agent is working on it; the user gets a notification when it's done." : "No finished task with that id.", !ok);
       }
       default:
         if (isGoogleTool(block.name)) return result(await runGoogleTool(config.userId, block.name, block.input));
