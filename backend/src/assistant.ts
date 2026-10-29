@@ -3,6 +3,7 @@ import { z } from "zod";
 import { config } from "./config.js";
 import { googleStatus, googleTools, isGoogleTool, runGoogleTool } from "./google.js";
 import { mcpRequestParts } from "./mcp.js";
+import * as lists from "./lists.js";
 import * as memory from "./memory.js";
 import * as reminders from "./reminders.js";
 import { cancelTask, continueTask, listTasks, startTask, taskLaneConfigured } from "./tasks.js";
@@ -72,6 +73,10 @@ const TOOL_STATUS: Record<string, string> = {
   list_reminders: "Checking your reminders…",
   cancel_reminder: "Cancelling a reminder…",
   search_past_chats: "Looking through past chats…",
+  list_add: "Adding to your list…",
+  list_show: "Checking your lists…",
+  list_change: "Updating your list…",
+  list_clear: "Clearing your list…",
   start_task: "Starting a background task…",
   list_tasks: "Checking your tasks…",
   cancel_task: "Stopping that task…",
@@ -104,6 +109,7 @@ How to work:
 - Never ask the user for passwords or card numbers in chat. Logins live in a secure vault the background agent can use.
 - When the user refers to an earlier conversation that isn't in this chat, look it up with search_past_chats before saying you don't remember.
 - When the user tells you a lasting preference or fact about themselves, save it with remember. When a saved fact changes, correct it with update_fact. Remove facts with forget when asked.
+- Keep the user's lists (shopping, packing, to-dos) with list_add, list_show, list_change and list_clear. "Add eggs and milk" during a shopping chat goes on the shopping list. They can also see and tick off their lists in the app's Lists tab.
 - For reminders and recurring jobs ("remind me at 5", "every weekday at 8 brief me on my day") use set_reminder. Use action "run" when Jarvis should do something at that time and send the result; "notify" for a plain reminder. Times are in the user's local time zone, given in each message. For timers and "in 20 minutes", pass in_seconds instead of due_at; a timer's text reads like "10-minute timer: pasta".
 - Messages that start with [Scheduled job] were sent by a reminder the user set, not typed live. Answer them as a short notification-sized briefing.
 - Messages that start with [Background task update] are results from tasks you started earlier. Mention them if they are relevant.
@@ -128,6 +134,10 @@ const SearchChatsInput = z.object({ query: z.string().min(1).max(200), limit: z.
 const CancelReminderInput = z.object({ reminder_id: z.string() });
 const CancelTaskInput = z.object({ task_id: z.string().uuid() });
 const ContinueTaskInput = z.object({ task_id: z.string().uuid(), instructions: z.string().min(1).max(4000) });
+const ListAddInput = z.object({ list: z.string().min(1).max(60), items: z.array(z.string().min(1).max(200)).min(1).max(50) });
+const ListShowInput = z.object({ list: z.string().min(1).max(60).optional() });
+const ListChangeInput = z.object({ item_ids: z.array(z.string()).min(1).max(100), action: z.enum(["check", "uncheck", "remove"]) });
+const ListClearInput = z.object({ list: z.string().min(1).max(60), everything: z.boolean().default(false) });
 const StartTaskInput = z.object({
   instructions: z.string().min(1),
   summary: z.string().min(1).max(120),
@@ -207,6 +217,48 @@ const tools: Anthropic.Beta.BetaToolUnion[] = [
         limit: { type: "integer", description: "1-15, default 8" },
       },
       required: ["query"],
+    },
+  },
+  {
+    name: "list_add",
+    description: "Add items to one of the user's lists (shopping, packing, to-do, anything they name). Creates the list if it's new. Items already on it are skipped.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        list: { type: "string", description: "The list's name in a word or two, e.g. \"shopping\", \"packing\", \"to-do\"." },
+        items: { type: "array", items: { type: "string" }, description: "One entry per item, as short as the user said it." },
+      },
+      required: ["list", "items"],
+    },
+  },
+  {
+    name: "list_show",
+    description: "Read a list with its item ids, or with no list given, the names of all lists and how many items are left on each.",
+    eager_input_streaming: true,
+    input_schema: { type: "object", properties: { list: { type: "string" } } },
+  },
+  {
+    name: "list_change",
+    description: "Check off, uncheck or remove list items by id. Call list_show first if you don't have the ids.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        item_ids: { type: "array", items: { type: "string" } },
+        action: { type: "string", enum: ["check", "uncheck", "remove"] },
+      },
+      required: ["item_ids", "action"],
+    },
+  },
+  {
+    name: "list_clear",
+    description: "Remove the checked-off items from a list, or with everything true, delete the whole list. Only delete a whole list when the user asks.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: { list: { type: "string" }, everything: { type: "boolean" } },
+      required: ["list"],
     },
   },
   {
@@ -330,6 +382,33 @@ async function runClientTool(
             .map((h) => `${describeNow(tz, new Date(h.created_at))} · ${h.role === "user" ? "User" : "Jarvis"}${h.title ? ` · "${h.title}"` : ""}\n${h.snippet}`)
             .join("\n\n"),
         );
+      }
+      case "list_add": {
+        const { list, items } = ListAddInput.parse(block.input);
+        const added = await lists.addItems(config.userId, list, items);
+        const skipped = items.length - added.length;
+        return result(
+          `Added ${added.length} to the ${lists.listName(list)} list${skipped ? ` (${skipped} already on it)` : ""}.` +
+            (added.length ? "\n" + added.map((i) => `- [${i.id}] ${i.text}`).join("\n") : ""),
+        );
+      }
+      case "list_show": {
+        const { list } = ListShowInput.parse(block.input);
+        if (list) return result(lists.describeList(lists.listName(list), await lists.listItems(config.userId, list)));
+        const all = await lists.allLists(config.userId);
+        if (all.length === 0) return result("The user has no lists yet.");
+        return result(all.map((l) => `- ${l.name}: ${l.items.filter((i) => !i.done).length} left, ${l.items.filter((i) => i.done).length} done`).join("\n"));
+      }
+      case "list_change": {
+        const { item_ids, action } = ListChangeInput.parse(block.input);
+        const n =
+          action === "remove" ? await lists.removeItems(config.userId, item_ids) : await lists.setDone(config.userId, item_ids, action === "check");
+        return result(n ? `Done (${n} item${n === 1 ? "" : "s"}).` : "No list items with those ids.", n === 0);
+      }
+      case "list_clear": {
+        const { list, everything } = ListClearInput.parse(block.input);
+        const n = await lists.clearList(config.userId, list, everything);
+        return result(`Removed ${n} item${n === 1 ? "" : "s"}.`);
       }
       case "start_task": {
         if (!taskLaneConfigured()) {

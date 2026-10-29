@@ -1,12 +1,13 @@
 import { Pressable, StyleSheet, View } from "react-native";
 import { Text, useStyles, type Palette } from "./theme";
 
-export type Tab = "chat" | "history" | "tasks" | "memory" | "settings";
+export type Tab = "chat" | "history" | "tasks" | "lists" | "memory" | "settings";
 
 const TABS: { key: Tab; label: string }[] = [
   { key: "chat", label: "Chat" },
   { key: "history", label: "History" },
   { key: "tasks", label: "Tasks" },
+  { key: "lists", label: "Lists" },
   { key: "memory", label: "Memory" },
   { key: "settings", label: "Settings" },
 ];

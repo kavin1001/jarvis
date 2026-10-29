@@ -203,3 +203,14 @@ CREATE TABLE IF NOT EXISTS notify_settings (
   tasks     BOOLEAN NOT NULL DEFAULT true,
   spending  BOOLEAN NOT NULL DEFAULT true
 );
+
+-- Lists the user keeps with Jarvis: shopping, packing, to-dos. One row per item.
+CREATE TABLE IF NOT EXISTS list_items (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     TEXT NOT NULL,
+  list        TEXT NOT NULL,
+  text        TEXT NOT NULL,
+  done        BOOLEAN NOT NULL DEFAULT false,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS list_items_user_list ON list_items (user_id, list, created_at);

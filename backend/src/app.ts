@@ -16,6 +16,7 @@ import { allowAttempt, authenticate, createPairingCode, isLimited, listDevices, 
 import { disconnectGoogle, googleStatus, handleGoogleCallback, startGoogleAuth, upcomingEvents } from "./google.js";
 import { addServer, deleteServer, listServers, NewServer, setServerEnabled } from "./mcp.js";
 import { handleMcpCallback, startMcpOAuth } from "./mcpOAuth.js";
+import * as lists from "./lists.js";
 import * as memory from "./memory.js";
 import { getNotifySettings, savePushToken, sendPush, setNotifySettings } from "./push.js";
 import { cancelReminder, createReminder, getTimezone, listReminders, snoozeReminder } from "./reminders.js";
@@ -292,6 +293,35 @@ app.patch("/api/facts/:id", async (c) => {
 });
 app.delete("/api/facts/:id", async (c) =>
   c.json({ deleted: await memory.deleteFact(config.userId, c.req.param("id")) }),
+);
+
+app.get("/api/lists", async (c) => c.json(await lists.allLists(config.userId)));
+const NewItems = z.object({ items: z.array(z.string().trim().min(1).max(200)).min(1).max(50) }).strict();
+app.post("/api/lists/:name/items", async (c) => {
+  const body = NewItems.safeParse(await c.req.json());
+  const name = lists.listName(c.req.param("name"));
+  if (!body.success) return c.json({ error: body.error.message }, 400);
+  if (!name || name.length > 60) return c.json({ error: "Give the list a name of up to 60 characters." }, 400);
+  try {
+    return c.json(await lists.addItems(config.userId, name, body.data.items));
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 400);
+  }
+});
+const ItemChange = z
+  .object({ done: z.boolean().optional(), text: z.string().trim().min(1).max(200).optional() })
+  .strict()
+  .refine((b) => b.done !== undefined || b.text !== undefined, "Nothing to change");
+app.patch("/api/list-items/:id", async (c) => {
+  const body = ItemChange.safeParse(await c.req.json());
+  if (!body.success) return c.json({ error: body.error.message }, 400);
+  const item = await lists.updateItem(config.userId, c.req.param("id"), body.data);
+  return item ? c.json(item) : c.json({ error: "Not found" }, 404);
+});
+app.delete("/api/list-items/:id", async (c) => c.json({ deleted: (await lists.removeItems(config.userId, [c.req.param("id")])) > 0 }));
+// ?all=1 deletes the whole list; otherwise only the checked-off items.
+app.delete("/api/lists/:name", async (c) =>
+  c.json({ removed: await lists.clearList(config.userId, c.req.param("name"), c.req.query("all") === "1") }),
 );
 
 app.get("/api/reminders", async (c) => c.json(await listReminders(config.userId)));

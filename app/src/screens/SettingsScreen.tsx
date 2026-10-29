@@ -11,7 +11,7 @@ import { SetupStatus } from "./SetupStatus";
 import { YourData } from "./YourData";
 import { McpServers } from "./McpServers";
 import { NotifySettings } from "./NotifySettings";
-import { Header, LinkButton, useShared } from "../ui";
+import { Choices, Header, LinkButton, useShared } from "../ui";
 import { Text, useColors, useTheme, type Appearance } from "../theme";
 import { createSpeaker } from "../useVoice";
 import { RATES, setVoicePrefs, useVoicePrefs, type ReadReplies } from "../voicePrefs";
@@ -29,32 +29,6 @@ const READ_REPLIES: [ReadReplies, string][] = [
 ];
 
 /** A row of pill buttons that picks one value. */
-function Choices<T extends string | number>({ options, value, onChange }: { options: [T, string][]; value: T; onChange: (v: T) => void }) {
-  const colors = useColors();
-  return (
-    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, paddingTop: 4 }}>
-      {options.map(([v, label]) => (
-        <Pressable
-          key={String(v)}
-          onPress={() => onChange(v)}
-          accessibilityRole="radio"
-          accessibilityState={{ selected: value === v }}
-          style={{
-            borderWidth: 1,
-            borderColor: colors.accent,
-            backgroundColor: value === v ? colors.accent : undefined,
-            borderRadius: 14,
-            paddingHorizontal: 12,
-            paddingVertical: 4,
-          }}
-        >
-          <Text style={{ color: value === v ? colors.onAccent : colors.accent }}>{label}</Text>
-        </Pressable>
-      ))}
-    </View>
-  );
-}
-
 const usd = (n: number) => `$${n < 1 ? n.toFixed(3) : n.toFixed(2)}`;
 
 export default function SettingsScreen({

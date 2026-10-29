@@ -92,6 +92,19 @@ export interface Fact {
   fact: string;
 }
 
+export interface ListItem {
+  id: string;
+  list: string;
+  text: string;
+  done: boolean;
+  created_at: string;
+}
+
+export interface List {
+  name: string;
+  items: ListItem[];
+}
+
 export type StreamEvent =
   | { type: "conversation"; conversationId: string }
   | { type: "text"; text: string }
@@ -281,6 +294,15 @@ export const api = {
   addFact: (s: Settings, fact: string) => request<Fact>(s, "/api/facts", { method: "POST", body: { fact } }),
   updateFact: (s: Settings, id: string, fact: string) => request<Fact>(s, `/api/facts/${id}`, { method: "PATCH", body: { fact } }),
   deleteFact: (s: Settings, id: string) => request(s, `/api/facts/${id}`, { method: "DELETE" }),
+  lists: (s: Settings) => request<List[]>(s, "/api/lists"),
+  addListItems: (s: Settings, list: string, items: string[]) =>
+    request<ListItem[]>(s, `/api/lists/${encodeURIComponent(list)}/items`, { method: "POST", body: { items } }),
+  updateListItem: (s: Settings, id: string, change: { done?: boolean; text?: string }) =>
+    request<ListItem>(s, `/api/list-items/${id}`, { method: "PATCH", body: change }),
+  deleteListItem: (s: Settings, id: string) => request(s, `/api/list-items/${id}`, { method: "DELETE" }),
+  /** Removes the checked-off items, or with all, the whole list. */
+  clearList: (s: Settings, list: string, all = false) =>
+    request<{ removed: number }>(s, `/api/lists/${encodeURIComponent(list)}${all ? "?all=1" : ""}`, { method: "DELETE" }),
   messages: (s: Settings, conversationId: string) =>
     request<ChatMessage[]>(s, `/api/conversations/${conversationId}/messages`),
   tasks: (s: Settings) => request<Task[]>(s, "/api/tasks"),

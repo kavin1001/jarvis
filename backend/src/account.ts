@@ -25,6 +25,7 @@ export async function exportData(userId: string) {
     })),
     facts: await query("SELECT fact, created_at FROM facts WHERE user_id = $1 ORDER BY created_at", [userId]),
     reminders: await query("SELECT text, action, due_at, repeat, status FROM reminders WHERE user_id = $1 ORDER BY due_at", [userId]),
+    lists: await query("SELECT list, text, done, created_at FROM list_items WHERE user_id = $1 ORDER BY list, created_at", [userId]),
     tasks: await query(
       "SELECT summary, instructions, status, result, cost_usd::float AS cost_usd, created_at FROM tasks WHERE user_id = $1 ORDER BY created_at",
       [userId],
@@ -35,7 +36,7 @@ export async function exportData(userId: string) {
 }
 
 /**
- * Deletes conversations, memory, reminders, tasks and their files, and connectors (revoking Google).
+ * Deletes conversations, memory, lists, reminders, tasks and their files, and connectors (revoking Google).
  * Devices, push tokens and usage history stay, so the phone stays signed in and spend stays accurate.
  */
 export async function deleteAllData(userId: string) {
@@ -44,6 +45,7 @@ export async function deleteAllData(userId: string) {
   await query("DELETE FROM reminders WHERE user_id = $1", [userId]);
   await query("DELETE FROM conversations WHERE user_id = $1", [userId]); // cascades to messages, tasks, approvals
   await query("DELETE FROM facts WHERE user_id = $1", [userId]);
+  await query("DELETE FROM list_items WHERE user_id = $1", [userId]);
   await query("DELETE FROM mcp_servers WHERE user_id = $1", [userId]);
   await query("DELETE FROM connectors WHERE user_id = $1", [userId]);
 }

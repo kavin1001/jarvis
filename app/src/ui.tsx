@@ -22,6 +22,33 @@ export function LinkButton({ label, onPress, danger }: { label: string; onPress:
   );
 }
 
+/** A row of pill buttons, one of which is selected. */
+export function Choices<T extends string | number>({ options, value, onChange }: { options: [T, string][]; value: T; onChange: (v: T) => void }) {
+  const colors = useColors();
+  return (
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, paddingTop: 4 }}>
+      {options.map(([v, label]) => (
+        <Pressable
+          key={String(v)}
+          onPress={() => onChange(v)}
+          accessibilityRole="radio"
+          accessibilityState={{ selected: value === v }}
+          style={{
+            borderWidth: 1,
+            borderColor: colors.accent,
+            backgroundColor: value === v ? colors.accent : undefined,
+            borderRadius: 14,
+            paddingHorizontal: 12,
+            paddingVertical: 4,
+          }}
+        >
+          <Text style={{ color: value === v ? colors.onAccent : colors.accent }}>{label}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
+
 export function Empty({ text }: { text: string }) {
   const styles = useShared();
   return <Text style={styles.empty}>{text}</Text>;

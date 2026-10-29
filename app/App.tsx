@@ -9,6 +9,7 @@ import { useDeepLinkCommand, type Command } from "./src/deepLink";
 import { askCommand } from "./src/links";
 import ChatScreen from "./src/screens/ChatScreen";
 import HistoryScreen from "./src/screens/HistoryScreen";
+import ListsScreen from "./src/screens/ListsScreen";
 import MemoryScreen from "./src/screens/MemoryScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import TasksScreen from "./src/screens/TasksScreen";
@@ -115,6 +116,7 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
           )}
           {tab === "history" && <HistoryScreen settings={settings} current={conversationId} onOpen={openConversation} />}
           {tab === "tasks" && <TasksScreen settings={settings} refreshKey={refreshKey} />}
+          {tab === "lists" && <ListsScreen settings={settings} />}
           {tab === "memory" && <MemoryScreen settings={settings} />}
           {tab === "settings" && <SettingsScreen settings={settings} onSignOut={onSignOut} onErased={() => openConversation(undefined)} />}
         </View>
