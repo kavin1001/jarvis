@@ -299,6 +299,10 @@ export const api = {
   cancelTask: (s: Settings, id: string) => request(s, `/api/tasks/${id}/cancel`, { method: "POST" }),
   stopReply: (s: Settings, conversationId: string) =>
     request<{ stopped: boolean }>(s, `/api/conversations/${conversationId}/stop`, { method: "POST" }),
+  moveReminder: (s: Settings, id: string, dueAt: Date) =>
+    request<{ id: string; due_at: string }>(s, `/api/reminders/${id}`, { method: "PATCH", body: { due_at: dueAt.toISOString() } }),
+  skipReminder: (s: Settings, id: string) => request<{ id: string; due_at: string }>(s, `/api/reminders/${id}/skip`, { method: "POST" }),
+  runReminderNow: (s: Settings, id: string) => request<{ started: boolean }>(s, `/api/reminders/${id}/run`, { method: "POST" }),
   snoozeReminder: (s: Settings, id: string, minutes: number) =>
     request<{ id: string }>(s, `/api/reminders/${id}/snooze`, { method: "POST", body: { minutes } }),
   facts: (s: Settings) => request<Fact[]>(s, "/api/facts"),

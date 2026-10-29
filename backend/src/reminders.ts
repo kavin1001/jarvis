@@ -79,6 +79,35 @@ export async function snoozeReminder(userId: string, id: string, minutes: number
 }
 
 /** Runs a scheduled prompt as a Jarvis turn and returns the answer. Injected to avoid an import cycle. */
+/** Moves an upcoming reminder. A repeating one keeps repeating from its new time. */
+export async function rescheduleReminder(userId: string, id: string, dueAt: Date) {
+  const rows = await query(
+    "UPDATE reminders SET due_at = $3 WHERE id = $1 AND user_id = $2 AND status = 'scheduled' RETURNING id",
+    [id, userId, dueAt],
+  );
+  return rows.length > 0;
+}
+
+/** Skips the next run of a repeating reminder. Returns the new due time, or null. */
+export async function skipReminder(userId: string, id: string): Promise<Date | null> {
+  const [r] = await query<Reminder>("SELECT * FROM reminders WHERE id = $1 AND user_id = $2 AND status = 'scheduled' AND repeat IS NOT NULL", [id, userId]);
+  if (!r) return null;
+  const next = nextOccurrence(new Date(r.due_at), r.repeat!, r.timezone);
+  const rows = await query("UPDATE reminders SET due_at = $3 WHERE id = $1 AND due_at = $2 AND status = 'scheduled' RETURNING id", [id, r.due_at, next]);
+  return rows.length > 0 ? next : null;
+}
+
+/**
+ * Runs a scheduled job once now ("try my morning briefing"), leaving its schedule as it is.
+ * Resolves once it has started; the answer arrives by notification like a scheduled run.
+ */
+export async function runReminderNow(userId: string, id: string, runPrompt: RunPrompt) {
+  const [r] = await query<Reminder>("SELECT * FROM reminders WHERE id = $1 AND user_id = $2 AND status = 'scheduled'", [id, userId]);
+  if (!r) return false;
+  fire(r, runPrompt).catch((err) => console.error(`reminder ${r.id} failed`, err));
+  return true;
+}
+
 export type RunPrompt = (conversationId: string, text: string) => Promise<string>;
 
 /**

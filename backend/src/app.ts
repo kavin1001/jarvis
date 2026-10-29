@@ -19,7 +19,7 @@ import { handleMcpCallback, startMcpOAuth } from "./mcpOAuth.js";
 import * as lists from "./lists.js";
 import * as memory from "./memory.js";
 import { getNotifySettings, savePushToken, sendPush, setNotifySettings } from "./push.js";
-import { cancelReminder, createReminder, getTimezone, listReminders, snoozeReminder } from "./reminders.js";
+import { cancelReminder, createReminder, getTimezone, listReminders, rescheduleReminder, runReminderNow, skipReminder, snoozeReminder } from "./reminders.js";
 import { serverStatus } from "./status.js";
 import { firstOccurrence } from "./time.js";
 import { summarize } from "./usage.js";
@@ -367,6 +367,24 @@ app.post("/api/reminders/:id/snooze", async (c) => {
   if (!z.string().uuid().safeParse(reminderId).success) return c.json({ error: "Not found" }, 404);
   const id = await snoozeReminder(config.userId, reminderId, body.data.minutes);
   return id ? c.json({ id }) : c.json({ error: "Not found" }, 404);
+});
+
+const Reschedule = z.object({ due_at: z.string().datetime({ offset: true }) }).strict();
+app.patch("/api/reminders/:id", async (c) => {
+  const body = Reschedule.safeParse(await c.req.json());
+  if (!body.success) return c.json({ error: body.error.message }, 400);
+  const dueAt = new Date(body.data.due_at);
+  if (dueAt.getTime() < Date.now() - 60_000) return c.json({ error: "That time is in the past." }, 400);
+  const ok = await rescheduleReminder(config.userId, c.req.param("id"), dueAt);
+  return ok ? c.json({ id: c.req.param("id"), due_at: dueAt.toISOString() }) : c.json({ error: "Not found" }, 404);
+});
+app.post("/api/reminders/:id/skip", async (c) => {
+  const next = await skipReminder(config.userId, c.req.param("id"));
+  return next ? c.json({ id: c.req.param("id"), due_at: next.toISOString() }) : c.json({ error: "Not found" }, 404);
+});
+app.post("/api/reminders/:id/run", async (c) => {
+  const run = (conversationId: string, text: string) => runTurn({ conversationId, text, source: "scheduled", emit: () => {} });
+  return (await runReminderNow(config.userId, c.req.param("id"), run)) ? c.json({ started: true }) : c.json({ error: "Not found" }, 404);
 });
 
 app.delete("/api/reminders/:id", async (c) =>

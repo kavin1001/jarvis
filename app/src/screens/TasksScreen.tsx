@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { FlatList, Pressable, RefreshControl, View } from "react-native";
+import { ActionSheet, type SheetAction } from "../ActionSheet";
 import { Alert } from "../dialog";
 import { api, type Reminder, type Settings, type Task } from "../api";
 import { askApproval } from "../usePush";
@@ -38,6 +39,7 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
   const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [sheet, setSheet] = useState<SheetAction[] | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -52,6 +54,33 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
   useEffect(() => {
     load();
   }, [load, refreshKey]);
+
+  const failed = (what: string) => (err: unknown) => Alert.alert(`Couldn't ${what}`, String(err));
+  function reminderActions(r: Reminder): SheetAction[] {
+    const due = new Date(r.due_at);
+    const move = (label: string, to: Date): SheetAction => ({
+      label,
+      onPress: () => api.moveReminder(settings, r.id, to).then(load, failed("move it")),
+    });
+    return [
+      ...(r.action === "run"
+        ? [
+            {
+              label: "Run it now",
+              onPress: () =>
+                api.runReminderNow(settings, r.id).then(
+                  () => Alert.alert("Running it now", "You'll get the answer as a notification and in a new chat. Its schedule stays the same."),
+                  failed("run it"),
+                ),
+            },
+          ]
+        : []),
+      ...(r.repeat
+        ? [{ label: "Skip the next one", onPress: () => api.skipReminder(settings, r.id).then(load, failed("skip it")) }]
+        : [move("An hour later", new Date(due.getTime() + 3600_000)), move("Same time tomorrow", new Date(due.getTime() + 24 * 3600_000))]),
+      { label: r.repeat ? "Stop this routine" : "Cancel it", danger: true, onPress: () => api.cancelReminder(settings, r.id).then(load, failed("cancel it")) },
+    ];
+  }
 
   // Poll while anything is still in flight.
   const active = tasks.some((t) => t.status === "running" || t.status === "queued" || t.status === "waiting_approval");
@@ -95,12 +124,8 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
                 <Pressable
                   key={r.id}
                   style={styles.row}
-                  onPress={() =>
-                    Alert.alert("Cancel this?", r.text, [
-                      { text: "Keep", style: "cancel" },
-                      { text: "Cancel it", style: "destructive", onPress: () => api.cancelReminder(settings, r.id).then(load) },
-                    ])
-                  }
+                  accessibilityHint={r.action === "run" ? "Run now, move or stop" : "Move or cancel"}
+                  onPress={() => setSheet(reminderActions(r))}
                 >
                   <Text style={styles.rowTitle} numberOfLines={2}>
                     {r.action === "run" ? "⚙︎ " : "⏰ "}
@@ -192,6 +217,7 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
           </Pressable>
         )}
       />
+      <ActionSheet actions={sheet} onClose={() => setSheet(null)} />
     </>
   );
 }
