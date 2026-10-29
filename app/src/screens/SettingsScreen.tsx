@@ -1,4 +1,5 @@
 import Constants from "expo-constants";
+import * as Speech from "expo-speech";
 import { useCallback, useEffect, useState } from "react";
 import { AppState, Linking, Pressable, RefreshControl, ScrollView, Switch, View } from "react-native";
 import { Alert } from "../dialog";
@@ -10,12 +11,47 @@ import { YourData } from "./YourData";
 import { McpServers } from "./McpServers";
 import { Header, LinkButton, useShared } from "../ui";
 import { Text, useColors, useTheme, type Appearance } from "../theme";
+import { createSpeaker } from "../useVoice";
+import { RATES, setVoicePrefs, useVoicePrefs, type ReadReplies } from "../voicePrefs";
 
 const APPEARANCES: [Appearance, string][] = [
   ["system", "Match phone"],
   ["light", "Light"],
   ["dark", "Dark"],
 ];
+
+const READ_REPLIES: [ReadReplies, string][] = [
+  ["voice", "When I speak"],
+  ["always", "Always"],
+  ["never", "Never"],
+];
+
+/** A row of pill buttons that picks one value. */
+function Choices<T extends string | number>({ options, value, onChange }: { options: [T, string][]; value: T; onChange: (v: T) => void }) {
+  const colors = useColors();
+  return (
+    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, paddingTop: 4 }}>
+      {options.map(([v, label]) => (
+        <Pressable
+          key={String(v)}
+          onPress={() => onChange(v)}
+          accessibilityRole="radio"
+          accessibilityState={{ selected: value === v }}
+          style={{
+            borderWidth: 1,
+            borderColor: colors.accent,
+            backgroundColor: value === v ? colors.accent : undefined,
+            borderRadius: 14,
+            paddingHorizontal: 12,
+            paddingVertical: 4,
+          }}
+        >
+          <Text style={{ color: value === v ? colors.onAccent : colors.accent }}>{label}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+}
 
 const usd = (n: number) => `$${n < 1 ? n.toFixed(3) : n.toFixed(2)}`;
 
@@ -32,6 +68,7 @@ export default function SettingsScreen({
   const styles = useShared();
   const colors = useColors();
   const { appearance, setAppearance } = useTheme();
+  const voice = useVoicePrefs();
   const [usage, setUsage] = useState<Usage | null>(null);
   const [connectors, setConnectors] = useState<Connectors | null>(null);
   const [loading, setLoading] = useState(false);
@@ -125,26 +162,27 @@ export default function SettingsScreen({
 
       <View style={styles.row}>
         <Text style={styles.rowMeta}>Appearance</Text>
-        <View style={{ flexDirection: "row", gap: 8, paddingTop: 4 }}>
-          {APPEARANCES.map(([value, label]) => (
-            <Pressable
-              key={value}
-              onPress={() => setAppearance(value)}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: appearance === value }}
-              style={{
-                borderWidth: 1,
-                borderColor: colors.accent,
-                backgroundColor: appearance === value ? colors.accent : undefined,
-                borderRadius: 14,
-                paddingHorizontal: 12,
-                paddingVertical: 4,
-              }}
-            >
-              <Text style={{ color: appearance === value ? colors.onAccent : colors.accent }}>{label}</Text>
-            </Pressable>
-          ))}
-        </View>
+        <Choices options={APPEARANCES} value={appearance} onChange={setAppearance} />
+      </View>
+
+      <View style={styles.row}>
+        <Text style={styles.rowMeta}>Read replies aloud</Text>
+        <Choices options={READ_REPLIES} value={voice.readReplies} onChange={(readReplies) => setVoicePrefs({ readReplies })} />
+      </View>
+
+      <View style={styles.row}>
+        <Text style={styles.rowMeta}>Speaking speed</Text>
+        <Choices
+          options={RATES}
+          value={voice.rate}
+          onChange={(rate) => {
+            setVoicePrefs({ rate });
+            Speech.stop();
+            const speaker = createSpeaker();
+            speaker.push("This is how fast I'll talk.");
+            speaker.flush();
+          }}
+        />
       </View>
 
       <View style={[styles.row, { flexDirection: "row", alignItems: "center" }]}>

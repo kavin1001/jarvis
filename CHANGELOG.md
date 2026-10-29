@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Settings has **Read replies aloud** (when you speak, always, or never) and **Speaking speed** (slower to fastest, with a sample when you pick one). Replies are read without Markdown symbols, voice input follows your phone's language and region, and speech no longer waits forever in browsers that have no voice list.
 - A new chat's coming-up card also shows your next calendar events when Google is connected. `GET /api/agenda` returns them.
 - Lock your phone or switch apps mid-reply and Jarvis still finishes. The answer arrives as a "Jarvis replied" notification, and it's in the chat when you come back. Only the Stop button stops a reply now, through `POST /api/conversations/:id/stop`.
 - Security: after 20 failed sign-ins in a minute from one address, the API answers 429 for the rest of that minute, which makes a short `JARVIS_APP_TOKEN` much harder to guess. Every response now has standard security headers. Rate limits use the address your host's proxy adds, which a client can't fake.

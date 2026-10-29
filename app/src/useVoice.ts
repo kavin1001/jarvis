@@ -1,6 +1,8 @@
 import { ExpoSpeechRecognitionModule, useSpeechRecognitionEvent } from "expo-speech-recognition";
 import * as Speech from "expo-speech";
 import { useRef, useState } from "react";
+import { plainText } from "./Markdown";
+import { voicePrefs } from "./voicePrefs";
 
 /**
  * Hold-to-talk: start() on press, stop() on release. onFinal receives the
@@ -36,7 +38,7 @@ export function useVoice(onFinal: (transcript: string) => void, onSilence?: () =
     Speech.stop();
     transcript.current = "";
     setListening(true);
-    ExpoSpeechRecognitionModule.start({ lang: "en-US", interimResults: true, continuous: false });
+    ExpoSpeechRecognitionModule.start({ lang: phoneLocale(), interimResults: true, continuous: false });
   }
 
   function stop() {
@@ -46,6 +48,12 @@ export function useVoice(onFinal: (transcript: string) => void, onSilence?: () =
   return { listening, partial, start, stop };
 }
 
+/** The phone's language and region, such as "en-GB", so recognition matches how you speak. */
+function phoneLocale() {
+  const locale = (Intl.DateTimeFormat().resolvedOptions().locale || "en-US").split("-u-")[0];
+  return locale === "en" ? "en-US" : locale;
+}
+
 /**
  * The most natural installed voice for the phone's language: a downloaded
  * "Premium" or "Enhanced" Siri voice when there is one (Settings, Accessibility,
@@ -53,7 +61,11 @@ export function useVoice(onFinal: (transcript: string) => void, onSilence?: () =
  */
 let bestVoice: Promise<string | undefined> | null = null;
 function pickVoice() {
-  bestVoice ??= Speech.getAvailableVoicesAsync()
+  // Some browsers never load a voice list; after a moment, use the default voice.
+  bestVoice ??= Promise.race([
+    Speech.getAvailableVoicesAsync(),
+    new Promise<Speech.Voice[]>((resolve) => setTimeout(() => resolve([]), 1500)),
+  ])
     .then((voices) => {
       const lang = (Intl.DateTimeFormat().resolvedOptions().locale || "en-US").split("-")[0];
       const mine = voices.filter((v) => v.language?.toLowerCase().startsWith(lang));
@@ -71,9 +83,10 @@ pickVoice();
 /**
  * Speaks streamed text sentence by sentence, so voice replies start early.
  * onFinished runs once everything queued before flush() has been spoken,
- * unless speech was stopped (for example by tapping the mic).
+ * unless speech was stopped (for example by tapping the mic). A silent speaker
+ * says nothing but still calls onFinished, so hands-free keeps listening.
  */
-export function createSpeaker(onFinished?: () => void) {
+export function createSpeaker(onFinished?: () => void, silent = false) {
   let pending = "";
   let queued = 0;
   let flushed = false;
@@ -84,11 +97,13 @@ export function createSpeaker(onFinished?: () => void) {
     if (flushed && queued === 0 && !stopped) onFinished?.();
   };
   const say = (text: string) => {
+    text = plainText(text);
+    if (silent || !text) return;
     queued++;
     // Chained so sentences stay in order while the voice lookup is still pending.
     order = order.then(async () => {
       const voice = await pickVoice();
-      Speech.speak(text, { voice, onDone: done, onError: done, onStopped: () => ((stopped = true), done()) });
+      Speech.speak(text, { voice, rate: voicePrefs().rate, onDone: done, onError: done, onStopped: () => ((stopped = true), done()) });
     });
   };
   return {

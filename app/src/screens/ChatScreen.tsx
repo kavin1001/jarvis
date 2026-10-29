@@ -24,6 +24,7 @@ import { chooseAttachments, type Photo } from "../photos";
 import { Text, TextInput, useStyles, type Palette } from "../theme";
 import { askApproval } from "../usePush";
 import { createSpeaker, isStopPhrase, useVoice } from "../useVoice";
+import { shouldSpeak } from "../voicePrefs";
 
 // Shown on an empty chat so a new user sees what Jarvis can do.
 const SUGGESTIONS = [
@@ -132,7 +133,8 @@ export default function ChatScreen({
     setDraft("");
     setPhotos([]);
     setDocs([]);
-    const speaker = source === "voice" ? createSpeaker(() => handsFreeRef.current && voice.start()) : null;
+    const speak = shouldSpeak(source);
+    const speaker = speak || source === "voice" ? createSpeaker(() => handsFreeRef.current && voice.start(), !speak) : null;
     const replyId = `pending-${Date.now()}`;
     setMessages((m) => [
       ...m,
