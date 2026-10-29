@@ -12,6 +12,7 @@ import { YourData } from "./YourData";
 import { McpServers } from "./McpServers";
 import { NotifySettings } from "./NotifySettings";
 import { Places } from "./Places";
+import { SiriShortcut } from "./SiriShortcut";
 import { stopPlaceReminders } from "../geofence";
 import { Choices, Header, LinkButton, useShared } from "../ui";
 import { Text, useColors, useTheme, type Appearance } from "../theme";
@@ -202,6 +203,8 @@ export default function SettingsScreen({
       )}
 
       <Places settings={settings} />
+
+      <SiriShortcut settings={settings} />
 
       <NotifySettings settings={settings} />
 

@@ -1,10 +1,11 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { runTurn, setClient, toolStatus, type ChatEvent } from "../src/assistant.js";
+import { app } from "../src/app.js";
 import { pool } from "../src/db.js";
 import { addServer } from "../src/mcp.js";
 import * as memory from "../src/memory.js";
-import { resetDb } from "./helpers.js";
+import { auth, resetDb } from "./helpers.js";
 
 type Msg = Partial<Anthropic.Beta.BetaMessage> & Pick<Anthropic.Beta.BetaMessage, "content" | "stop_reason">;
 
@@ -206,6 +207,29 @@ describe("runTurn", () => {
     await runTurn({ conversationId: await memory.createConversation("me"), text: "add eggs and milk", source: "text", emit: () => {} });
     expect(JSON.stringify(requests[1].messages.at(-1))).toContain("Added 2 to the shopping list");
     expect(JSON.stringify(requests[2].messages.at(-1))).toContain("shopping: 2 left, 0 done");
+  });
+
+  it("answers a Siri Shortcut in plain text, continuing the same chat for a few minutes", async () => {
+    const say = (text: string) => ({ content: [{ type: "text" as const, text, citations: null }], stop_reason: "end_turn" as const });
+    const requests = fakeClient([say("It's 4."), say("It's 8."), say("Hello again.")]);
+    const ask = (body: string, type = "application/json") => app.request("/api/ask", { method: "POST", headers: { ...auth, "Content-Type": type }, body });
+
+    const first = await ask(JSON.stringify({ text: "What's 2+2?" }));
+    expect(first.headers.get("content-type")).toMatch(/^text\/plain/);
+    expect(await first.text()).toBe("It's 4.");
+    expect(await (await ask("And doubled?", "text/plain")).text()).toBe("It's 8.");
+    // The follow-up went to the same chat, marked as voice so the answer is short.
+    expect(requests[1].messages).toHaveLength(3);
+    expect(JSON.stringify(requests[1].messages.at(-1))).toContain("(Sent by voice.)");
+
+    await ask(JSON.stringify({ text: "Hi", new_chat: true }));
+    expect(requests[2].messages).toHaveLength(1);
+    expect((await ask(JSON.stringify({ text: "" }))).status).toBe(400);
+
+    const token = await (await app.request("/api/devices/shortcut", { method: "POST", headers: auth })).json();
+    expect(token.token).toMatch(/^jvd_/);
+    const devices = await (await app.request("/api/devices", { headers: auth })).json();
+    expect(devices.map((d: { name: string }) => d.name)).toContain("Siri Shortcut");
   });
 
   it("uploads photos and sends them as file references", async () => {

@@ -9,7 +9,7 @@ Goal: a personal agent on your phone that answers instantly, remembers you, and 
 - **Your accounts:** Gmail (drafts, never sends), Google Calendar (add, move and delete events) and Google Contacts (look up numbers and addresses), any MCP server (Notion and Linear with sign-in, GitHub, Zapier, Pipedream…) for both quick answers and background tasks.
 - **Everyday answers:** weather forecasts for where you are or anywhere else, without a web search.
 - **Gets things done:** background tasks on Claude Managed Agents with approve or deny from the notification and files you can open from Tasks, reminders and routines with snooze, reminders for when you arrive or leave a place, a "coming up" card on a new chat, a status line while tools run.
-- **Inputs:** photos, camera, PDFs and text files, Siri and Shortcuts links, Android share sheet (web app).
+- **Inputs:** photos, camera, PDFs and text files, "Hey Siri, Ask Jarvis" through a Shortcut that speaks the answer, Siri and Shortcuts links, Android share sheet (web app).
 - **Phone-ready:** app icon and launch screen, dark mode, device pairing and revoking, an installable web app, an offline banner, and messages sent offline go out once the connection is back, push notifications.
 - **Running it:** Docker image and Render blueprint, `/health`, spend tracking with a daily cap, a setup checklist in Settings, data export and erase, CI with backend tests.
 
@@ -17,7 +17,7 @@ Goal: a personal agent on your phone that answers instantly, remembers you, and 
 
 | Feature | Why |
 | --- | --- |
-| Native App Intents | Siri answers without opening the app |
+| Native App Intents | Siri asks without the Shortcut setup (the Shortcut already answers without opening the app) |
 | iOS share extension | Share a link or screenshot to Jarvis from any app on iPhone |
 | Streaming speech provider | A more natural voice than the system one |
 

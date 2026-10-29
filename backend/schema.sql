@@ -244,3 +244,10 @@ CREATE TABLE IF NOT EXISTS place_reminders (
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS place_reminders_active ON place_reminders (user_id) WHERE status = 'active';
+
+-- The chat that "Ask Jarvis" from Siri continues, so a follow-up a minute later has context.
+CREATE TABLE IF NOT EXISTS ask_sessions (
+  user_id          TEXT PRIMARY KEY,
+  conversation_id  UUID NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+  updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);

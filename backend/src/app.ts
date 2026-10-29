@@ -213,6 +213,37 @@ app.post("/api/chat", async (c) => {
   });
 });
 
+// "Hey Siri, Ask Jarvis": an iPhone Shortcut posts what was dictated and speaks the plain-text
+// answer, so Jarvis answers without opening the app. Questions a few minutes apart share a chat.
+const AskBody = z.object({ text: z.string().trim().min(1).max(4000), new_chat: z.boolean().default(false) });
+const ASK_SESSION_MINUTES = 10;
+app.post("/api/ask", async (c) => {
+  // JSON {"text": …} from "Get Contents of URL", or the question as the whole plain-text body.
+  const raw = c.req.header("content-type")?.includes("json") ? await c.req.json().catch(() => null) : { text: await c.req.text() };
+  const body = AskBody.safeParse(raw);
+  if (!body.success) return c.text("Send the question as text.", 400);
+  const [recent] = body.data.new_chat
+    ? []
+    : await query<{ conversation_id: string }>(
+        `SELECT conversation_id FROM ask_sessions WHERE user_id = $1 AND updated_at > now() - make_interval(mins => $2)`,
+        [config.userId, ASK_SESSION_MINUTES],
+      );
+  const conversationId = recent?.conversation_id ?? (await memory.createConversation(config.userId));
+  await query(
+    `INSERT INTO ask_sessions (user_id, conversation_id) VALUES ($1, $2)
+     ON CONFLICT (user_id) DO UPDATE SET conversation_id = $2, updated_at = now()`,
+    [config.userId, conversationId],
+  );
+  try {
+    const answer = await runTurn({ conversationId, text: body.data.text, source: "voice", emit: () => {} });
+    return c.text(answer.trim() || "Done.");
+  } catch (err) {
+    console.error("ask failed", err);
+    // Still a 200, so the Shortcut speaks the reason instead of showing an error.
+    return c.text(describeChatError(err));
+  }
+});
+
 /** The reply being written in each conversation, so Stop can end it. */
 const turnsInFlight = new Map<string, AbortController>();
 
@@ -520,6 +551,8 @@ app.delete("/api/devices/:id", async (c) => {
   const id = z.string().uuid().safeParse(c.req.param("id"));
   return c.json({ revoked: id.success && (await revokeDevice(config.userId, id.data)) });
 });
+// A token for an iPhone Shortcut. It's listed and revoked like any other device.
+app.post("/api/devices/shortcut", async (c) => c.json(await registerDevice(config.userId, "Siri Shortcut")));
 app.post("/api/devices/pair-codes", async (c) => c.json(await createPairingCode(config.userId)));
 
 app.get("/api/export", async (c) => {

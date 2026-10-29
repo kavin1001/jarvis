@@ -283,6 +283,7 @@ export const api = {
   search: (s: Settings, q: string) => request<SearchHit[]>(s, `/api/search?q=${encodeURIComponent(q)}`),
   devices: (s: Settings) => request<Device[]>(s, "/api/devices"),
   revokeDevice: (s: Settings, id: string) => request(s, `/api/devices/${id}`, { method: "DELETE" }),
+  shortcutToken: (s: Settings) => request<{ id: string; token: string }>(s, "/api/devices/shortcut", { method: "POST" }),
   pairingCode: (s: Settings) => request<{ code: string; expires_at: string }>(s, "/api/devices/pair-codes", { method: "POST" }),
   mcpServers: (s: Settings) => request<McpServer[]>(s, "/api/mcp-servers"),
   addMcpServer: (s: Settings, body: { name: string; url: string; token?: string }) =>

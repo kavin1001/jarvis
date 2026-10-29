@@ -68,6 +68,19 @@ Lets Jarvis search and read your mail, save drafts (it never sends), read or add
 
 Testing-mode apps get refresh tokens that Google expires after 7 days, so you'll reconnect weekly until the app is verified. That's fine for personal use.
 
+## 6. "Hey Siri, Ask Jarvis" (optional, free)
+
+An iPhone Shortcut can send what you say to Jarvis and speak the answer without opening the app. It works with the web version too, no App Store build needed.
+
+1. In Jarvis, Settings, **Ask Jarvis from Siri**, tap **Set up the Shortcut**. Copy the token it shows (it's listed as "Siri Shortcut" under Devices, so you can revoke it).
+2. In the Shortcuts app, make a new shortcut with three actions:
+   - **Dictate Text**
+   - **Get Contents of URL**: URL `https://<your-backend>/api/ask`, Method **POST**, header `Authorization` = `Bearer <token>`, Request Body **JSON** with a field `text` set to *Dictated Text*. (Add a Boolean field `new_chat` set to true to always start a fresh chat.)
+   - **Speak Text** with *Contents of URL*
+3. Name it **Ask Jarvis**. Say "Hey Siri, Ask Jarvis", or assign it to the Action Button.
+
+Questions less than 10 minutes apart continue the same chat, which shows up in History like any other.
+
 ## Checklist
 
 - [ ] API key + Console spend limit
