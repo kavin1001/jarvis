@@ -234,8 +234,11 @@ describe("runTurn", () => {
               on(event: string, fn: (delta: string) => void) {
                 if (event === "text") fn("The best sushi in Austin is");
               },
-              finalMessage: () =>
-                new Promise((_resolve, reject) => opts.signal?.addEventListener("abort", () => reject(new Error("aborted")))),
+              finalMessage: () => {
+                // Stop once the first words are out, as a user tapping Stop would.
+                setTimeout(() => stop.abort(), 0);
+                return new Promise((_resolve, reject) => opts.signal?.addEventListener("abort", () => reject(new Error("aborted"))));
+              },
             };
           },
         },
@@ -244,7 +247,6 @@ describe("runTurn", () => {
     const id = await memory.createConversation("me");
     const events: ChatEvent[] = [];
     const turn = runTurn({ conversationId: id, text: "sushi?", source: "text", emit: (e) => events.push(e), signal: stop.signal });
-    setTimeout(() => stop.abort(), 20);
     expect(await turn).toBe("The best sushi in Austin is");
     expect(events.at(-1)).toEqual({ type: "done" });
     const stored = await memory.getMessages(id);
