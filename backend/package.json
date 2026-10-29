@@ -7,7 +7,8 @@
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "migrate": "tsx scripts/migrate.ts",
-    "setup-agent": "tsx scripts/setup-agent.ts"
+    "setup-agent": "tsx scripts/setup-agent.ts",
+    "test": "vitest run"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0",
@@ -20,7 +21,8 @@
     "@types/node": "^26.6.6",
     "@types/pg": "^8.23.1",
     "tsx": "^4.23.15",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
   },
   "private": true,
   "type": "module"

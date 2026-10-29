@@ -4,7 +4,12 @@ import { config } from "./config.js";
 import * as memory from "./memory.js";
 import { startTask, taskLaneConfigured } from "./tasks.js";
 
-const client = new Anthropic();
+let client = new Anthropic();
+
+/** Test seam: swap the Claude client for a fake. */
+export function setClient(fake: Anthropic) {
+  client = fake;
+}
 
 export type ChatEvent =
   | { type: "text"; text: string }
