@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FlatList, Pressable, RefreshControl, View } from "react-native";
+import { FlatList, Pressable, RefreshControl, Share, View } from "react-native";
 import { ActionSheet, type SheetAction } from "../ActionSheet";
+import * as Clipboard from "expo-clipboard";
 import { Alert } from "../dialog";
+import { plainText } from "../Markdown";
 import { api, type Conversation, type SearchHit, type Settings } from "../api";
 import { Empty, Header, LinkButton, relativeTime, useShared } from "../ui";
 import { Text, TextInput, useColors, type TextInputHandle } from "../theme";
@@ -70,6 +72,22 @@ export default function HistoryScreen({
   useEffect(() => {
     load();
   }, [load]);
+
+  async function shareTranscript(c: Conversation) {
+    let text: string;
+    try {
+      const messages = await api.messages(settings, c.id);
+      const lines = messages.map((m) => `${m.kind === "task_update" ? "Update" : m.role === "user" ? "You" : "Jarvis"}: ${plainText(m.text)}`);
+      text = `${c.title ?? "Jarvis chat"}\n\n${lines.join("\n\n")}`;
+    } catch (err) {
+      return Alert.alert("Couldn't load the chat", String(err));
+    }
+    // Browsers without a share sheet get the transcript on the clipboard instead.
+    await Share.share({ title: c.title ?? "Jarvis chat", message: text }).catch(async () => {
+      await Clipboard.setStringAsync(text);
+      Alert.alert("Copied", "The transcript is on your clipboard.");
+    });
+  }
 
   function confirmDelete(c: Conversation) {
     Alert.alert("Delete conversation?", c.title ?? "Untitled", [
@@ -143,6 +161,7 @@ export default function HistoryScreen({
               onLongPress={() =>
                 setSheet([
                   { label: "Rename", onPress: () => setRenaming({ id: item.id, title: item.title ?? "" }) },
+                  { label: "Share transcript", onPress: () => shareTranscript(item) },
                   { label: "Delete", danger: true, onPress: () => confirmDelete(item) },
                 ])
               }
@@ -168,7 +187,7 @@ export default function HistoryScreen({
                   {item.title || "Untitled"}
                 </Text>
               )}
-              <Text style={styles.rowMeta}>{relativeTime(item.updated_at)} · hold to rename or delete</Text>
+              <Text style={styles.rowMeta}>{relativeTime(item.updated_at)} · hold for more</Text>
             </Pressable>
           )}
         />

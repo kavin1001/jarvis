@@ -250,14 +250,20 @@ export default function ChatScreen({
           >
             <Text style={[styles.pillText, handsFree && styles.pillTextOn]}>Hands-free</Text>
           </Pressable>
-          <Pressable onPress={() => onConversation(undefined)}>
+          <Pressable onPress={() => onConversation(undefined)} accessibilityRole="button">
             <Text style={styles.link}>New chat</Text>
           </Pressable>
         </View>
       </View>
 
       {approvals.map((a) => (
-        <Pressable key={a.id} style={styles.approval} onPress={() => askApproval(settings, a.id, a.summary, refresh)}>
+        <Pressable
+          key={a.id}
+          style={styles.approval}
+          onPress={() => askApproval(settings, a.id, a.summary, refresh)}
+          accessibilityRole="button"
+          accessibilityHint="Approve or deny"
+        >
           <Text style={styles.approvalText}>Needs your OK: {a.summary}</Text>
         </Pressable>
       ))}
@@ -286,7 +292,7 @@ export default function ChatScreen({
             ) : null}
             <Text style={styles.emptyTitle}>How can I help?</Text>
             {SUGGESTIONS.map((s) => (
-              <Pressable key={s} style={styles.suggestion} onPress={() => send(s, "text")} disabled={busy}>
+              <Pressable key={s} style={styles.suggestion} onPress={() => send(s, "text")} disabled={busy} accessibilityRole="button">
                 <Text style={styles.suggestionText}>{s}</Text>
               </Pressable>
             ))}
@@ -300,6 +306,9 @@ export default function ChatScreen({
               setSheet(messageActions(item));
             }}
             accessibilityHint="Hold for copy, read aloud and share"
+            accessibilityLabel={`${item.kind === "task_update" ? "Update" : item.role === "user" ? "You" : "Jarvis"}: ${item.role === "assistant" ? plainText(item.text) : item.text}`}
+            accessibilityActions={item.text ? [{ name: "longpress", label: "More actions" }] : []}
+            onAccessibilityAction={(e) => e.nativeEvent.actionName === "longpress" && setSheet(messageActions(item))}
             style={[
               styles.bubble,
               item.role === "user" ? styles.user : styles.assistant,
@@ -326,7 +335,13 @@ export default function ChatScreen({
       {docs.length > 0 && (
         <View style={styles.photos}>
           {docs.map((d, i) => (
-            <Pressable key={`${d.name}-${i}`} style={styles.docChip} onPress={() => setDocs((all) => all.filter((_, j) => j !== i))}>
+            <Pressable
+              key={`${d.name}-${i}`}
+              style={styles.docChip}
+              onPress={() => setDocs((all) => all.filter((_, j) => j !== i))}
+              accessibilityRole="button"
+              accessibilityLabel={`Remove ${d.name}`}
+            >
               <Text numberOfLines={1}>📄 {d.name} ✕</Text>
             </Pressable>
           ))}
@@ -336,7 +351,12 @@ export default function ChatScreen({
       {photos.length > 0 && (
         <View style={styles.photos}>
           {photos.map((p, i) => (
-            <Pressable key={p.uri} onPress={() => setPhotos((all) => all.filter((_, j) => j !== i))}>
+            <Pressable
+              key={p.uri}
+              onPress={() => setPhotos((all) => all.filter((_, j) => j !== i))}
+              accessibilityRole="button"
+              accessibilityLabel={`Remove photo ${i + 1}`}
+            >
               <Image source={{ uri: p.uri }} style={styles.thumb} />
             </Pressable>
           ))}
@@ -377,7 +397,7 @@ export default function ChatScreen({
             <Text style={styles.buttonText}>Stop</Text>
           </Pressable>
         ) : draft || photos.length || docs.length ? (
-          <Pressable style={styles.button} onPress={() => send(draft, "text")} disabled={busy}>
+          <Pressable style={styles.button} onPress={() => send(draft, "text")} disabled={busy} accessibilityRole="button" accessibilityLabel="Send">
             <Text style={styles.buttonText}>Send</Text>
           </Pressable>
         ) : (
