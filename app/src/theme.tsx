@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useState, type ComponentRef, type ReactNode, type Ref } from "react";
 import {
   Text as RNText,
   TextInput as RNTextInput,
@@ -91,7 +91,9 @@ export function Text(props: TextProps) {
   return <RNText {...props} style={[{ color: colors.text }, props.style]} />;
 }
 
-export function TextInput(props: TextInputProps) {
+export type TextInputHandle = ComponentRef<typeof RNTextInput>;
+
+export function TextInput(props: TextInputProps & { ref?: Ref<TextInputHandle> }) {
   const colors = useColors();
   return <RNTextInput placeholderTextColor={colors.muted} {...props} style={[{ color: colors.text }, props.style]} />;
 }

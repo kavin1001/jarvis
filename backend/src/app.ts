@@ -186,6 +186,16 @@ app.get("/api/conversations/:id/messages", async (c) => {
   );
 });
 
+const RenameBody = z.object({ title: z.string().trim().min(1).max(80) });
+app.patch("/api/conversations/:id", async (c) => {
+  const id = c.req.param("id");
+  const body = RenameBody.safeParse(await c.req.json());
+  if (!body.success) return c.json({ error: body.error.message }, 400);
+  if (!(await memory.conversationBelongsTo(id, config.userId))) return c.json({ error: "Not found" }, 404);
+  await memory.setTitle(id, body.data.title);
+  return c.json({ id, title: body.data.title });
+});
+
 app.delete("/api/conversations/:id", async (c) =>
   c.json({ deleted: await memory.deleteConversation(c.req.param("id"), config.userId) }),
 );

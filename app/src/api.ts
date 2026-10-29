@@ -214,6 +214,8 @@ export const api = {
   disconnectGoogle: (s: Settings) => request(s, "/api/connectors/google", { method: "DELETE" }),
   conversations: (s: Settings) => request<Conversation[]>(s, "/api/conversations"),
   deleteConversation: (s: Settings, id: string) => request(s, `/api/conversations/${id}`, { method: "DELETE" }),
+  renameConversation: (s: Settings, id: string, title: string) =>
+    request(s, `/api/conversations/${id}`, { method: "PATCH", body: { title } }),
   usage: (s: Settings) => request<Usage>(s, "/api/usage"),
   reminders: (s: Settings) => request<Reminder[]>(s, "/api/reminders"),
   cancelReminder: (s: Settings, id: string) => request(s, `/api/reminders/${id}`, { method: "DELETE" }),

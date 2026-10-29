@@ -57,6 +57,20 @@ describe("facts and conversations", () => {
   });
 });
 
+describe("renaming a conversation", () => {
+  const json = { ...auth, "Content-Type": "application/json" };
+  it("sets the title, rejects an empty one, and 404s for unknown ids", async () => {
+    const { createConversation, listConversations } = await import("../src/memory.js");
+    const id = await createConversation("me");
+    const rename = (cid: string, title: string) =>
+      app.request(`/api/conversations/${cid}`, { method: "PATCH", headers: json, body: JSON.stringify({ title }) });
+    expect(await (await rename(id, "  Trip to Lisbon ")).json()).toEqual({ id, title: "Trip to Lisbon" });
+    expect((await listConversations("me"))[0].title).toBe("Trip to Lisbon");
+    expect((await rename(id, "   ")).status).toBe(400);
+    expect((await rename("00000000-0000-0000-0000-000000000000", "x")).status).toBe(404);
+  });
+});
+
 describe("MCP servers API", () => {
   const json = { ...auth, "Content-Type": "application/json" };
   it("adds, lists without the token, toggles and deletes", async () => {

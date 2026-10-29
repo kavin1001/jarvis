@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
-import { FlatList, Pressable, RefreshControl } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { FlatList, Pressable, RefreshControl, View } from "react-native";
+import { ActionSheet, type SheetAction } from "../ActionSheet";
 import { Alert } from "../dialog";
 import { api, type Conversation, type SearchHit, type Settings } from "../api";
 import { Empty, Header, LinkButton, relativeTime, useShared } from "../ui";
-import { Text, TextInput, useColors } from "../theme";
+import { Text, TextInput, useColors, type TextInputHandle } from "../theme";
 
 export default function HistoryScreen({
   settings,
@@ -20,6 +21,28 @@ export default function HistoryScreen({
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState("");
   const [hits, setHits] = useState<SearchHit[] | null>(null);
+  const [sheet, setSheet] = useState<SheetAction[] | null>(null);
+  const [renaming, setRenaming] = useState<{ id: string; title: string } | null>(null);
+  const renameBox = useRef<TextInputHandle>(null);
+  const renamingId = renaming?.id;
+  useEffect(() => {
+    // Focus once the action sheet has finished closing, or it takes the focus back.
+    if (!renamingId) return;
+    const timer = setTimeout(() => renameBox.current?.focus(), 350);
+    return () => clearTimeout(timer);
+  }, [renamingId]);
+
+  async function saveTitle() {
+    const r = renaming;
+    setRenaming(null);
+    if (!r?.title.trim()) return;
+    try {
+      await api.renameConversation(settings, r.id, r.title.trim());
+      load();
+    } catch (err) {
+      Alert.alert("Couldn't rename", String(err));
+    }
+  }
 
   // Debounced search; an empty box shows the conversation list again.
   useEffect(() => {
@@ -110,18 +133,47 @@ export default function HistoryScreen({
         <FlatList
           data={items}
           keyExtractor={(c) => c.id}
+          extraData={renaming}
           refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
           ListEmptyComponent={loading ? undefined : <Empty text="No conversations yet." />}
           renderItem={({ item }) => (
-            <Pressable style={styles.row} onPress={() => onOpen(item.id)} onLongPress={() => confirmDelete(item)}>
-              <Text style={[styles.rowTitle, item.id === current && { fontWeight: "700" }]} numberOfLines={1}>
-                {item.title || "Untitled"}
-              </Text>
-              <Text style={styles.rowMeta}>{relativeTime(item.updated_at)} · hold to delete</Text>
+            <Pressable
+              style={styles.row}
+              onPress={() => onOpen(item.id)}
+              onLongPress={() =>
+                setSheet([
+                  { label: "Rename", onPress: () => setRenaming({ id: item.id, title: item.title ?? "" }) },
+                  { label: "Delete", danger: true, onPress: () => confirmDelete(item) },
+                ])
+              }
+            >
+              {renaming?.id === item.id ? (
+                // No save on blur: the box can lose focus while the action sheet closes.
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                  <TextInput
+                    ref={renameBox}
+                    style={[styles.rowTitle, styles.input, { flex: 1 }]}
+                    value={renaming.title}
+                    onChangeText={(title) => setRenaming({ id: item.id, title })}
+                    onSubmitEditing={saveTitle}
+                    selectTextOnFocus
+                    returnKeyType="done"
+                    maxLength={80}
+                  />
+                  <LinkButton label="Save" onPress={saveTitle} />
+                  <LinkButton label="Cancel" onPress={() => setRenaming(null)} />
+                </View>
+              ) : (
+                <Text style={[styles.rowTitle, item.id === current && { fontWeight: "700" }]} numberOfLines={1}>
+                  {item.title || "Untitled"}
+                </Text>
+              )}
+              <Text style={styles.rowMeta}>{relativeTime(item.updated_at)} · hold to rename or delete</Text>
             </Pressable>
           )}
         />
       )}
+      <ActionSheet actions={sheet} onClose={() => setSheet(null)} />
     </>
   );
 }

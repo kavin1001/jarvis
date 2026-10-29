@@ -5,6 +5,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
+  Share,
   StyleSheet,
   View,
 } from "react-native";
@@ -13,7 +14,8 @@ import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import type { Command } from "../deepLink";
 import { approximateLocation } from "../location";
-import { Markdown } from "../Markdown";
+import { ActionSheet, type SheetAction } from "../ActionSheet";
+import { Markdown, plainText } from "../Markdown";
 import * as Speech from "expo-speech";
 import type { Doc } from "../documents";
 import { chooseAttachments, type Photo } from "../photos";
@@ -52,6 +54,7 @@ export default function ChatScreen({
   const [busy, setBusy] = useState(false);
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const list = useRef<FlatList<ChatMessage>>(null);
+  const [sheet, setSheet] = useState<SheetAction[] | null>(null);
   const inFlight = useRef<AbortController | null>(null);
   // Hands-free: after Jarvis finishes speaking, listen again until silence or "stop".
   const [handsFree, setHandsFreeState] = useState(false);
@@ -131,6 +134,40 @@ export default function ChatScreen({
     () => setHandsFree(false),
   );
 
+  function messageActions(item: ChatMessage): SheetAction[] {
+    const text = item.role === "assistant" ? plainText(item.text) : item.text;
+    const actions: SheetAction[] = [
+      {
+        label: "Copy",
+        onPress: () => {
+          Clipboard.setStringAsync(item.text.trim());
+          if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        },
+      },
+    ];
+    if (item.role === "assistant") {
+      actions.push({
+        label: "Read aloud",
+        onPress: () => {
+          Speech.stop();
+          const speaker = createSpeaker();
+          speaker.push(text);
+          speaker.flush();
+        },
+      });
+    }
+    actions.push({
+      label: "Share",
+      onPress: () => Share.share({ message: text }).catch(() => Clipboard.setStringAsync(text)),
+    });
+    if (item.role === "user" && item.kind === "turn") {
+      // Attachments aren't kept on the phone, so only the words are sent again.
+      const words = item.text.replace(/^(📄 .*\n)+/, "").replace(/^📷 /, "");
+      if (words.trim()) actions.push({ label: "Send again", onPress: () => send(words, "text") });
+    }
+    return actions;
+  }
+
   // Each command runs once, after the screen is ready.
   const handled = useRef(0);
   useEffect(() => {
@@ -208,10 +245,11 @@ export default function ChatScreen({
         renderItem={({ item }) => (
           <Pressable
             onLongPress={() => {
-              Clipboard.setStringAsync(item.text);
-              if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              if (!item.text) return;
+              if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              setSheet(messageActions(item));
             }}
-            accessibilityHint="Hold to copy"
+            accessibilityHint="Hold for copy, read aloud and share"
             style={[
               styles.bubble,
               item.role === "user" ? styles.user : styles.assistant,
@@ -229,6 +267,8 @@ export default function ChatScreen({
           </Pressable>
         )}
       />
+
+      <ActionSheet actions={sheet} onClose={() => setSheet(null)} />
 
       {voice.listening && <Text style={styles.partial}>{voice.partial || "Listening…"}</Text>}
 

@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Hold a message for **Copy**, **Read aloud** and **Share**. Your own messages also get **Send again**. Hold a chat in History to **Rename** or **Delete** it. `PATCH /api/conversations/:id` sets a title.
 - Jarvis has an app icon and a launch screen. Added to an iPhone home screen, the web version opens full screen with that icon. On Android it installs from Chrome and shows up in the share sheet: sharing a link or text to Jarvis puts it in the message box. The web app also takes `/ask?text=`, `/listen` and `/new` links, like the `jarvis://` ones.
 - Background tasks can use your connected apps (MCP servers) too. Each tool call asks for your OK first, and a server's token is kept in a vault that exists only while the task runs.
 - Signed-in devices: a browser sign-in is listed by browser and system, such as "Chrome on Mac" or "Safari on iPhone", instead of always "Safari".

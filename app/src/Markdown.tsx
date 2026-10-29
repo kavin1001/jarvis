@@ -12,6 +12,17 @@ export function Markdown({ text, style }: { text: string; style?: TextStyle }) {
   return <View style={{ gap: 6 }}>{blocks(text).map((b, i) => renderBlock(b, i, styles, style))}</View>;
 }
 
+/** The words of a markdown reply without its markup, for reading aloud or sharing as plain text. */
+export function plainText(text: string) {
+  return text
+    .replace(/```[^\n]*\n?/g, "")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^\s*[-*•]\s+/gm, "")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, "$1")
+    .replace(/\*\*([^*]+)\*\*|`([^`]+)`|(?<![\w*])\*([^*\s][^*]*?)\*(?!\w)|(?<!\w)_([^_\s][^_]*?)_(?!\w)/g, "$1$2$3$4")
+    .trim();
+}
+
 type Block =
   | { kind: "p"; text: string }
   | { kind: "h"; text: string }
