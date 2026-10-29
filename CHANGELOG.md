@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Offline: when the server can't be reached, a banner says so, with **Retry**, and clears by itself once the server answers again. A message that never reached the server goes back into the message box, photos and files included, so you can send it again.
 - While Jarvis works, a line under the chat says what it's doing: "Searching the web…", "Checking your calendar…", "Using notion…". Tapping the mic while Jarvis is speaking now stops the speech, so you can talk over it.
 - A new chat shows what's coming up: reminders in the next 24 hours, and background tasks that are working or waiting for your OK.
 - Reminder notifications have **Snooze 10 min** and **Snooze 1 hour** buttons. A snooze makes a one-off copy, so a daily reminder keeps its usual time. `POST /api/reminders/:id/snooze` takes `{ minutes }`.

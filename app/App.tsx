@@ -3,6 +3,7 @@ import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Button, Platform, SafeAreaView, StyleSheet, View } from "react-native";
 import { api, loadSettings, saveSettings, signIn, upgradeToDeviceToken, type Settings } from "./src/api";
+import { ConnectionProvider, OfflineBanner } from "./src/connection";
 import { useDeepLinkCommand } from "./src/deepLink";
 import ChatScreen from "./src/screens/ChatScreen";
 import HistoryScreen from "./src/screens/HistoryScreen";
@@ -85,28 +86,31 @@ function Main({ settings, onSignOut }: { settings: Settings; onSignOut: () => vo
   }
 
   return (
-    <View style={styles.root}>
+    <ConnectionProvider settings={settings}>
       <View style={styles.root}>
-        {tab === "chat" && (
-          <ChatScreen
-            settings={settings}
-            conversationId={conversationId}
-            onConversation={(id) => {
-              setConversationId(id);
-              if (id) SecureStore.setItemAsync(CONVERSATION_KEY, id);
-              else SecureStore.deleteItemAsync(CONVERSATION_KEY);
-            }}
-            refreshKey={refreshKey}
-            command={command}
-          />
-        )}
-        {tab === "history" && <HistoryScreen settings={settings} current={conversationId} onOpen={openConversation} />}
-        {tab === "tasks" && <TasksScreen settings={settings} refreshKey={refreshKey} />}
-        {tab === "memory" && <MemoryScreen settings={settings} />}
-        {tab === "settings" && <SettingsScreen settings={settings} onSignOut={onSignOut} onErased={() => openConversation(undefined)} />}
+        <OfflineBanner />
+        <View style={styles.root}>
+          {tab === "chat" && (
+            <ChatScreen
+              settings={settings}
+              conversationId={conversationId}
+              onConversation={(id) => {
+                setConversationId(id);
+                if (id) SecureStore.setItemAsync(CONVERSATION_KEY, id);
+                else SecureStore.deleteItemAsync(CONVERSATION_KEY);
+              }}
+              refreshKey={refreshKey}
+              command={command}
+            />
+          )}
+          {tab === "history" && <HistoryScreen settings={settings} current={conversationId} onOpen={openConversation} />}
+          {tab === "tasks" && <TasksScreen settings={settings} refreshKey={refreshKey} />}
+          {tab === "memory" && <MemoryScreen settings={settings} />}
+          {tab === "settings" && <SettingsScreen settings={settings} onSignOut={onSignOut} onErased={() => openConversation(undefined)} />}
+        </View>
+        <TabBar tab={tab} onChange={setTab} badges={{ tasks: pendingApprovals }} />
       </View>
-      <TabBar tab={tab} onChange={setTab} badges={{ tasks: pendingApprovals }} />
-    </View>
+    </ConnectionProvider>
   );
 }
 

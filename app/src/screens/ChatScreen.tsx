@@ -13,6 +13,7 @@ import { api, streamChat, type ChatMessage, type PendingApproval, type Reminder,
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import type { Command } from "../deepLink";
+import { useConnection } from "../connection";
 import { approximateLocation } from "../location";
 import { ActionSheet, type SheetAction } from "../ActionSheet";
 import { Markdown, plainText } from "../Markdown";
@@ -60,6 +61,7 @@ export default function ChatScreen({
   const [docs, setDocs] = useState<Doc[]>([]);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const connection = useConnection();
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const list = useRef<FlatList<ChatMessage>>(null);
   const [sheet, setSheet] = useState<SheetAction[] | null>(null);
@@ -114,10 +116,12 @@ export default function ChatScreen({
 
     const controller = new AbortController();
     inFlight.current = controller;
+    let heard = false;
     try {
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const location = await approximateLocation();
       await streamChat(settings, { conversationId, text, source, timezone, images, documents, location }, (e) => {
+        heard = true;
         switch (e.type) {
           case "conversation":
             if (e.conversationId !== conversationId) onConversation(e.conversationId);
@@ -140,7 +144,13 @@ export default function ChatScreen({
       }, controller.signal);
     } catch (err) {
       if (controller.signal.aborted) appendReply(" …(stopped)");
-      else appendReply(`\n\nCould not reach Jarvis: ${String(err)}`);
+      else if (!heard && !(await connection.check())) {
+        // Never reached the server: take the message back so it can be sent again.
+        setMessages((m) => m.slice(0, -2));
+        setDraft(text);
+        setPhotos(photos);
+        setDocs(documents);
+      } else appendReply(`\n\nCould not reach Jarvis: ${String(err)}`);
     } finally {
       inFlight.current = null;
       setStatus(null);
