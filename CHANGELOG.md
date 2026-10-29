@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- "Call Mom", "text Sam I'm running late", "email Ana": Jarvis answers with a tappable 📞, 💬 or ✉️ link that opens your phone's dialer, Messages or Mail with everything filled in. Nothing is dialed or sent until you confirm on the phone. Jarvis only uses numbers and addresses you gave it or it saved.
 - Tables in replies (flights, prices, comparisons) show as real tables with a header row, and scroll sideways when they're wide. Read aloud, a table is spoken one row at a time, without the pipes and dashes.
 - Web app on a computer: **Enter** sends and **Shift+Enter** starts a new line. The cursor goes back to the message box once Jarvis has replied.
 - Reply from the notification: on a "Jarvis replied", finished-task or routine notification, press and hold (or swipe down) and choose **Reply**. What you type is sent in that chat. A message sent from a link or a notification while the chat is still loading no longer disappears.

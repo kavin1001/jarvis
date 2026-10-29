@@ -21,7 +21,7 @@ export function plainText(text: string) {
     .replace(/^\s*\|(.*)\|\s*$/gm, (_, row: string) => row.split("|").map((c) => c.trim()).join(", "))
     .replace(/^#{1,6}\s+/gm, "")
     .replace(/^\s*[-*•]\s+/gm, "")
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, "$1")
+    .replace(/\[([^\]]+)\]\(((?:https?:\/\/|tel:|sms:|mailto:)[^)\s]+)\)/g, "$1")
     .replace(/\*\*([^*]+)\*\*|`([^`]+)`|(?<![\w*])\*([^*\s][^*]*?)\*(?!\w)|(?<!\w)_([^_\s][^_]*?)_(?!\w)/g, "$1$2$3$4")
     .trim();
 }
@@ -145,7 +145,8 @@ function renderBlock(b: Block, key: number, styles: Styles, style?: TextStyle) {
   }
 }
 
-const INLINE = /\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)|(?<![\w*])\*([^*\s][^*]*?)\*(?!\w)|(?<!\w)_([^_\s][^_]*?)_(?!\w)/g;
+// Links: web pages, plus tel:, sms: and mailto: so Jarvis can offer "Call Mom" or "Text Sam".
+const INLINE = /\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\(((?:https?:\/\/|tel:|sms:|mailto:)[^)\s]+)\)|(?<![\w*])\*([^*\s][^*]*?)\*(?!\w)|(?<!\w)_([^_\s][^_]*?)_(?!\w)/g;
 
 function inline(text: string, styles: Styles): ReactNode[] {
   const out: ReactNode[] = [];
@@ -158,7 +159,8 @@ function inline(text: string, styles: Styles): ReactNode[] {
     else if (code !== undefined) out.push(<Text key={i} style={styles.code}>{code}</Text>);
     else if (label !== undefined)
       out.push(
-        <Text key={i} style={styles.link} onPress={() => Linking.openURL(url)}>
+        <Text key={i} style={styles.link} onPress={() => openLink(url)} accessibilityRole="link">
+          {linkIcon(url)}
           {label}
         </Text>,
       );
@@ -167,6 +169,15 @@ function inline(text: string, styles: Styles): ReactNode[] {
   }
   if (last < text.length) out.push(<Fragment key="end">{text.slice(last)}</Fragment>);
   return out;
+}
+
+const linkIcon = (url: string) =>
+  url.startsWith("tel:") ? "📞 " : url.startsWith("sms:") ? "💬 " : url.startsWith("mailto:") ? "✉️ " : "";
+
+function openLink(url: string) {
+  // iOS reads a text's body after "&", Android after "?".
+  if (Platform.OS === "ios" && url.startsWith("sms:")) url = url.replace("?body=", "&body=");
+  Linking.openURL(url).catch(() => {});
 }
 
 const mono = Platform.select({ ios: "Menlo", default: "monospace" });
