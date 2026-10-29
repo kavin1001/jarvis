@@ -11,7 +11,11 @@ import {
   View,
 } from "react-native";
 import { api, streamChat, type ChatMessage, type PendingApproval, type Settings } from "../api";
+import * as Clipboard from "expo-clipboard";
+import * as Haptics from "expo-haptics";
 import type { Command } from "../deepLink";
+import { approximateLocation } from "../location";
+import { Markdown } from "../Markdown";
 import { choosePhotos, type Photo } from "../photos";
 import { askApproval } from "../usePush";
 import { createSpeaker, isStopPhrase, useVoice } from "../useVoice";
@@ -74,7 +78,8 @@ export default function ChatScreen({
 
     try {
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-      await streamChat(settings, { conversationId, text, source, timezone, images }, (e) => {
+      const location = await approximateLocation();
+      await streamChat(settings, { conversationId, text, source, timezone, images, location }, (e) => {
         switch (e.type) {
           case "conversation":
             if (e.conversationId !== conversationId) onConversation(e.conversationId);
@@ -128,6 +133,7 @@ export default function ChatScreen({
       voice.stop();
     } else {
       pressedAt.current = Date.now();
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       voice.start();
     }
   };
@@ -170,18 +176,27 @@ export default function ChatScreen({
         contentContainerStyle={styles.list}
         onContentSizeChange={() => list.current?.scrollToEnd({ animated: true })}
         renderItem={({ item }) => (
-          <View
+          <Pressable
+            onLongPress={() => {
+              Clipboard.setStringAsync(item.text);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            }}
+            accessibilityHint="Hold to copy"
             style={[
               styles.bubble,
               item.role === "user" ? styles.user : styles.assistant,
               item.kind === "task_update" && styles.taskUpdate,
             ]}
           >
-            <Text style={item.role === "user" ? styles.userText : undefined}>
-              {item.source === "voice" ? "🎙 " : ""}
-              {item.text || "…"}
-            </Text>
-          </View>
+            {item.role === "assistant" && item.text ? (
+              <Markdown text={item.text} />
+            ) : (
+              <Text style={item.role === "user" ? styles.userText : undefined}>
+                {item.source === "voice" ? "🎙 " : ""}
+                {item.text || "…"}
+              </Text>
+            )}
+          </Pressable>
         )}
       />
 

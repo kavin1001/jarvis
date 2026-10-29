@@ -1,7 +1,8 @@
 import Constants from "expo-constants";
 import { useCallback, useEffect, useState } from "react";
-import { Alert, AppState, Linking, RefreshControl, ScrollView, Text, View } from "react-native";
+import { Alert, AppState, Linking, RefreshControl, ScrollView, Switch, Text, View } from "react-native";
 import { api, clearSettings, type Connectors, type Settings, type Usage } from "../api";
+import { locationSharingEnabled, setLocationSharing } from "../location";
 import { Devices } from "./Devices";
 import { McpServers } from "./McpServers";
 import { colors, Header, LinkButton, styles } from "../ui";
@@ -12,6 +13,10 @@ export default function SettingsScreen({ settings, onSignOut }: { settings: Sett
   const [usage, setUsage] = useState<Usage | null>(null);
   const [connectors, setConnectors] = useState<Connectors | null>(null);
   const [loading, setLoading] = useState(false);
+  const [shareLocation, setShareLocation] = useState(false);
+  useEffect(() => {
+    locationSharingEnabled().then(setShareLocation);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -91,6 +96,21 @@ export default function SettingsScreen({ settings, onSignOut }: { settings: Sett
           </View>
         </View>
       ) : null}
+
+      <View style={[styles.row, { flexDirection: "row", alignItems: "center" }]}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.rowTitle}>Share approximate location</Text>
+          <Text style={styles.rowMeta}>For "near me" questions. Rounded to about 1 km and sent only with your messages.</Text>
+        </View>
+        <Switch
+          value={shareLocation}
+          onValueChange={async (on) => {
+            const now = await setLocationSharing(on);
+            setShareLocation(now);
+            if (on && !now) Alert.alert("Location is off", "Allow location for Jarvis in iOS Settings to use this.");
+          }}
+        />
+      </View>
 
       <McpServers settings={settings} />
 

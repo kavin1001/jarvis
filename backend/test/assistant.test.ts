@@ -91,6 +91,20 @@ describe("runTurn", () => {
     expect(texts.slice(2)).toEqual(["(Sent by voice.)", "thanks"]);
   });
 
+  it("adds the approximate location to the user turn", async () => {
+    const requests = fakeClient([{ content: [{ type: "text", text: "ok", citations: null }], stop_reason: "end_turn" }]);
+    const id = await memory.createConversation("me");
+    await runTurn({
+      conversationId: id,
+      text: "coffee near me?",
+      source: "text",
+      emit: () => {},
+      location: { latitude: 30.2672, longitude: -97.7431, label: "Austin, Texas\n(US)" },
+    });
+    const texts = (requests[0].messages[0].content as { text: string }[]).map((b) => b.text);
+    expect(texts).toContain("(User's approximate location: Austin, Texas US (30.27, -97.74).)");
+  });
+
   it("schedules a reminder through the tool", async () => {
     fakeClient([
       {

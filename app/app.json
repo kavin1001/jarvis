@@ -28,7 +28,13 @@
         }
       ],
       "expo-notifications",
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Jarvis uses your approximate location for questions like \"what's open near me\", only when you turn it on in Settings."
+        }
+      ]
     ],
     "scheme": "jarvis"
   }

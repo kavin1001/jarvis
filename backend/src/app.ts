@@ -72,6 +72,13 @@ const ChatBody = z.object({
     )
     .max(4)
     .optional(),
+  location: z
+    .object({
+      latitude: z.number().min(-90).max(90),
+      longitude: z.number().min(-180).max(180),
+      label: z.string().max(120).optional(),
+    })
+    .optional(),
 });
 
 // Streams the reply as server-sent events: conversation, text, task_started, done, error.
@@ -96,6 +103,7 @@ app.post("/api/chat", async (c) => {
         source: body.data.source,
         timezone: body.data.timezone,
         images: body.data.images,
+        location: body.data.location,
         emit: (e) => void send(e),
       });
     } catch (err) {

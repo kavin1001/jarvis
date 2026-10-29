@@ -30,6 +30,12 @@ async function uploadImage(image: ImageInput): Promise<Anthropic.Beta.BetaImageB
   return { type: "image", source: { type: "file", file_id: file.id } };
 }
 
+export interface ApproxLocation {
+  latitude: number;
+  longitude: number;
+  label?: string;
+}
+
 export type ChatEvent =
   | { type: "text"; text: string }
   | { type: "task_started"; taskId: string; summary: string }
@@ -42,7 +48,7 @@ const SYSTEM_PROMPT = `You are Jarvis, a personal assistant on the user's phone.
 Latency-sensitive; begin your visible answer immediately.
 
 How to work:
-- Answer directly when you can. Use web_search and web_fetch for anything current or factual you are unsure of.
+- Answer directly when you can. When a message includes the user's approximate location, use it for "near me", weather and directions questions; don't mention it otherwise. Use web_search and web_fetch for anything current or factual you are unsure of.
 - When a request needs real work on the web — logging into an account, filling forms, booking, comparing many pages, scraping, or anything that takes more than a minute — call start_task with complete, self-contained instructions, then tell the user in one short sentence that you are on it and they will get a notification.
 - Never ask the user for passwords or card numbers in chat. Logins live in a secure vault the background agent can use.
 - When the user refers to an earlier conversation that isn't in this chat, look it up with search_past_chats before saying you don't remember.
@@ -266,6 +272,7 @@ export async function runTurn(opts: {
   emit: (e: ChatEvent) => void;
   timezone?: string;
   images?: ImageInput[];
+  location?: ApproxLocation;
 }): Promise<string> {
   const { conversationId, text, source, emit } = opts;
   if (opts.timezone) await reminders.setTimezone(config.userId, opts.timezone);
@@ -283,6 +290,12 @@ export async function runTurn(opts: {
   }
   // The time rides in the user turn, not the system prompt, so the cached prefix stays stable.
   userContent.push({ type: "text", text: `(User's local time: ${describeNow(timezone)}, ${timezone}.)` });
+  if (opts.location) {
+    const { latitude, longitude, label } = opts.location;
+    // Labels come from the phone's reverse geocoder; keep them on one short line.
+    const place = label ? `${label.replace(/[\s()]+/g, " ").trim().slice(0, 120)} ` : "";
+    userContent.push({ type: "text", text: `(User's approximate location: ${place}(${latitude.toFixed(2)}, ${longitude.toFixed(2)}).)` });
+  }
   if (source === "voice") userContent.push({ type: "text", text: "(Sent by voice.)" });
   for (const image of opts.images ?? []) userContent.push(await uploadImage(image));
   userContent.push({ type: "text", text: source === "scheduled" ? `[Scheduled job] ${text}` : text });

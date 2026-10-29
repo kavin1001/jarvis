@@ -4,6 +4,9 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Location (opt-in): turn on **Share approximate location** in Settings and Jarvis can answer "what's open near me" and "will it rain here". Coordinates are rounded to about 1 km, sent only with your messages, and never delay a message by more than about 3 seconds.
+- Formatting: Jarvis's replies render bold, italics, code, lists, headings and tappable links.
+- Hold any message to copy it. The mic gives a light haptic tap when it starts.
 - Recall across chats: Jarvis has a `search_past_chats` tool, so "what was that restaurant you found last week?" works even in a new conversation. History has a search box that highlights matches and opens the conversation they came from. Search is Postgres full-text with an index.
 - Per-device sign-in: the app swaps `JARVIS_APP_TOKEN` for its own device token at setup, and existing installs upgrade on next launch. **Pair another device** in Settings shows a one-time 8-character code that's valid for 10 minutes, and **Signed-in devices** lists each one so you can sign it out. Pairing is rate limited, and "Disconnect this phone" now revokes its token too.
 - Hands-free conversations: tap **Hands-free** in chat, or open `jarvis://listen?handsfree=1`. After each spoken answer Jarvis listens again. The conversation ends when you go quiet or say "stop", "that's all" or "thanks Jarvis".
