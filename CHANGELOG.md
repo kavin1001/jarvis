@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- More kinds of events: "add gym every Monday and Wednesday at 7 until Christmas", "put Mom's visit on the calendar, Friday to Sunday", "set up a call with a Meet link". Jarvis can now add repeating events, all-day events and events with a Google Meet link. Still no invitations go out. Uses the calendar permission you already gave.
 - Undo in Settings, **What Jarvis did on your accounts**: put archived or marked email back, delete an event Jarvis added, move an event back to where it was, or end a snooze early, for up to a week after Jarvis did it. Undone entries are crossed out.
 - App updates without reinstalling: once `npx eas update:configure` has been run (see `docs/DEPLOY.md`), fixes and features that don't need new native code reach your phone with `npx eas update`. The app downloads them at launch, and Settings shows the version with a **Check for updates** button. Needs one more EAS build to start.
 - Snooze email: "snooze this until Monday morning", "bring the Acme thread back after my trip". Jarvis archives the email now and puts it back in your inbox, unread, at the time you said, with a notification. Snoozed email shows in Tasks, where **Back to the inbox now** brings it back early. Uses the archive permission you already gave.

@@ -345,14 +345,28 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
   {
     name: "calendar_create_event",
     description:
-      "Add an event to the user's primary calendar. No invitations are sent. Confirm the details with the user first unless they were explicit.",
+      "Add an event to the user's primary calendar: timed or all-day, once or repeating, optionally with a Google Meet link. No invitations are sent. Confirm the details with the user first unless they were explicit.",
     eager_input_streaming: true,
     input_schema: {
       type: "object",
       properties: {
         summary: { type: "string" },
-        start: { type: "string", description: "ISO 8601 with offset" },
-        end: { type: "string", description: "ISO 8601 with offset" },
+        start: { type: "string", description: "ISO 8601 with offset; for an all-day event, YYYY-MM-DD" },
+        end: { type: "string", description: "ISO 8601 with offset; for an all-day event, the last day (YYYY-MM-DD, inclusive)" },
+        all_day: { type: "boolean", description: "Birthdays, trips, days off: dates without times" },
+        repeat: {
+          type: "object",
+          description: "For a repeating event. Leave out for a one-off.",
+          properties: {
+            frequency: { type: "string", enum: ["daily", "weekly", "monthly", "yearly"] },
+            interval: { type: "integer", description: "Every N days/weeks/…; default 1" },
+            days: { type: "array", items: { type: "string", enum: ["MO", "TU", "WE", "TH", "FR", "SA", "SU"] }, description: "Weekly only: which days" },
+            until: { type: "string", description: "Last date, YYYY-MM-DD" },
+            count: { type: "integer", description: "Number of times, instead of until" },
+          },
+          required: ["frequency"],
+        },
+        meet_link: { type: "boolean", description: "Add a Google Meet video link" },
         location: { type: "string" },
         description: { type: "string" },
       },
@@ -454,6 +468,7 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
 ];
 
 const isoDate = z.string().refine((v) => !Number.isNaN(Date.parse(v)), "must be an ISO 8601 date-time");
+const ymd = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "must be YYYY-MM-DD").refine((v) => !Number.isNaN(Date.parse(v)), "must be a real date");
 const hhmm = z.string().regex(/^([01]?\d|2[0-3]):[0-5]\d$/, "must be HH:MM");
 const inputs = {
   contacts_search: z.object({ query: z.string().trim().min(1).max(100) }),
@@ -480,13 +495,32 @@ const inputs = {
     day_end: hhmm.default("18:00"),
     include_weekends: z.boolean().default(false),
   }),
-  calendar_create_event: z.object({
-    summary: z.string().min(1),
-    start: isoDate,
-    end: isoDate,
-    location: z.string().optional(),
-    description: z.string().optional(),
-  }),
+  calendar_create_event: z
+    .object({
+      summary: z.string().min(1),
+      start: z.string(),
+      end: z.string(),
+      all_day: z.boolean().default(false),
+      repeat: z
+        .object({
+          frequency: z.enum(["daily", "weekly", "monthly", "yearly"]),
+          interval: z.number().int().min(1).max(12).default(1),
+          days: z.array(z.enum(["MO", "TU", "WE", "TH", "FR", "SA", "SU"])).min(1).max(7).optional(),
+          until: ymd.optional(),
+          count: z.number().int().min(1).max(366).optional(),
+        })
+        .refine((r) => !(r.until && r.count), "Give until or count, not both")
+        .refine((r) => !r.days || r.frequency === "weekly", "days is for weekly events")
+        .optional(),
+      meet_link: z.boolean().default(false),
+      location: z.string().optional(),
+      description: z.string().optional(),
+    })
+    .superRefine((e, ctx) => {
+      const ok = e.all_day ? ymd.safeParse(e.start).success && ymd.safeParse(e.end).success : isoDate.safeParse(e.start).success && isoDate.safeParse(e.end).success;
+      if (!ok) ctx.addIssue({ code: "custom", message: e.all_day ? "start and end must be YYYY-MM-DD for an all-day event" : "start and end must be ISO 8601 date-times" });
+      else if (e.all_day ? e.end < e.start : Date.parse(e.end) <= Date.parse(e.start)) ctx.addIssue({ code: "custom", message: "The end must be after the start." });
+    }),
   calendar_update_event: z
     .object({
       event_id: z.string().min(1),
@@ -838,6 +872,20 @@ async function driveRead(userId: string, fileId: string): Promise<GoogleToolResu
   return { attachment: { filename: f.name, media_type: type, data: bytes.toString("base64") } };
 }
 
+/** An RFC 5545 rule for Google's `recurrence`, e.g. RRULE:FREQ=WEEKLY;INTERVAL=2;BYDAY=MO,WE;UNTIL=20261231T235959Z. */
+export function rrule(r: { frequency: string; interval: number; days?: string[]; until?: string; count?: number }, allDay: boolean, timeZone = "UTC") {
+  const parts = [`FREQ=${r.frequency.toUpperCase()}`];
+  if (r.interval > 1) parts.push(`INTERVAL=${r.interval}`);
+  if (r.days?.length) parts.push(`BYDAY=${[...new Set(r.days)].join(",")}`);
+  if (r.until) {
+    // A timed series needs UNTIL in UTC: the end of that day where the user is, so an evening occurrence on it is kept.
+    const [y, m, d] = r.until.split("-").map(Number);
+    parts.push(`UNTIL=${allDay ? r.until.replace(/-/g, "") : zonedToUtc(y, m, d, 23, 59, 59, timeZone).toISOString().replace(/[-:]|\.\d{3}/g, "")}`);
+  }
+  if (r.count) parts.push(`COUNT=${r.count}`);
+  return `RRULE:${parts.join(";")}`;
+}
+
 export async function runGoogleTool(userId: string, name: keyof typeof inputs, raw: unknown, timeZone = "UTC"): Promise<GoogleToolResult> {
   const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";
   const CAL = eventsUrl("primary");
@@ -980,17 +1028,26 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
     }
     case "calendar_create_event": {
       const e = inputs.calendar_create_event.parse(raw);
-      const created = await google<{ id: string; htmlLink: string }>(userId, `${CAL}?sendUpdates=none`, {
-        method: "POST",
-        body: {
-          summary: e.summary,
-          location: e.location,
-          description: e.description,
-          start: { dateTime: new Date(e.start).toISOString() },
-          end: { dateTime: new Date(e.end).toISOString() },
+      // Google's all-day end date is exclusive; the user's "until Sunday" includes Sunday.
+      const when = e.all_day
+        ? { start: { date: e.start }, end: { date: new Date(Date.parse(`${e.end}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10) } }
+        : { start: { dateTime: new Date(e.start).toISOString(), timeZone }, end: { dateTime: new Date(e.end).toISOString(), timeZone } };
+      const created = await google<{ id: string; htmlLink: string; hangoutLink?: string }>(
+        userId,
+        `${CAL}?sendUpdates=none${e.meet_link ? "&conferenceDataVersion=1" : ""}`,
+        {
+          method: "POST",
+          body: {
+            summary: e.summary,
+            location: e.location,
+            description: e.description,
+            ...when,
+            ...(e.repeat ? { recurrence: [rrule(e.repeat, e.all_day, timeZone)] } : {}),
+            ...(e.meet_link ? { conferenceData: { createRequest: { requestId: randomBytes(12).toString("hex"), conferenceSolutionKey: { type: "hangoutsMeet" } } } } : {}),
+          },
         },
-      });
-      return `Event created (id ${created.id}): ${created.htmlLink}`;
+      );
+      return `Event created (id ${created.id}): ${created.htmlLink}${created.hangoutLink ? `\nMeet link: ${created.hangoutLink}` : ""}`;
     }
     case "calendar_update_event": {
       const { event_id, start, end, ...rest } = inputs.calendar_update_event.parse(raw);

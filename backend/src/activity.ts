@@ -38,6 +38,12 @@ const when = (v: unknown, timeZone: string) => {
   return new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(t);
 };
 
+// An all-day event's date, as the user wrote it: no time zone shift.
+const day = (v: unknown) => {
+  const t = typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? Date.parse(`${v}T12:00:00Z`) : NaN;
+  return Number.isNaN(t) ? "" : new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" }).format(t);
+};
+
 const ORGANIZE: Record<string, string> = {
   archive: "Archived",
   move_to_inbox: "Moved back to the inbox",
@@ -56,8 +62,12 @@ export function describeAction(name: string, input: Input, timeZone = "UTC"): st
       const n = Array.isArray(input.message_ids) ? input.message_ids.length : 0;
       return `${ORGANIZE[String(input.action)] ?? "Changed"} ${n} email${n === 1 ? "" : "s"}`;
     }
-    case "calendar_create_event":
-      return `Added "${str(input.summary)}" to your calendar${when(input.start, timeZone) ? ` for ${when(input.start, timeZone)}` : ""}`;
+    case "calendar_create_event": {
+      const on = input.all_day ? day(input.start) : when(input.start, timeZone);
+      const freq = (input.repeat as { frequency?: unknown } | undefined)?.frequency;
+      const repeats = typeof freq === "string" && ["daily", "weekly", "monthly", "yearly"].includes(freq) ? `, repeating ${freq}` : "";
+      return `Added "${str(input.summary)}" to your calendar${on ? ` for ${on}` : ""}${repeats}`;
+    }
     case "calendar_update_event":
       return input.start
         ? `Moved ${input.summary ? `"${str(input.summary)}"` : "an event"} to ${when(input.start, timeZone)}`

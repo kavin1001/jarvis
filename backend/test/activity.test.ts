@@ -15,6 +15,9 @@ describe("activity log", () => {
     expect(describeAction("calendar_create_event", { summary: "Dentist", start: "2026-10-30T14:00:00Z" }, "America/New_York")).toBe(
       'Added "Dentist" to your calendar for Fri, Oct 30, 10:00 AM',
     );
+    expect(describeAction("calendar_create_event", { summary: "Trip", start: "2026-11-02", end: "2026-11-05", all_day: true, repeat: { frequency: "yearly" } }, "America/Los_Angeles")).toBe(
+      'Added "Trip" to your calendar for Mon, Nov 2, repeating yearly',
+    );
     expect(describeAction("calendar_update_event", { event_id: "e", start: "2026-10-30T15:00:00Z" }, "UTC")).toBe("Moved an event to Fri, Oct 30, 3:00 PM");
     expect(describeAction("calendar_update_event", { event_id: "e", location: "Room 2" })).toBe("Changed an event");
     expect(describeAction("start_task", { instructions: "Book a table", summary: "Dinner booking" })).toBe("Started a background task: Dinner booking");
