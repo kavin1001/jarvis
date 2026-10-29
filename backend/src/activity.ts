@@ -21,7 +21,8 @@ export type Undo =
   | { tool: "gmail_organize"; message_ids: string[]; action: string }
   | { tool: "calendar_delete_event"; event_id: string }
   | { tool: "calendar_update_event"; event_id: string; start: string; end: string }
-  | { tool: "unsnooze"; snooze_id: string };
+  | { tool: "unsnooze"; snooze_id: string }
+  | { tool: "gmail_delete_draft"; draft_id: string };
 
 const KEEP_DAYS = 90;
 // Undo is offered for a week; after that the mail or event has likely moved on.
@@ -107,6 +108,10 @@ export function undoFor(name: string, input: Input, result: string): Undo | null
       const ids = Array.isArray(input.message_ids) ? input.message_ids.filter((x): x is string => typeof x === "string") : [];
       const action = INVERSE[String(input.action)];
       return ids.length && action ? { tool: "gmail_organize", message_ids: ids, action } : null;
+    }
+    case "gmail_create_draft": {
+      const id = result.match(/^Draft (\S+) saved in Gmail/)?.[1];
+      return id ? { tool: "gmail_delete_draft", draft_id: id } : null;
     }
     case "calendar_create_event": {
       const id = result.match(/^Event created \(id ([^)\s]+)\)/)?.[1];

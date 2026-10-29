@@ -199,6 +199,16 @@ export async function modifyMail(userId: string, ids: string[], add: string[], r
   });
 }
 
+/** Deletes a draft Jarvis saved (undo from Settings). A draft the user already sent or deleted is gone, which Gmail reports as 404. */
+export async function deleteDraft(userId: string, draftId: string) {
+  try {
+    await google(userId, `https://gmail.googleapis.com/gmail/v1/users/me/drafts/${encodeURIComponent(draftId)}`, { method: "DELETE" });
+  } catch (err) {
+    if (/\b404\b/.test((err as Error).message)) throw new Error("That draft isn't in Gmail any more; it may have been sent or deleted.");
+    throw err;
+  }
+}
+
 /** The newest emails matching a Gmail search, with their headers. */
 export async function searchMail(userId: string, q: string, max = 5): Promise<MailHit[]> {
   const GMAIL = "https://gmail.googleapis.com/gmail/v1/users/me";

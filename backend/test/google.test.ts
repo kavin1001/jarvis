@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vites
 import { app } from "../src/app.js";
 import { decrypt, encrypt } from "../src/crypto.js";
 import { query, pool } from "../src/db.js";
-import { freeSlots, googleStatus, nextBirthdays, runGoogleTool, startGoogleAuth, unsubscribeLink } from "../src/google.js";
+import { deleteDraft, freeSlots, googleStatus, nextBirthdays, runGoogleTool, startGoogleAuth, unsubscribeLink } from "../src/google.js";
 import { auth, resetDb } from "./helpers.js";
 
 const SECRET = "test-connector-secret";
@@ -221,6 +221,17 @@ describe("Google tools", () => {
       "Content-Transfer-Encoding: base64",
     ]);
     expect(Buffer.from(encoded, "base64").toString()).toBe("Ça va? Friday works.");
+  });
+
+  it("deletes a draft for undo, and says so when it's already gone", async () => {
+    await connect({ access_token: "at", expires_at: Date.now() + 3600_000 });
+    const calls = mockFetch({
+      "drafts/r-1": () => new Response(null, { status: 204 }),
+      "drafts/r-gone": () => new Response("Not Found", { status: 404 }),
+    });
+    await deleteDraft("me", "r-1");
+    expect(calls[0]).toMatchObject({ url: "https://gmail.googleapis.com/gmail/v1/users/me/drafts/r-1", init: { method: "DELETE" } });
+    await expect(deleteDraft("me", "r-gone")).rejects.toThrow(/isn't in Gmail any more/);
   });
 
   it("adds repeating, all-day and Meet events", async () => {
