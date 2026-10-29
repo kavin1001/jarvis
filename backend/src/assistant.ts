@@ -3,6 +3,7 @@ import { z } from "zod";
 import { config } from "./config.js";
 import { googleStatus, googleTools, isGoogleTool, runGoogleTool, searchMail, type GoogleAttachment } from "./google.js";
 import * as mailWatch from "./mailWatch.js";
+import * as pageWatch from "./pageWatch.js";
 import { mcpRequestParts } from "./mcp.js";
 import * as lists from "./lists.js";
 import * as notes from "./notes.js";
@@ -115,6 +116,7 @@ const TOOL_STATUS: Record<string, string> = {
   calendar_delete_event: "Removing it from your calendar…",
   calendar_respond_to_event: "Replying to the invitation…",
   watch_email: "Setting up the email alert…",
+  watch_page: "Checking the page…",
   drive_search: "Searching your Drive…",
   drive_read: "Opening the file…",
 };
@@ -137,7 +139,7 @@ How to work:
 - Never ask the user for passwords or card numbers in chat. Logins live in a secure vault the background agent can use.
 - When the user refers to an earlier conversation that isn't in this chat, look it up with search_past_chats before saying you don't remember.
 - When the user tells you a lasting preference or fact about themselves, save it with remember. When a saved fact changes, correct it with update_fact. Remove facts with forget when asked.
-- For "when I get home" or "when I leave here" use set_place_reminder; "here" uses the location in the message. Save named places with save_place when asked ("this is my office").
+- For "when I get home" or "when I leave here" use set_place_reminder; "here" uses the location in the message. Save named places with save_place when asked ("this is my office"). For "tell me when tickets go on sale" or "when this page changes", use watch_page rather than a background task.
 - Keep the user's lists (shopping, packing, to-dos) with list_add, list_show, list_change and list_clear. "Add eggs and milk" during a shopping chat goes on the shopping list. They can also see and tick off their lists in the app's Lists tab.
 - "Take a note", "jot this down", "save that": keep longer text (ideas, meeting notes, a recipe, a reply worth keeping) with note_save; find it again with note_find. Facts about the user themselves go in remember instead, and items to buy or pack on a list. Notes are in the Lists tab too.
 - For reminders and recurring jobs ("remind me at 5", "every weekday at 8 brief me on my day") use set_reminder. Use action "run" when Jarvis should do something at that time and send the result; "notify" for a plain reminder. Times are in the user's local time zone, given in each message. For timers and "in 20 minutes", pass in_seconds instead of due_at; a timer's text reads like "10-minute timer: pasta".
@@ -163,6 +165,12 @@ const SetReminderInput = z
   .refine((r) => r.due_at || r.in_seconds, "Give due_at or in_seconds");
 const SearchChatsInput = z.object({ query: z.string().min(1).max(200), limit: z.number().int().min(1).max(15).default(8) });
 const CancelReminderInput = z.object({ reminder_id: z.string() });
+const WatchPageInput = z.object({
+  url: z.string().trim().url().max(2000),
+  look_for: z.string().trim().min(2).max(200).nullish(),
+  about: z.string().trim().min(1).max(100),
+  days: z.number().int().min(1).max(30).default(14),
+});
 const WatchEmailInput = z.object({
   query: z.string().trim().min(3).max(300),
   about: z.string().trim().min(1).max(100),
@@ -275,6 +283,22 @@ const tools: Anthropic.Beta.BetaToolUnion[] = [
     description: "Cancel a reminder or scheduled job by id.",
     eager_input_streaming: true,
     input_schema: { type: "object", properties: { reminder_id: { type: "string" } }, required: ["reminder_id"] },
+  },
+  {
+    name: "watch_page",
+    description:
+      "Watch a public web page and notify the user when words appear on it (\"tell me when tickets go on sale\", \"let me know when the RSVP form opens\") or, without look_for, when its text changes. Checked every half hour; stops after the first hit. Works best with look_for, since busy pages change all the time. Cancel with cancel_reminder; list_reminders shows them.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "The page's full address." },
+        look_for: { type: "string", description: "Words to wait for, e.g. \"on sale now\" or \"Registration open\". Case doesn't matter." },
+        about: { type: "string", description: "A few words for the notification, e.g. \"Glastonbury tickets\"." },
+        days: { type: "integer", description: "How long to watch, 1-30 days. Default 14." },
+      },
+      required: ["url", "about"],
+    },
   },
   {
     name: "search_past_chats",
@@ -532,7 +556,8 @@ async function runClientTool(
         const rows = await reminders.listReminders(config.userId);
         const atPlaces = await places.listPlaceReminders(config.userId);
         const watches = await mailWatch.listMailWatches(config.userId);
-        if (rows.length === 0 && atPlaces.length === 0 && watches.length === 0) return result("No upcoming reminders.");
+        const pages = await pageWatch.listPageWatches(config.userId);
+        if (rows.length === 0 && atPlaces.length === 0 && watches.length === 0 && pages.length === 0) return result("No upcoming reminders.");
         return result(
           [
             ...rows.map(
@@ -541,6 +566,7 @@ async function runClientTool(
             ),
             ...atPlaces.map((r) => `[${r.id}] ${places.describePlaceReminder(r)}: ${r.text}`),
             ...watches.map((w) => `[${w.id}] ${mailWatch.describeMailWatch(w, tz)}`),
+            ...pages.map((w) => `[${w.id}] ${pageWatch.describePageWatch(w, tz)}`),
           ].join("\n"),
         );
       }
@@ -549,6 +575,7 @@ async function runClientTool(
         const ok =
           (await places.cancelPlaceReminder(config.userId, reminder_id)) ||
           (await mailWatch.cancelMailWatch(config.userId, reminder_id)) ||
+          (await pageWatch.cancelPageWatch(config.userId, reminder_id)) ||
           (/^[0-9a-f-]{36}$/i.test(reminder_id) && (await reminders.cancelReminder(config.userId, reminder_id)));
         return result(ok ? "Cancelled." : "No upcoming reminder with that id.", !ok);
       }
@@ -688,6 +715,17 @@ async function runClientTool(
         const { task_id, instructions } = ContinueTaskInput.parse(block.input);
         const ok = await continueTask(config.userId, task_id, instructions);
         return result(ok ? "Sent. The agent is working on it; the user gets a notification when it's done." : "No finished task with that id.", !ok);
+      }
+      case "watch_page": {
+        const w = WatchPageInput.parse(block.input);
+        try {
+          const made = await pageWatch.createPageWatch({ userId: config.userId, conversationId, url: w.url, lookFor: w.look_for ?? null, about: w.about, days: w.days });
+          if ("already" in made) return result(`"${w.look_for}" is already on the page, so there's nothing to wait for. Around it: ${made.already}`);
+          const [watch] = (await pageWatch.listPageWatches(config.userId)).filter((x) => x.id === made.id);
+          return result(`Set ${made.id}: ${pageWatch.describePageWatch(watch, await reminders.getTimezone(config.userId))}. Checked every half hour; the user gets a notification.`);
+        } catch (err) {
+          return result(`Couldn't watch that page: ${(err as Error).message}`, true);
+        }
       }
       case "watch_email": {
         const w = WatchEmailInput.parse(block.input);

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { FlatList, Pressable, RefreshControl, View } from "react-native";
 import { ActionSheet, type SheetAction } from "../ActionSheet";
 import { Alert } from "../dialog";
-import { api, type MailWatch, type PlaceReminder, type Reminder, type Repeat, type Settings, type Task } from "../api";
+import { api, type MailWatch, type PageWatch, type PlaceReminder, type Reminder, type Repeat, type Settings, type Task } from "../api";
 import { askApproval } from "../usePush";
 import { Empty, Header, LinkButton, relativeTime, useShared } from "../ui";
 import { Text, useColors } from "../theme";
@@ -81,21 +81,24 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [atPlaces, setAtPlaces] = useState<PlaceReminder[]>([]);
   const [watches, setWatches] = useState<MailWatch[]>([]);
+  const [pages, setPages] = useState<PageWatch[]>([]);
   const [sheet, setSheet] = useState<SheetAction[] | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [t, r, p, w] = await Promise.all([
+      const [t, r, p, w, pw] = await Promise.all([
         api.tasks(settings),
         api.reminders(settings),
         api.placeReminders(settings).catch(() => []),
         api.mailWatches(settings).catch(() => []),
+        api.pageWatches(settings).catch(() => []),
       ]);
       setTasks(t);
       setReminders(r);
       setAtPlaces(p);
       setWatches(w);
+      setPages(pw);
     } finally {
       setLoading(false);
     }
@@ -172,7 +175,7 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
         keyExtractor={(t) => t.id}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
         ListHeaderComponent={
-          reminders.length > 0 || atPlaces.length > 0 || watches.length > 0 ? (
+          reminders.length > 0 || atPlaces.length > 0 || watches.length > 0 || pages.length > 0 ? (
             <View>
               <Text style={[styles.rowMeta, { paddingHorizontal: 16, paddingTop: 8 }]}>Upcoming</Text>
               {reminders.map((r) => (
@@ -223,6 +226,23 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
                   <Text style={styles.rowMeta}>
                     {w.once ? "Tells you about the first new email" : "Tells you about each new email"} · until{" "}
                     {new Date(w.expires_at).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}
+                  </Text>
+                </Pressable>
+              ))}
+              {pages.map((w) => (
+                <Pressable
+                  key={w.id}
+                  style={styles.row}
+                  accessibilityHint="Stop watching"
+                  onPress={() =>
+                    setSheet([{ label: "Stop watching", danger: true, onPress: () => api.cancelPageWatch(settings, w.id).then(load, failed("stop it")) }])
+                  }
+                >
+                  <Text style={styles.rowTitle} numberOfLines={2}>
+                    🌐 {w.about}
+                  </Text>
+                  <Text style={styles.rowMeta} numberOfLines={2}>
+                    {w.look_for ? `Waiting for "${w.look_for}"` : "Waiting for a change"} on {w.url.replace(/^https?:\/\/(www\.)?/, "")}
                   </Text>
                 </Pressable>
               ))}

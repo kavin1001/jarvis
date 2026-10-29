@@ -312,3 +312,21 @@ CREATE TABLE IF NOT EXISTS mail_watches (
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS mail_watches_active ON mail_watches (checked_at) WHERE status = 'active';
+
+-- "Tell me when tickets go on sale": a web page fetched every half hour, with a notification
+-- when the words appear (look_for) or, without them, when its text changes.
+CREATE TABLE IF NOT EXISTS page_watches (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id          TEXT NOT NULL,
+  conversation_id  UUID REFERENCES conversations(id) ON DELETE SET NULL,
+  url              TEXT NOT NULL,
+  look_for         TEXT,
+  about            TEXT NOT NULL,
+  status           TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'done', 'cancelled', 'expired')),
+  last_hash        TEXT,
+  failures         INTEGER NOT NULL DEFAULT 0,
+  checked_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at       TIMESTAMPTZ NOT NULL,
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS page_watches_active ON page_watches (checked_at) WHERE status = 'active';

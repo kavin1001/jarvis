@@ -69,6 +69,8 @@ export async function cancelReminder(userId: string, id: string) {
     "UPDATE reminders SET status = 'cancelled' WHERE id = $1 AND user_id = $2 AND status = 'scheduled' RETURNING id",
     [id, userId],
   );
+  // Stopping a routine also stops the nags still to come from it.
+  if (rows.length > 0) await query("UPDATE reminders SET status = 'cancelled' WHERE user_id = $1 AND nag_of = $2 AND status = 'scheduled'", [userId, id]);
   return rows.length > 0;
 }
 

@@ -6,6 +6,7 @@ import { pool } from "./db.js";
 import { migrate } from "./migrate.js";
 import { searchMail } from "./google.js";
 import { checkMailWatches } from "./mailWatch.js";
+import { checkPageWatches } from "./pageWatch.js";
 import { fireDueReminders } from "./reminders.js";
 import { sweepOldChats } from "./retention.js";
 import { expireApprovals, resumeTasks, taskLaneConfigured } from "./tasks.js";
@@ -34,6 +35,9 @@ timers.push(setInterval(() => fireDueReminders(runScheduled).catch((err) => cons
 
 // Email watches ("tell me when Sam replies"); each is checked every five minutes.
 timers.push(setInterval(() => checkMailWatches((userId, q) => searchMail(userId, q, 10)).catch((err) => console.error("mail watch sweep failed", err)), 60_000));
+
+// Web pages the user asked to watch, each fetched every half hour.
+timers.push(setInterval(() => checkPageWatches().catch((err) => console.error("page watch sweep failed", err)), 60_000));
 
 // Chats past the user's "keep chats for" setting, once at boot and then hourly.
 const sweep = () =>

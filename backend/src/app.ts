@@ -23,6 +23,7 @@ import { countOldChats, getChatRetention, RETENTION_CHOICES, setChatRetention, s
 import { ClaudeExport, importClaudeChats } from "./importClaude.js";
 import * as memory from "./memory.js";
 import * as mailWatch from "./mailWatch.js";
+import * as pageWatch from "./pageWatch.js";
 import * as places from "./places.js";
 import { getNotifySettings, savePushToken, sendPush, setNotifySettings } from "./push.js";
 import { cancelReminder, createReminder, getTimezone, listReminders, markReminderDone, rescheduleReminder, runReminderNow, skipReminder, snoozeReminder } from "./reminders.js";
@@ -527,6 +528,10 @@ app.delete("/api/place-reminders/:id", async (c) => c.json({ cancelled: await pl
 app.get("/api/mail-watches", async (c) =>
   c.json((await mailWatch.listMailWatches(config.userId)).map(({ id, about, query, once, expires_at }) => ({ id, about, query, once, expires_at }))),
 );
+app.get("/api/page-watches", async (c) =>
+  c.json((await pageWatch.listPageWatches(config.userId)).map(({ id, about, url, look_for, expires_at }) => ({ id, about, url, look_for, expires_at }))),
+);
+app.delete("/api/page-watches/:id", async (c) => c.json({ cancelled: await pageWatch.cancelPageWatch(config.userId, c.req.param("id")) }));
 app.delete("/api/mail-watches/:id", async (c) => c.json({ cancelled: await mailWatch.cancelMailWatch(config.userId, c.req.param("id")) }));
 const PlaceEvent = z.object({ event: z.enum(["arrive", "leave"]) }).strict();
 app.post("/api/place-reminders/:id/trigger", async (c) => {
