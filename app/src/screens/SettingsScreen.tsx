@@ -3,6 +3,7 @@ import * as Speech from "expo-speech";
 import { useCallback, useEffect, useState } from "react";
 import { AppState, Linking, Pressable, RefreshControl, ScrollView, Switch, View } from "react-native";
 import { Alert } from "../dialog";
+import { appLockAvailable, useAppLockSetting } from "../appLock";
 import { api, clearSettings, type Connectors, type Settings, type Usage } from "../api";
 import { locationSharingEnabled, setLocationSharing } from "../location";
 import { Devices } from "./Devices";
@@ -69,6 +70,11 @@ export default function SettingsScreen({
   const colors = useColors();
   const { appearance, setAppearance } = useTheme();
   const voice = useVoicePrefs();
+  const lock = useAppLockSetting();
+  const [canLock, setCanLock] = useState(false);
+  useEffect(() => {
+    appLockAvailable().then(setCanLock, () => setCanLock(false));
+  }, []);
   const [usage, setUsage] = useState<Usage | null>(null);
   const [connectors, setConnectors] = useState<Connectors | null>(null);
   const [loading, setLoading] = useState(false);
@@ -199,6 +205,16 @@ export default function SettingsScreen({
           }}
         />
       </View>
+
+      {canLock && (
+        <View style={[styles.row, { flexDirection: "row", alignItems: "center" }]}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.rowTitle}>Lock Jarvis</Text>
+            <Text style={styles.rowMeta}>Ask for Face ID or your passcode when you open Jarvis after a minute away.</Text>
+          </View>
+          <Switch value={lock.on} onValueChange={(on) => void lock.setOn(on)} accessibilityLabel="Lock Jarvis" />
+        </View>
+      )}
 
       <McpServers settings={settings} />
 

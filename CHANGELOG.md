@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Settings, **Lock Jarvis** (iPhone and Android): Jarvis asks for Face ID, Touch ID or your passcode when you open it, and again after more than a minute away. The app switcher shows a blank screen instead of your chats. A reply that's still coming in keeps going behind the lock. Needs a new app build, since it adds a native module.
 - History is no longer cut off at 50 chats: **Load older chats** at the bottom brings in the next 50. `GET /api/conversations` takes `?before=&before_id=` from the last chat shown. A malformed id in a URL now gets a 404 instead of a server error, and a body that isn't JSON gets a 400.
 - History: hold a chat and choose **Pin to top** to keep it above newer chats, marked 📌. `PATCH /api/conversations/:id` takes `{ pinned }` as well as `{ title }`.
 - Calendar: Jarvis can move, rename and delete events ("push my 3pm to 4"). Moving only the start keeps the event's length. Guests aren't notified, as with new events, and Jarvis deletes an event only when you've clearly asked.

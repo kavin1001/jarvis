@@ -2,6 +2,7 @@ import * as SecureStore from "./src/storage";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Button, Platform, SafeAreaView, StyleSheet, View } from "react-native";
+import { AppLock } from "./src/appLock";
 import { api, loadSettings, saveSettings, signIn, upgradeToDeviceToken, type Settings } from "./src/api";
 import { ConnectionProvider, OfflineBanner } from "./src/connection";
 import { useDeepLinkCommand } from "./src/deepLink";
@@ -41,7 +42,9 @@ function Root() {
     <SafeAreaView style={[styles.root, { backgroundColor: colors.background }]}>
       <StatusBar style={scheme === "dark" ? "light" : "dark"} />
       {settings ? (
-        <Main settings={settings} onSignOut={() => setSettings(null)} />
+        <AppLock>
+          <Main settings={settings} onSignOut={() => setSettings(null)} />
+        </AppLock>
       ) : (
         <Setup
           onSignedIn={async (s) => {
