@@ -62,3 +62,62 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -f backend/Dockerfile -t jarvis-backend .
+
+  # The web app against a real backend and database: sign in, every tab, lists, notes, settings.
+  web-e2e:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: jarvis_e2e
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            app/package-lock.json
+            e2e/package-lock.json
+      - run: npm ci
+        working-directory: app
+      - run: npx expo export --platform web --output-dir /tmp/web
+        working-directory: app
+        env:
+          EXPO_OFFLINE: 1
+          CI: 1
+      - run: npm ci
+        working-directory: backend
+      - name: Start the backend
+        working-directory: backend
+        run: |
+          npx tsx src/index.ts > /tmp/backend.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://localhost:8799/health && exit 0; sleep 1; done
+          cat /tmp/backend.log; exit 1
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/jarvis_e2e
+          JARVIS_APP_TOKEN: e2e-token
+          ANTHROPIC_API_KEY: sk-not-used
+          WEB_DIR: /tmp/web
+          PORT: 8799
+      - run: npm ci && npx playwright install --with-deps chromium
+        working-directory: e2e
+      - run: npm run smoke
+        working-directory: e2e
+        env:
+          JARVIS_URL: http://localhost:8799
+          JARVIS_APP_TOKEN: e2e-token
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-failures
+          path: |
+            e2e/smoke-failure-*.png
+            /tmp/backend.log
+          if-no-files-found: ignore
