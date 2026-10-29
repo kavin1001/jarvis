@@ -58,5 +58,7 @@ describe("firstOccurrence", () => {
     // Monday Nov 2 is after the DST change, so 8 AM CST is 14:00 UTC.
     expect(firstOccurrence(8, 0, "weekdays", tz, friday).toISOString()).toBe("2026-11-02T14:00:00.000Z");
     expect(firstOccurrence(8, 0, "weekends", tz, new Date("2026-10-29T12:00:00Z")).toISOString()).toBe("2026-10-31T13:00:00.000Z");
+    // Sunday 6 PM, asked on a Thursday morning: Nov 1 is after the DST change (CST, UTC-6).
+    expect(firstOccurrence(18, 0, "weekly", tz, new Date("2026-10-29T12:00:00Z"), 0).toISOString()).toBe("2026-11-02T00:00:00.000Z");
   });
 });

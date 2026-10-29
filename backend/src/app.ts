@@ -415,14 +415,17 @@ const NewRoutine = z.object({
   action: z.enum(["notify", "run"]).default("run"),
   time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "HH:MM, 24-hour"),
   repeat: z.enum(["daily", "weekdays", "weekends", "weekly", "biweekly", "monthly"]).nullable().default("daily"),
+  // For weekly routines: the day it runs, 0 for Sunday. Without it, the first run is the next time the clock reads `time`.
+  weekday: z.number().int().min(0).max(6).optional(),
 });
 app.post("/api/reminders", async (c) => {
   const body = NewRoutine.safeParse(await c.req.json().catch(() => null));
   if (!body.success) return c.json({ error: body.error.issues.map((i) => i.message).join("; ") }, 400);
   const [hour, minute] = body.data.time.split(":").map(Number);
   const tz = await getTimezone(config.userId);
-  const dueAt = firstOccurrence(hour, minute, body.data.repeat, tz);
-  const id = await createReminder({ userId: config.userId, conversationId: null, ...body.data, dueAt });
+  const { weekday, ...routine } = body.data;
+  const dueAt = firstOccurrence(hour, minute, routine.repeat, tz, new Date(), weekday);
+  const id = await createReminder({ userId: config.userId, conversationId: null, ...routine, dueAt });
   return c.json({ id, due_at: dueAt.toISOString() });
 });
 // A one-off reminder from the app ("remind me about this" on a message), in that message's chat.

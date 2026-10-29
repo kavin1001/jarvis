@@ -91,18 +91,25 @@ export function isValidTimeZone(tz: string) {
   }
 }
 
-/** The first upcoming moment the local clock reads hour:minute (on a weekday, for "weekdays"). */
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/**
+ * The first upcoming moment the local clock reads hour:minute: on a weekday for "weekdays",
+ * a Saturday or Sunday for "weekends", and on `weekday` (0 is Sunday) when given.
+ */
 export function firstOccurrence(
   hour: number,
   minute: number,
   repeat: Repeat | null,
   timeZone: string,
   now = new Date(),
+  weekday?: number,
 ): Date {
   const p = zonedParts(now, timeZone);
+  const wrongDay = (d: Date) => weekday !== undefined && zonedParts(d, timeZone).weekday !== WEEKDAYS[weekday];
   let candidate = zonedToUtc(p.year, p.month, p.day, hour, minute, 0, timeZone);
   const isWeekend = (d: Date) => ["Sat", "Sun"].includes(zonedParts(d, timeZone).weekday);
-  while (candidate <= now || (repeat === "weekdays" && isWeekend(candidate)) || (repeat === "weekends" && !isWeekend(candidate))) {
+  while (candidate <= now || (repeat === "weekdays" && isWeekend(candidate)) || (repeat === "weekends" && !isWeekend(candidate)) || wrongDay(candidate)) {
     candidate = nextOccurrence(candidate, "daily", timeZone);
   }
   return candidate;

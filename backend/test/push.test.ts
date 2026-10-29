@@ -70,4 +70,16 @@ describe("POST /api/reminders", () => {
     });
     expect(bad.status).toBe(400);
   });
+
+  it("starts a weekly routine on the day asked for", async () => {
+    await setTimezone("me", "Europe/London");
+    const res = await app.request("/api/reminders", {
+      method: "POST",
+      headers: { ...auth, "Content-Type": "application/json" },
+      body: JSON.stringify({ text: "Plan my week", time: "18:00", repeat: "weekly", weekday: 0 }),
+    });
+    const { due_at } = await res.json();
+    const local = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/London", weekday: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(due_at));
+    expect(local).toBe("Sun 18:00");
+  });
 });

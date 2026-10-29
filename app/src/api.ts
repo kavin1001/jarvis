@@ -308,7 +308,7 @@ export const api = {
   notifySettings: (s: Settings) => request<NotifySettings>(s, "/api/notifications"),
   setNotifySettings: (s: Settings, change: Partial<NotifySettings>) =>
     request<NotifySettings>(s, "/api/notifications", { method: "PATCH", body: change }),
-  addRoutine: (s: Settings, body: { text: string; time: string; repeat: Repeat | null; action?: "run" | "notify" }) =>
+  addRoutine: (s: Settings, body: { text: string; time: string; repeat: Repeat | null; action?: "run" | "notify"; weekday?: number }) =>
     request<{ id: string; due_at: string }>(s, "/api/reminders", { method: "POST", body }),
   addReminder: (s: Settings, body: { text: string; due_at: string; conversation_id?: string }) =>
     request<{ id: string; due_at: string }>(s, "/api/reminders/once", { method: "POST", body }),

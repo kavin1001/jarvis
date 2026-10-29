@@ -17,7 +17,7 @@ const REPEAT_LABELS: Record<Repeat, string> = {
   monthly: "every month",
 };
 
-const ROUTINES: { label: string; text: string; time: string; repeat: "daily" | "weekdays" }[] = [
+const ROUTINES: { label: string; text: string; time: string; repeat: Repeat; weekday?: number }[] = [
   {
     label: "Morning briefing (weekdays, 8:00)",
     text: "Morning briefing: today's weather where I am, what's on my calendar, any important unread email, and two or three top news headlines. Keep it short.",
@@ -29,6 +29,31 @@ const ROUTINES: { label: string; text: string; time: string; repeat: "daily" | "
     text: "Evening wrap-up: what's on my calendar tomorrow, any reminders due tomorrow, and anything from today's background tasks I still need to act on.",
     time: "18:00",
     repeat: "daily",
+  },
+  {
+    label: "Inbox catch-up (weekdays, 17:00)",
+    text: "Inbox catch-up: look through today's unread email and tell me which few need a reply or action from me, one line each, and offer to draft replies. Skip newsletters and notifications.",
+    time: "17:00",
+    repeat: "weekdays",
+  },
+  {
+    label: "Evening journal (daily, 21:00)",
+    text: 'Journal check-in: ask me in one short, friendly line how my day went. When I answer, add it with today\'s date to my note titled "Journal" (create the note the first time).',
+    time: "21:00",
+    repeat: "daily",
+  },
+  {
+    label: "Plan my week (Sundays, 18:00)",
+    text: "Plan my week: go through my calendar for the coming week, point out busy days, clashes and free evenings, and list the reminders and to-dos that are due. End with the one thing to prepare tonight.",
+    time: "18:00",
+    repeat: "weekly",
+    weekday: 0,
+  },
+  {
+    label: "Weekend ideas (weekends, 9:00)",
+    text: "Weekend ideas: check today's weather where I am and what's on my calendar, then suggest two or three things to do today that fit. Keep it short.",
+    time: "09:00",
+    repeat: "weekends",
   },
 ];
 
@@ -120,7 +145,7 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
                   text: r.label,
                   onPress: () =>
                     api
-                      .addRoutine(settings, { text: r.text, time: r.time, repeat: r.repeat })
+                      .addRoutine(settings, { text: r.text, time: r.time, repeat: r.repeat, weekday: r.weekday })
                       .then(load, (err) => Alert.alert("Couldn't add it", String(err))),
                 })),
                 { text: "Cancel", style: "cancel" as const },
