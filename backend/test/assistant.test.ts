@@ -265,4 +265,24 @@ describe("runTurn", () => {
     expect(toolStatus({ type: "tool_use", name: "something_new" })).toBeNull();
     expect(toolStatus({ type: "text" })).toBeNull();
   });
+
+  it("stops a background task when asked", async () => {
+    const id = await memory.createConversation("me");
+    const [task] = (
+      await pool.query(
+        "INSERT INTO tasks (user_id, conversation_id, instructions, summary, status) VALUES ('me', $1, 'Watch prices', 'Price watch', 'running') RETURNING id",
+        [id],
+      )
+    ).rows;
+    fakeClient([
+      { content: [{ type: "tool_use", id: "tu_1", name: "list_tasks", input: {}, caller: undefined } as never], stop_reason: "tool_use" },
+      { content: [{ type: "tool_use", id: "tu_2", name: "cancel_task", input: { task_id: task.id }, caller: undefined } as never], stop_reason: "tool_use" },
+      { content: [{ type: "text", text: "Stopped it.", citations: null }], stop_reason: "end_turn" },
+    ]);
+    await runTurn({ conversationId: id, text: "stop the price watch", source: "text", emit: () => {} });
+    const { rows } = await pool.query("SELECT status FROM tasks WHERE id = $1", [task.id]);
+    expect(rows[0].status).toBe("cancelled");
+    const history = JSON.stringify(await memory.getApiHistory(id));
+    expect(history).toContain(`[${task.id}] Price watch (running)`);
+  });
 });

@@ -3,7 +3,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { pool, query } from "../src/db.js";
 import { addServer } from "../src/mcp.js";
 import * as memory from "../src/memory.js";
-import { decideApproval, expireApprovals, listTasks, resumeTasks, setTaskClient, startTask } from "../src/tasks.js";
+import { cancelTask, decideApproval, expireApprovals, listTasks, resumeTasks, setTaskClient, startTask } from "../src/tasks.js";
 import { resetDb } from "./helpers.js";
 
 /** An async queue standing in for a session's live event stream. */
@@ -29,6 +29,7 @@ function fakeTaskClient(opts: { history?: unknown[]; status?: string } = {}) {
   const sent: unknown[] = [];
   const created: Record<string, unknown>[] = [];
   const vaults = { credentials: [] as unknown[], deleted: [] as string[] };
+  const archived: string[] = [];
   const client = {
     beta: {
       agents: {
@@ -45,6 +46,7 @@ function fakeTaskClient(opts: { history?: unknown[]; status?: string } = {}) {
         credentials: { create: async (_v: string, body: unknown) => void vaults.credentials.push(body) },
       },
       sessions: {
+        archive: async (id: string) => void archived.push(id),
         create: async (params: Record<string, unknown>) => {
           created.push(params);
           return { id: "sesn_1" };
@@ -61,7 +63,7 @@ function fakeTaskClient(opts: { history?: unknown[]; status?: string } = {}) {
     },
   };
   setTaskClient(client as unknown as Anthropic);
-  return { stream, sent, created, vaults };
+  return { stream, sent, created, vaults, archived };
 }
 
 const until = async (check: () => Promise<boolean>) => {
@@ -150,6 +152,30 @@ describe("task lane", () => {
     await until(async () => sent.length === 1);
     expect(typeof created[0].agent).not.toBe("object");
     expect(created[0].vault_ids).toBeUndefined();
+  });
+
+  it("cancels a task waiting for approval: interrupts, archives, closes the ask, and notes it", async () => {
+    const { stream, sent, archived } = fakeTaskClient();
+    const conv = await memory.createConversation("me");
+    const taskId = await startTask("me", conv, "Buy the tickets", "Tickets");
+    await until(async () => sent.length === 1);
+    stream.push({ type: "agent.custom_tool_use", id: "evt_ask", name: "request_approval", input: { summary: "Pay $80" } });
+    await until(async () => (await taskStatus(taskId)) === "waiting_approval");
+
+    expect(await cancelTask("someone-else", taskId)).toBe(false);
+    expect(await cancelTask("me", taskId)).toBe(true);
+    expect(await taskStatus(taskId)).toBe("cancelled");
+    expect(sent.at(-1)).toEqual({ type: "user.interrupt" });
+    expect(archived).toEqual(["sesn_1"]);
+    const [task] = (await listTasks("me")) as { pending_approvals: unknown[] }[];
+    expect(task.pending_approvals).toEqual([]);
+    expect(await memory.takePendingTaskUpdates(conv)).toEqual(['Task "Tickets" was cancelled by the user.']);
+
+    // The session winding down afterwards doesn't reopen or report it.
+    stream.push({ type: "session.status_idle", id: "evt_idle", stop_reason: { type: "end_turn" } });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(await taskStatus(taskId)).toBe("cancelled");
+    expect(await cancelTask("me", taskId)).toBe(false);
   });
 
   it("forwards tool confirmations and denies stale approvals", async () => {

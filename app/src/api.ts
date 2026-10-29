@@ -23,7 +23,7 @@ export interface PendingApproval {
 
 export interface Task {
   id: string;
-  status: "queued" | "running" | "waiting_approval" | "done" | "failed";
+  status: "queued" | "running" | "waiting_approval" | "done" | "failed" | "cancelled";
   summary: string | null;
   instructions: string;
   result: string | null;
@@ -237,6 +237,7 @@ export const api = {
   status: (s: Settings) => request<ServerStatus>(s, "/api/status"),
   reminders: (s: Settings) => request<Reminder[]>(s, "/api/reminders"),
   cancelReminder: (s: Settings, id: string) => request(s, `/api/reminders/${id}`, { method: "DELETE" }),
+  cancelTask: (s: Settings, id: string) => request(s, `/api/tasks/${id}/cancel`, { method: "POST" }),
   snoozeReminder: (s: Settings, id: string, minutes: number) =>
     request<{ id: string }>(s, `/api/reminders/${id}/snooze`, { method: "POST", body: { minutes } }),
   facts: (s: Settings) => request<Fact[]>(s, "/api/facts"),

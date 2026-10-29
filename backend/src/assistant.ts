@@ -5,7 +5,7 @@ import { googleStatus, googleTools, isGoogleTool, runGoogleTool } from "./google
 import { mcpRequestParts } from "./mcp.js";
 import * as memory from "./memory.js";
 import * as reminders from "./reminders.js";
-import { startTask, taskLaneConfigured } from "./tasks.js";
+import { cancelTask, listTasks, startTask, taskLaneConfigured } from "./tasks.js";
 import { describeNow } from "./time.js";
 import { overDailyBudget, recordMessageUsage } from "./usage.js";
 
@@ -72,6 +72,8 @@ const TOOL_STATUS: Record<string, string> = {
   cancel_reminder: "Cancelling a reminder…",
   search_past_chats: "Looking through past chats…",
   start_task: "Starting a background task…",
+  list_tasks: "Checking your tasks…",
+  cancel_task: "Stopping that task…",
   gmail_search: "Checking your email…",
   gmail_read: "Reading an email…",
   gmail_create_draft: "Drafting an email…",
@@ -114,6 +116,7 @@ const SetReminderInput = z.object({
 });
 const SearchChatsInput = z.object({ query: z.string().min(1).max(200), limit: z.number().int().min(1).max(15).default(8) });
 const CancelReminderInput = z.object({ reminder_id: z.string() });
+const CancelTaskInput = z.object({ task_id: z.string().uuid() });
 const StartTaskInput = z.object({
   instructions: z.string().min(1),
   summary: z.string().min(1).max(120),
@@ -202,6 +205,16 @@ const tools: Anthropic.Beta.BetaToolUnion[] = [
       required: ["instructions", "summary"],
     },
   },
+  {
+    name: "list_tasks",
+    description: "List background tasks that are still queued, running or waiting for the user's approval, with their ids.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
+    name: "cancel_task",
+    description: "Stop a background task the user no longer wants. Get the id from start_task's result or list_tasks.",
+    input_schema: { type: "object", properties: { task_id: { type: "string" } }, required: ["task_id"] },
+  },
 ];
 
 async function buildSystem(): Promise<Anthropic.Beta.BetaTextBlockParam[]> {
@@ -289,6 +302,16 @@ async function runClientTool(
         const taskId = await startTask(config.userId, conversationId, instructions, summary);
         emit({ type: "task_started", taskId, summary });
         return result(`Task ${taskId} started. Tell the user briefly that you are on it.`);
+      }
+      case "list_tasks": {
+        const open = (await listTasks(config.userId)).filter((t) => ["queued", "running", "waiting_approval"].includes(t.status));
+        if (open.length === 0) return result("No background tasks are running.");
+        return result(open.map((t) => `- [${t.id}] ${t.summary ?? t.instructions.slice(0, 80)} (${t.status})`).join("\n"));
+      }
+      case "cancel_task": {
+        const { task_id } = CancelTaskInput.parse(block.input);
+        const ok = await cancelTask(config.userId, task_id);
+        return result(ok ? "Stopped." : "No running task with that id.", !ok);
       }
       default:
         if (isGoogleTool(block.name)) return result(await runGoogleTool(config.userId, block.name, block.input));

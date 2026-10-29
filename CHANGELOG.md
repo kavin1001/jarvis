@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Stop a background task: open it in Tasks and tap **Stop this task**, or ask Jarvis ("stop the price watch"). Jarvis interrupts the agent, closes any approval it was waiting on, and notes it in the chat. Tasks have a new **Cancelled** status, and `POST /api/tasks/:id/cancel` does the same.
 - History: hold a chat and choose **Share transcript** to send the whole conversation as text. Browsers without a share sheet copy it instead. VoiceOver and TalkBack read each message as "You: …" or "Jarvis: …", and offer the copy, read aloud and share actions. Buttons in the chat screen are labelled.
 - Connected apps: servers that use OAuth, such as Notion's and Linear's hosted MCP servers, can now be added without a token. Jarvis opens their sign-in page, registers itself, and keeps the token refreshed. This needs `PUBLIC_URL` and `CONNECTOR_SECRET`.
 - Offline: when the server can't be reached, a banner says so, with **Retry**, and clears by itself once the server answers again. A message that never reached the server goes back into the message box, photos and files included, so you can send it again.

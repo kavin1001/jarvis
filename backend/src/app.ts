@@ -22,7 +22,7 @@ import { cancelReminder, createReminder, getTimezone, listReminders, snoozeRemin
 import { serverStatus } from "./status.js";
 import { firstOccurrence } from "./time.js";
 import { summarize } from "./usage.js";
-import { decideApproval, listTasks } from "./tasks.js";
+import { cancelTask, decideApproval, listTasks } from "./tasks.js";
 
 export const app = new Hono<{ Variables: { caller: Caller } }>();
 
@@ -265,6 +265,11 @@ app.get("/api/usage", async (c) =>
 );
 
 app.get("/api/tasks", async (c) => c.json(await listTasks(config.userId)));
+app.post("/api/tasks/:id/cancel", async (c) => {
+  const id = z.string().uuid().safeParse(c.req.param("id"));
+  const cancelled = id.success && (await cancelTask(config.userId, id.data));
+  return cancelled ? c.json({ cancelled }) : c.json({ error: "No running task with that id" }, 404);
+});
 
 const Decision = z.object({ decision: z.enum(["allow", "deny"]) });
 app.post("/api/approvals/:id", async (c) => {

@@ -20,7 +20,7 @@ interface TaskRow {
   conversation_id: string;
   instructions: string;
   summary: string | null;
-  status: "queued" | "running" | "waiting_approval" | "done" | "failed";
+  status: "queued" | "running" | "waiting_approval" | "done" | "failed" | "cancelled";
   session_id: string | null;
   last_message: string | null;
   vault_id: string | null;
@@ -55,11 +55,14 @@ async function getTask(taskId: string): Promise<TaskRow> {
   return task;
 }
 
+/** Moves a task that is still open; returns false once it has finished or been cancelled. */
 async function setStatus(taskId: string, status: TaskRow["status"], sessionId?: string) {
-  await query(
-    "UPDATE tasks SET status = $2, session_id = COALESCE($3, session_id), updated_at = now() WHERE id = $1",
+  const rows = await query(
+    `UPDATE tasks SET status = $2, session_id = COALESCE($3, session_id), updated_at = now()
+     WHERE id = $1 AND status NOT IN ('done', 'failed', 'cancelled') RETURNING id`,
     [taskId, status, sessionId ?? null],
   );
+  return rows.length > 0;
 }
 
 export async function startTask(
@@ -86,7 +89,11 @@ async function launch(taskId: string) {
     title: task.summary ?? "Jarvis task",
     ...(vaults.length ? { vault_ids: vaults } : {}),
   });
-  await setStatus(taskId, "running", session.id);
+  if (!(await setStatus(taskId, "running", session.id))) {
+    // Cancelled while the session was being created.
+    await client.beta.sessions.archive(session.id).catch(() => {});
+    return;
+  }
 
   // Open the stream before sending, so no early event is missed.
   const stream = await client.beta.sessions.events.stream(session.id);
@@ -230,7 +237,7 @@ async function recordApproval(taskId: string, eventId: string, kind: ApprovalRow
     [taskId, eventId, kind, summary],
   );
   if (inserted.length === 0) return; // already recorded (replay after restart)
-  await setStatus(taskId, "waiting_approval");
+  if (!(await setStatus(taskId, "waiting_approval"))) return; // the task already ended
   const task = await getTask(taskId);
   await sendPush(task.user_id, "Jarvis needs your OK", summary, { taskId, approvalId: inserted[0].id }, "approval");
 }
@@ -286,7 +293,7 @@ export async function expireApprovals() {
 async function completeTask(taskId: string, status: "done" | "failed") {
   // Only the first caller wins, so replays and the live stream can't both report.
   const [task] = await query<TaskRow>(
-    "UPDATE tasks SET status = $2, result = last_message, updated_at = now() WHERE id = $1 AND status NOT IN ('done', 'failed') RETURNING *",
+    "UPDATE tasks SET status = $2, result = last_message, updated_at = now() WHERE id = $1 AND status NOT IN ('done', 'failed', 'cancelled') RETURNING *",
     [taskId, status],
   );
   if (!task) return;
@@ -296,7 +303,7 @@ async function completeTask(taskId: string, status: "done" | "failed") {
 async function failTask(taskId: string, err: unknown) {
   console.error(`task ${taskId} failed`, err);
   const [task] = await query<TaskRow>(
-    "UPDATE tasks SET status = 'failed', result = $2, updated_at = now() WHERE id = $1 AND status NOT IN ('done', 'failed') RETURNING *",
+    "UPDATE tasks SET status = 'failed', result = $2, updated_at = now() WHERE id = $1 AND status NOT IN ('done', 'failed', 'cancelled') RETURNING *",
     [taskId, `The task failed: ${String(err)}`],
   );
   if (task) await report(task, "failed", `The task failed: ${String(err)}`);
@@ -311,6 +318,29 @@ async function report(task: TaskRow, status: "done" | "failed", result: string) 
     taskId: task.id,
     conversationId: task.conversation_id,
   });
+}
+
+/**
+ * Stops a task at the user's request: interrupts and archives its session,
+ * closes its open approvals, and notes it in the conversation. No push, since
+ * the user just did it.
+ */
+export async function cancelTask(userId: string, taskId: string) {
+  const [task] = await query<TaskRow>(
+    `UPDATE tasks SET status = 'cancelled', result = 'Cancelled.', updated_at = now()
+     WHERE id = $1 AND user_id = $2 AND status IN ('queued', 'running', 'waiting_approval') RETURNING *`,
+    [taskId, userId],
+  );
+  if (!task) return false;
+  await query("UPDATE approvals SET decision = 'deny', decided_at = now() WHERE task_id = $1 AND decision IS NULL", [taskId]);
+  if (task.session_id) {
+    await client.beta.sessions.events.send(task.session_id, { events: [{ type: "user.interrupt" }] }).catch(() => {});
+    await client.beta.sessions.archive(task.session_id).catch((err) => console.warn(`could not archive session for task ${taskId}`, err));
+  }
+  await dropVault(task);
+  const note = `Task "${task.summary ?? "Background task"}" was cancelled by the user.`;
+  await memory.appendMessage(task.conversation_id, "assistant", [{ type: "text", text: note }], note, "system", "task_update");
+  return true;
 }
 
 /**

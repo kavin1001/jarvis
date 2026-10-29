@@ -170,3 +170,8 @@ ALTER TABLE tasks ADD COLUMN IF NOT EXISTS vault_id TEXT;
 -- OAuth sign-in for MCP servers: tokens per server, and the pending sign-in's PKCE verifier and client.
 ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS oauth TEXT;
 ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS data TEXT;
+
+-- Tasks the user stops from the app.
+ALTER TABLE tasks DROP CONSTRAINT IF EXISTS tasks_status_check;
+ALTER TABLE tasks ADD CONSTRAINT tasks_status_check
+  CHECK (status IN ('queued', 'running', 'waiting_approval', 'done', 'failed', 'cancelled'));

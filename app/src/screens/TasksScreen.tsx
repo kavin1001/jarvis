@@ -27,6 +27,7 @@ const STATUS_LABEL: Record<Task["status"], string> = {
   waiting_approval: "Needs your OK",
   done: "Done",
   failed: "Failed",
+  cancelled: "Cancelled",
 };
 
 export default function TasksScreen({ settings, refreshKey }: { settings: Settings; refreshKey: number }) {
@@ -145,6 +146,24 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
             ))}
             {open === item.id && (
               <>
+                {item.status === "queued" || item.status === "running" || item.status === "waiting_approval" ? (
+                  <View style={{ alignItems: "flex-start", marginTop: 8 }}>
+                    <LinkButton
+                      label="Stop this task"
+                      danger
+                      onPress={() =>
+                        Alert.alert("Stop this task?", item.summary ?? item.instructions, [
+                          { text: "Keep going", style: "cancel" },
+                          {
+                            text: "Stop",
+                            style: "destructive",
+                            onPress: () => api.cancelTask(settings, item.id).then(load, (err) => Alert.alert("Couldn't stop it", String(err))),
+                          },
+                        ])
+                      }
+                    />
+                  </View>
+                ) : null}
                 <Text style={[styles.rowMeta, { marginTop: 8 }]}>Instructions</Text>
                 <Text>{item.instructions}</Text>
                 {item.result ? (
