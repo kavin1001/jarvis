@@ -305,13 +305,18 @@ async function completeTask(taskId: string, status: "done" | "failed") {
   await report(task, status, task.last_message ?? (status === "done" ? "The agent finished without a summary." : "The agent stopped."));
 }
 
+/** Never rejects: it runs in .catch() handlers, where a rejection would be unhandled and stop the server. */
 async function failTask(taskId: string, err: unknown) {
   console.error(`task ${taskId} failed`, err);
-  const [task] = await query<TaskRow>(
-    "UPDATE tasks SET status = 'failed', result = $2, updated_at = now() WHERE id = $1 AND status NOT IN ('done', 'failed', 'cancelled') RETURNING *",
-    [taskId, `The task failed: ${String(err)}`],
-  );
-  if (task) await report(task, "failed", `The task failed: ${String(err)}`);
+  try {
+    const [task] = await query<TaskRow>(
+      "UPDATE tasks SET status = 'failed', result = $2, updated_at = now() WHERE id = $1 AND status NOT IN ('done', 'failed', 'cancelled') RETURNING *",
+      [taskId, `The task failed: ${String(err)}`],
+    );
+    if (task) await report(task, "failed", `The task failed: ${String(err)}`);
+  } catch (reportErr) {
+    console.error(`could not record the failure of task ${taskId}`, reportErr);
+  }
 }
 
 /** Test seam: how long to wait for output files to show up in the Files API. */
