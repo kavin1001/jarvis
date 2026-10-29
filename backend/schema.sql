@@ -112,3 +112,21 @@ CREATE TABLE IF NOT EXISTS usage_events (
 CREATE INDEX IF NOT EXISTS usage_events_user_time_idx ON usage_events (user_id, created_at);
 -- List cost reported by the Managed Agents session (tokens and sandbox time).
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS cost_usd NUMERIC(12, 6) NOT NULL DEFAULT 0;
+
+-- 0.5: account connectors. Tokens are encrypted with CONNECTOR_SECRET.
+CREATE TABLE IF NOT EXISTS connectors (
+  user_id        TEXT NOT NULL,
+  provider       TEXT NOT NULL,
+  account_email  TEXT,
+  tokens         TEXT NOT NULL,
+  scopes         TEXT NOT NULL,
+  updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, provider)
+);
+
+CREATE TABLE IF NOT EXISTS oauth_states (
+  state       TEXT PRIMARY KEY,
+  user_id     TEXT NOT NULL,
+  provider    TEXT NOT NULL,
+  expires_at  TIMESTAMPTZ NOT NULL
+);

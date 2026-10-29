@@ -31,4 +31,4 @@ These cost money, need an outside account, or need your credentials:
 - [ ] Run `npm run setup-agent` once to create the task agent, and decide on sandbox networking
 - [ ] A vault with any website logins you want the task agent to use
 - [ ] Apple Developer account for TestFlight and push certificates; `eas init` for the Expo project ID
-- [ ] Google OAuth client for Gmail/Calendar connectors
+- [ ] Google OAuth client for Gmail/Calendar connectors (steps in `docs/DEPLOY.md` section 5)

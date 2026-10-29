@@ -50,6 +50,18 @@ EAS walks you through certificates and push keys. Install the build from the lin
 
 For day-to-day development: `npx eas build --profile development --platform ios` once, then `npx expo start` and open the dev build.
 
+## 5. Gmail and Google Calendar (optional, free Google Cloud account)
+
+Lets Jarvis search and read your mail, save drafts (it never sends), and read or add calendar events.
+
+1. In the [Google Cloud console](https://console.cloud.google.com/), create a project and enable the **Gmail API** and **Google Calendar API**.
+2. Under **Google Auth Platform**, set up the consent screen as **External**, leave it in **Testing**, and add your own Gmail address as a test user. Add the scopes `gmail.readonly`, `gmail.compose` and `calendar.events`.
+3. Create an **OAuth client ID** of type **Web application** with the authorized redirect URI `https://<your-backend>/oauth/google/callback`.
+4. In Render, set `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` and `PUBLIC_URL` (your backend's https URL, no trailing path). `CONNECTOR_SECRET` is generated for you; changing it later disconnects Google.
+5. In the app: Settings, Connect Google.
+
+Testing-mode apps get refresh tokens that Google expires after 7 days, so you'll reconnect weekly until the app is verified. That's fine for personal use.
+
 ## Checklist
 
 - [ ] API key + Console spend limit
@@ -58,3 +70,4 @@ For day-to-day development: `npx eas build --profile development --platform ios`
 - [ ] Task agent created, IDs set (optional)
 - [ ] Vault with logins (optional)
 - [ ] Apple Developer + Expo accounts, `eas init`, first build installed
+- [ ] Google OAuth client, env vars set, Google connected in the app (optional)

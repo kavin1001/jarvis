@@ -5,6 +5,7 @@ import { streamSSE } from "hono/streaming";
 import { z } from "zod";
 import { runTurn, type ChatEvent } from "./assistant.js";
 import { config } from "./config.js";
+import { disconnectGoogle, googleStatus, handleGoogleCallback, startGoogleAuth } from "./google.js";
 import * as memory from "./memory.js";
 import { savePushToken } from "./push.js";
 import { cancelReminder, getTimezone, listReminders } from "./reminders.js";
@@ -17,6 +18,25 @@ if (process.env.NODE_ENV !== "test") app.use(logger());
 
 app.get("/health", (c) => c.json({ ok: true }));
 app.use("/api/*", bearerAuth({ token: config.appToken }));
+
+const page = (title: string, body: string) =>
+  `<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>` +
+  `<body style="font-family:system-ui;background:#0b0b0f;color:#eee;display:grid;place-items:center;min-height:90vh;text-align:center">` +
+  `<div><h2>${title}</h2><p>${body}</p></div>`;
+const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+
+// Google redirects the browser here, so it cannot carry the app's bearer token; the one-time state authenticates it.
+app.get("/oauth/google/callback", async (c) => {
+  const { code, state, error } = c.req.query();
+  if (error || !code || !state) return c.html(page("Google not connected", escapeHtml(error ?? "Missing code.")), 400);
+  try {
+    const email = await handleGoogleCallback(code, state);
+    return c.html(page("Google connected", `${email ? escapeHtml(email) + " is" : "Your account is"} linked to Jarvis. You can close this page.`));
+  } catch (err) {
+    console.error("google callback failed", err);
+    return c.html(page("Google not connected", escapeHtml(err instanceof Error ? err.message : "Something went wrong.")), 400);
+  }
+});
 
 const ChatBody = z.object({
   conversationId: z.string().uuid().optional(),
@@ -121,3 +141,11 @@ app.post("/api/push-token", async (c) => {
   await savePushToken(config.userId, body.data.token);
   return c.json({ ok: true });
 });
+
+app.get("/api/connectors", async (c) => c.json({ google: await googleStatus(config.userId) }));
+app.post("/api/connectors/google/start", async (c) => {
+  const status = await googleStatus(config.userId);
+  if (!status.available) return c.json({ error: "Google is not configured on the server" }, 400);
+  return c.json({ url: await startGoogleAuth(config.userId) });
+});
+app.delete("/api/connectors/google", async (c) => c.json({ disconnected: await disconnectGoogle(config.userId) }));

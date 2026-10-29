@@ -89,7 +89,14 @@ async function request<T>(s: Settings, path: string, init: { method?: string; bo
   return (await res.json()) as T;
 }
 
+export interface Connectors {
+  google: { available: boolean; connected: boolean; email: string | null };
+}
+
 export const api = {
+  connectors: (s: Settings) => request<Connectors>(s, "/api/connectors"),
+  startGoogle: (s: Settings) => request<{ url: string }>(s, "/api/connectors/google/start", { method: "POST" }),
+  disconnectGoogle: (s: Settings) => request(s, "/api/connectors/google", { method: "DELETE" }),
   conversations: (s: Settings) => request<Conversation[]>(s, "/api/conversations"),
   deleteConversation: (s: Settings, id: string) => request(s, `/api/conversations/${id}`, { method: "DELETE" }),
   usage: (s: Settings) => request<Usage>(s, "/api/usage"),

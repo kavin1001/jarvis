@@ -30,6 +30,15 @@ services:
         sync: false
       - key: TASK_VAULT_ID
         sync: false
+      # Optional Google connector; see docs/DEPLOY.md.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: PUBLIC_URL
+        sync: false
+      - key: CONNECTOR_SECRET
+        generateValue: true
 
 databases:
   - name: jarvis-db

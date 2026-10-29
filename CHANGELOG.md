@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Gmail and Google Calendar: connect Google in Settings, then ask Jarvis to find emails, read one, draft a reply (saved to Gmail, never sent), check your schedule or add an event. Tokens are encrypted at rest with `CONNECTOR_SECRET`, refresh automatically, and are revoked when you disconnect. Email bodies are marked as untrusted so instructions inside them are ignored. Setup in `docs/DEPLOY.md`.
 - Deploy: backend Dockerfile, Render Blueprint (web service + Postgres), EAS build profiles for the app, and a step-by-step guide in `docs/DEPLOY.md`. The schema now applies itself on boot, requests are logged, and the server shuts down cleanly on SIGTERM. CI builds the Docker image.
 - Usage and cost: every Claude call is logged with tokens and an estimated cost; background tasks record the list cost Managed Agents reports. Settings shows today's spend, the last 7 days and the month. `DAILY_BUDGET_USD` makes Jarvis pause for the rest of the day once the cap is reached.
 - Photos: tap ＋ in chat to take a photo or pick up to 4 from your library and ask Jarvis about them. Images are resized on the phone and uploaded once through the Files API, so long chats don't resend the pixels.

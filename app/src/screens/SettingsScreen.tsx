@@ -1,28 +1,38 @@
 import Constants from "expo-constants";
 import { useCallback, useEffect, useState } from "react";
-import { Alert, RefreshControl, ScrollView, Text, View } from "react-native";
-import { api, clearSettings, type Settings, type Usage } from "../api";
+import { Alert, AppState, Linking, RefreshControl, ScrollView, Text, View } from "react-native";
+import { api, clearSettings, type Connectors, type Settings, type Usage } from "../api";
 import { colors, Header, LinkButton, styles } from "../ui";
 
 const usd = (n: number) => `$${n < 1 ? n.toFixed(3) : n.toFixed(2)}`;
 
 export default function SettingsScreen({ settings, onSignOut }: { settings: Settings; onSignOut: () => void }) {
   const [usage, setUsage] = useState<Usage | null>(null);
+  const [connectors, setConnectors] = useState<Connectors | null>(null);
   const [loading, setLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
-    try {
-      setUsage(await api.usage(settings));
-    } catch {
-      setUsage(null);
-    } finally {
-      setLoading(false);
-    }
+    const [u, c] = await Promise.allSettled([api.usage(settings), api.connectors(settings)]);
+    setUsage(u.status === "fulfilled" ? u.value : null);
+    setConnectors(c.status === "fulfilled" ? c.value : null);
+    setLoading(false);
   }, [settings]);
   useEffect(() => {
     load();
+    // Coming back from the Google sign-in page in the browser: refresh the status.
+    const sub = AppState.addEventListener("change", (state) => state === "active" && load());
+    return () => sub.remove();
   }, [load]);
+
+  const google = connectors?.google;
+  const connectGoogle = async () => {
+    try {
+      await Linking.openURL((await api.startGoogle(settings)).url);
+    } catch (err) {
+      Alert.alert("Couldn't start Google sign-in", String(err));
+    }
+  };
 
   const budget = usage?.daily_budget_usd ?? null;
   const share = usage && budget ? Math.min(1, usage.today_usd / budget) : 0;
@@ -56,6 +66,29 @@ export default function SettingsScreen({ settings, onSignOut }: { settings: Sett
           </Text>
         ) : null}
       </View>
+
+      {google?.available ? (
+        <View style={styles.row}>
+          <Text style={styles.rowMeta}>Gmail and Google Calendar</Text>
+          <Text>{google.connected ? `Connected${google.email ? ` as ${google.email}` : ""}` : "Not connected"}</Text>
+          <View style={{ alignItems: "flex-start" }}>
+            {google.connected ? (
+              <LinkButton
+                label="Disconnect Google"
+                danger
+                onPress={() =>
+                  Alert.alert("Disconnect Google?", "Jarvis will no longer read your mail or calendar.", [
+                    { text: "Cancel", style: "cancel" },
+                    { text: "Disconnect", style: "destructive", onPress: () => api.disconnectGoogle(settings).then(load) },
+                  ])
+                }
+              />
+            ) : (
+              <LinkButton label="Connect Google" onPress={connectGoogle} />
+            )}
+          </View>
+        </View>
+      ) : null}
 
       <View style={styles.row}>
         <Text style={styles.rowMeta}>Backend</Text>
