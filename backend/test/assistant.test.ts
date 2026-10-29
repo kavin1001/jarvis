@@ -422,6 +422,19 @@ describe("runTurn", () => {
     expect(history).toContain(`[${task.id}] Price watch (running)`);
   });
 
+  it("tells Claude what Jarvis has cost", async () => {
+    const id = await memory.createConversation("me");
+    await pool.query("INSERT INTO tasks (user_id, conversation_id, instructions, status, cost_usd) VALUES ('me', $1, 'x', 'done', 0.5)", [id]);
+    fakeClient([
+      { content: [{ type: "tool_use", id: "tu_1", name: "jarvis_usage", input: {}, caller: undefined } as never], stop_reason: "tool_use" },
+      { content: [{ type: "text", text: "About 50 cents.", citations: null }], stop_reason: "end_turn" },
+    ]);
+    await runTurn({ conversationId: id, text: "how much have you cost me today?", source: "text", emit: () => {} });
+    const history = JSON.stringify(await memory.getApiHistory(id));
+    expect(history).toMatch(/Today \$0\.5\d \(\d+ repl(y|ies), 1 background task\)\. Last 7 days \$0\.5\d\. This month \$0\.5\d\./);
+    expect(history).toContain("the Claude Console has the bill");
+  });
+
   it("logs actions on the user's accounts, not reads or failed calls", async () => {
     const id = await memory.createConversation("me");
     fakeClient([

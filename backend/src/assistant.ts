@@ -15,7 +15,7 @@ import * as reminders from "./reminders.js";
 import { cancelTask, continueTask, listTasks, startTask, taskLaneConfigured } from "./tasks.js";
 import { describeNow } from "./time.js";
 import { findPlace, weatherReport } from "./weather.js";
-import { overDailyBudget, recordMessageUsage, warnNearBudget } from "./usage.js";
+import { overDailyBudget, recordMessageUsage, summarize, warnNearBudget } from "./usage.js";
 
 let client = new Anthropic();
 
@@ -122,6 +122,7 @@ const TOOL_STATUS: Record<string, string> = {
   note_delete: "Deleting a note…",
   start_task: "Starting a background task…",
   list_tasks: "Checking your tasks…",
+  jarvis_usage: "Adding up the spend…",
   cancel_task: "Stopping that task…",
   continue_task: "Passing that on to the task…",
   contacts_search: "Looking up contacts…",
@@ -479,6 +480,12 @@ const tools: Anthropic.Beta.BetaToolUnion[] = [
     },
   },
   {
+    name: "jarvis_usage",
+    description:
+      "What Jarvis has cost the user in Claude API spend: today, the last 7 days and this month, with today's replies and tasks and the daily cap. Use for \"how much have you cost me?\" or before a big background task when the user is near the cap.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
     name: "list_tasks",
     description: "List background tasks that are still queued, running or waiting for the user's approval, with their ids.",
     input_schema: { type: "object", properties: {} },
@@ -744,6 +751,15 @@ async function runClientTool(
         const taskId = await startTask(config.userId, conversationId, instructions, summary);
         emit({ type: "task_started", taskId, summary });
         return result(`Task ${taskId} started. Tell the user briefly that you are on it.`);
+      }
+      case "jarvis_usage": {
+        const u = await summarize(config.userId, await reminders.getTimezone(config.userId), config.dailyBudgetUsd);
+        const usd = (n: number) => `$${n.toFixed(2)}`;
+        const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
+        const cap = u.daily_budget_usd === null ? "No daily cap is set." : `Daily cap ${usd(u.daily_budget_usd)} (${Math.round((u.today_usd / u.daily_budget_usd) * 100)}% used today).`;
+        return result(
+          `Today ${usd(u.today_usd)} (${plural(u.chat_turns_today, "reply", "replies")}, ${plural(u.tasks_today, "background task")}). Last 7 days ${usd(u.last_7_days_usd)}. This month ${usd(u.month_to_date_usd)}. ${cap} These are Jarvis's own estimates from token counts; the Claude Console has the bill.`,
+        );
       }
       case "list_tasks": {
         const open = (await listTasks(config.userId)).filter((t) => ["queued", "running", "waiting_approval"].includes(t.status));
