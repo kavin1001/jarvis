@@ -51,6 +51,7 @@ export function OfflineBanner() {
     >
       <Text style={{ flex: 1, color: colors.warningText }}>Can't reach your Jarvis server. Check your connection.</Text>
       <Pressable
+        accessibilityRole="button"
         onPress={async () => {
           setChecking(true);
           await check();

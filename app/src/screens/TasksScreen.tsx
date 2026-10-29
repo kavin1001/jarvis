@@ -183,6 +183,7 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
               <Text style={[styles.rowMeta, { paddingHorizontal: 16, paddingTop: 8 }]}>Upcoming</Text>
               {reminders.map((r) => (
                 <Pressable
+                  accessibilityRole="button"
                   key={r.id}
                   style={styles.row}
                   accessibilityHint={r.action === "run" ? "Run now, move or stop" : "Move or cancel"}
@@ -201,6 +202,7 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
               ))}
               {atPlaces.map((r) => (
                 <Pressable
+                  accessibilityRole="button"
                   key={r.id}
                   style={styles.row}
                   accessibilityHint="Cancel"
@@ -216,6 +218,7 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
               ))}
               {watches.map((w) => (
                 <Pressable
+                  accessibilityRole="button"
                   key={w.id}
                   style={styles.row}
                   accessibilityHint="Stop watching"
@@ -235,6 +238,7 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
               ))}
               {snoozed.map((s) => (
                 <Pressable
+                  accessibilityRole="button"
                   key={s.id}
                   style={styles.row}
                   accessibilityHint="Bring back now"
@@ -251,6 +255,7 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
               ))}
               {pages.map((w) => (
                 <Pressable
+                  accessibilityRole="button"
                   key={w.id}
                   style={styles.row}
                   accessibilityHint="Stop watching"
@@ -272,7 +277,7 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
         }
         ListEmptyComponent={loading ? undefined : <Empty text="Background tasks Jarvis runs for you show up here." />}
         renderItem={({ item }) => (
-          <Pressable style={styles.row} onPress={() => setOpen(open === item.id ? null : item.id)}>
+          <Pressable accessibilityRole="button" style={styles.row} onPress={() => setOpen(open === item.id ? null : item.id)}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", gap: 8 }}>
               <Text style={[styles.rowTitle, { flex: 1 }]} numberOfLines={open === item.id ? undefined : 1}>
                 {item.summary ?? item.instructions}
@@ -306,6 +311,7 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
             ))}
             {item.pending_approvals.map((a) => (
               <Pressable
+                accessibilityRole="button"
                 key={a.id}
                 onPress={() => askApproval(settings, a.id, a.summary, load)}
                 style={{ backgroundColor: colors.warning, padding: 10, borderRadius: 8, marginTop: 6 }}

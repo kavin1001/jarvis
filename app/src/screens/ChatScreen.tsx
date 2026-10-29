@@ -384,6 +384,7 @@ export default function ChatScreen({
         <Text style={styles.title}>Jarvis</Text>
         <View style={{ flexDirection: "row", gap: 16, alignItems: "center" }}>
           <Pressable
+            accessibilityRole="button"
             onPress={() => {
               if (handsFree) return setHandsFree(false);
               setHandsFree(true);
@@ -549,6 +550,7 @@ export default function ChatScreen({
 
       <View style={styles.composer}>
         <Pressable
+          accessibilityRole="button"
           style={styles.attach}
           onPress={() =>
             chooseAttachments().then((a) => {
@@ -587,6 +589,7 @@ export default function ChatScreen({
         />
         {busy ? (
           <Pressable
+            accessibilityRole="button"
             style={[styles.button, styles.listening]}
             onPress={async () => {
               setHandsFree(false);
@@ -607,11 +610,13 @@ export default function ChatScreen({
           </Pressable>
         ) : (
           <Pressable
+            accessibilityRole="button"
             style={[styles.button, voice.listening && styles.listening]}
             onPressIn={micIn}
             onPressOut={micOut}
             disabled={busy}
             accessibilityLabel={voice.listening ? "Stop listening" : "Talk to Jarvis"}
+            accessibilityHint={voice.listening ? undefined : "Hold while you talk, then let go to send"}
           >
             <Text style={styles.buttonText}>{voice.listening ? "●" : "Talk"}</Text>
           </Pressable>

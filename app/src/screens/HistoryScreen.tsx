@@ -159,7 +159,7 @@ export default function HistoryScreen({
           keyboardShouldPersistTaps="handled"
           ListEmptyComponent={<Empty text="Nothing matches." />}
           renderItem={({ item }) => (
-            <Pressable style={styles.row} onPress={() => onOpen(item.conversation_id)}>
+            <Pressable accessibilityRole="button" style={styles.row} onPress={() => onOpen(item.conversation_id)}>
               <Text style={styles.rowMeta} numberOfLines={1}>
                 {item.title || "Untitled"} · {item.role === "user" ? "You" : "Jarvis"} · {relativeTime(item.created_at)}
               </Text>
@@ -193,6 +193,7 @@ export default function HistoryScreen({
           }
           renderItem={({ item }) => (
             <Pressable
+              accessibilityRole="button"
               style={styles.row}
               onPress={() => onOpen(item.id)}
               onLongPress={() =>

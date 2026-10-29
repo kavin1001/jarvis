@@ -267,6 +267,7 @@ export default function ListsScreen({ settings }: { settings: Settings }) {
                 {item.done && <Text style={{ color: colors.onAccent, fontSize: 13, fontWeight: "700" }}>✓</Text>}
               </Pressable>
               <Pressable
+                accessibilityRole="button"
                 style={{ flex: 1 }}
                 accessibilityHint="Edit or remove"
                 onPress={() =>

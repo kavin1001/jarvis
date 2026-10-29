@@ -92,6 +92,7 @@ export default function MemoryScreen({ settings }: { settings: Settings }) {
             </View>
           ) : (
             <Pressable
+              accessibilityRole="button"
               style={styles.row}
               accessibilityHint="Edit or forget"
               onPress={() =>

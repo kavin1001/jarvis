@@ -16,7 +16,7 @@ export function LinkButton({ label, onPress, danger }: { label: string; onPress:
   const styles = useShared();
   const colors = useColors();
   return (
-    <Pressable onPress={onPress} hitSlop={8}>
+    <Pressable accessibilityRole="button" onPress={onPress} hitSlop={8}>
       <Text style={[styles.link, danger && { color: colors.danger }]}>{label}</Text>
     </Pressable>
   );
