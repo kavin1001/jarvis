@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Notes: "take a note: the gate code is 4821", "jot down these meeting notes", "what was that pancake recipe I saved?". Jarvis keeps longer text as notes and finds them again by any words in them. Hold a reply and tap **Save as note** to keep it. Notes live in the Lists tab under **📝 Notes**, where you can search, read, edit, share and delete them. Included in export and erase. `GET/POST /api/notes`, `PATCH/DELETE /api/notes/:id`.
 - Reading a table aloud (or sharing it as text) keeps each row on its own line; before, the header and first row ran together. The app now has unit tests (`npm test` in `app/`, run in CI) for how replies are read aloud, link parsing, place-reminder crossings, file sizes and relative times.
 - Settings is grouped under headings (Usage, Accounts, Voice and appearance, Privacy, Reminders and Siri, Notifications, Your data and devices), so the growing list is easier to scan. Connected apps moved next to Google.
 - Devices: this device is listed first, then the most recently used. A long list folds to five with **Show all**, and **Sign out the others** signs out every device but this one in one go.

@@ -17,6 +17,7 @@ import { disconnectGoogle, googleStatus, handleGoogleCallback, startGoogleAuth, 
 import { addServer, deleteServer, listServers, NewServer, setServerEnabled } from "./mcp.js";
 import { handleMcpCallback, startMcpOAuth } from "./mcpOAuth.js";
 import * as lists from "./lists.js";
+import * as notes from "./notes.js";
 import * as memory from "./memory.js";
 import * as places from "./places.js";
 import { getNotifySettings, savePushToken, sendPush, setNotifySettings } from "./push.js";
@@ -368,6 +369,28 @@ app.patch("/api/list-items/:id", async (c) => {
   return item ? c.json(item) : c.json({ error: "Not found" }, 404);
 });
 app.delete("/api/list-items/:id", async (c) => c.json({ deleted: (await lists.removeItems(config.userId, [c.req.param("id")])) > 0 }));
+app.get("/api/notes", async (c) => c.json(await notes.findNotes(config.userId, (c.req.query("q") ?? "").slice(0, 200))));
+const NewNote = z.object({ body: z.string().trim().min(1).max(notes.MAX_BODY), title: z.string().trim().max(120).optional() }).strict();
+app.post("/api/notes", async (c) => {
+  const body = NewNote.safeParse(await c.req.json());
+  if (!body.success) return c.json({ error: body.error.message }, 400);
+  try {
+    return c.json(await notes.createNote(config.userId, body.data.body, body.data.title));
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 400);
+  }
+});
+const NoteChange = z
+  .object({ body: z.string().trim().min(1).max(notes.MAX_BODY).optional(), title: z.string().trim().min(1).max(120).optional() })
+  .strict()
+  .refine((b) => b.body !== undefined || b.title !== undefined, "Nothing to change");
+app.patch("/api/notes/:id", async (c) => {
+  const body = NoteChange.safeParse(await c.req.json());
+  if (!body.success) return c.json({ error: body.error.message }, 400);
+  const note = await notes.updateNote(config.userId, c.req.param("id"), body.data);
+  return note ? c.json(note) : c.json({ error: "Not found" }, 404);
+});
+app.delete("/api/notes/:id", async (c) => c.json({ deleted: await notes.deleteNote(config.userId, c.req.param("id")) }));
 // ?all=1 deletes the whole list; otherwise only the checked-off items.
 app.delete("/api/lists/:name", async (c) =>
   c.json({ removed: await lists.clearList(config.userId, c.req.param("name"), c.req.query("all") === "1") }),

@@ -4,9 +4,11 @@ import { ActionSheet, type SheetAction } from "../ActionSheet";
 import { api, type List, type ListItem, type Settings } from "../api";
 import { Alert } from "../dialog";
 import { Choices, Empty, Header, LinkButton, useShared } from "../ui";
+import { Notes } from "./Notes";
 import { Text, TextInput, useColors } from "../theme";
 
 const NEW = "\u0000new";
+const NOTES = "\u0000notes";
 
 export default function ListsScreen({ settings }: { settings: Settings }) {
   const styles = useShared();
@@ -31,8 +33,8 @@ export default function ListsScreen({ settings }: { settings: Settings }) {
   }, [load]);
 
   // A list made here exists only once it has an item, so keep its name until then.
-  const names = [...new Set([...(lists ?? []).map((l) => l.name), ...(selected && selected !== NEW ? [selected] : [])])];
-  const current = selected === NEW ? NEW : selected && names.includes(selected) ? selected : names[0] ?? NEW;
+  const names = [...new Set([...(lists ?? []).map((l) => l.name), ...(selected && selected !== NEW && selected !== NOTES ? [selected] : [])])];
+  const current = selected === NEW || selected === NOTES ? selected : selected && names.includes(selected) ? selected : names[0] ?? NEW;
   const items = lists?.find((l) => l.name === current)?.items ?? [];
   const doneCount = items.filter((i) => i.done).length;
 
@@ -113,16 +115,31 @@ export default function ListsScreen({ settings }: { settings: Settings }) {
     }
   }
 
-  return (
+  const top = (
     <>
-      <Header title="Lists" right={<LinkButton label="Refresh" onPress={load} />} />
+      <Header title="Lists" right={current === NOTES ? undefined : <LinkButton label="Refresh" onPress={load} />} />
       <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
         <Choices
-          options={[...names.map((n): [string, string] => [n, n[0].toUpperCase() + n.slice(1)]), [NEW, "+ New list"]]}
+          options={[...names.map((n): [string, string] => [n, n[0].toUpperCase() + n.slice(1)]), [NOTES, "📝 Notes"], [NEW, "+ New list"]]}
           value={current}
           onChange={setSelected}
         />
       </View>
+    </>
+  );
+
+  if (current === NOTES) {
+    return (
+      <>
+        {top}
+        <Notes settings={settings} />
+      </>
+    );
+  }
+
+  return (
+    <>
+      {top}
       {current === NEW ? (
         <View style={{ flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingBottom: 8 }}>
           <TextInput

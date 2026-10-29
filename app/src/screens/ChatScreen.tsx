@@ -295,6 +295,18 @@ export default function ChatScreen({
       onPress: () => Share.share({ message: text }).catch(() => Clipboard.setStringAsync(text)),
     });
     if (item.text.trim()) actions.push({ label: "Remind me about this", onPress: () => setSheet(remindActions(text)) });
+    if (item.text.trim())
+      actions.push({
+        label: "Save as note",
+        onPress: () =>
+          api.createNote(settings, item.text.trim()).then(
+            (note) => {
+              if (Platform.OS !== "web") Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              Alert.alert("Saved to Notes", `"${note.title}" is in the Lists tab, under Notes.`);
+            },
+            (err) => Alert.alert("Couldn't save the note", String(err)),
+          ),
+      });
     if (item.role === "user" && item.kind === "turn") {
       // Attachments aren't kept on the phone, so only the words are sent again.
       const words = item.text.replace(/^(📄 .*\n)+/, "").replace(/^📷 /, "");

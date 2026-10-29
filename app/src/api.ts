@@ -118,6 +118,14 @@ export interface ListItem {
   created_at: string;
 }
 
+export interface Note {
+  id: string;
+  title: string;
+  body: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface List {
   name: string;
   items: ListItem[];
@@ -347,6 +355,11 @@ export const api = {
   /** Removes the checked-off items, or with all, the whole list. */
   clearList: (s: Settings, list: string, all = false) =>
     request<{ removed: number }>(s, `/api/lists/${encodeURIComponent(list)}${all ? "?all=1" : ""}`, { method: "DELETE" }),
+  notes: (s: Settings, search = "") => request<Note[]>(s, `/api/notes${search ? `?q=${encodeURIComponent(search)}` : ""}`),
+  createNote: (s: Settings, body: string, title?: string) => request<Note>(s, "/api/notes", { method: "POST", body: { body, title } }),
+  updateNote: (s: Settings, id: string, change: { body?: string; title?: string }) =>
+    request<Note>(s, `/api/notes/${id}`, { method: "PATCH", body: change }),
+  deleteNote: (s: Settings, id: string) => request(s, `/api/notes/${id}`, { method: "DELETE" }),
   messages: (s: Settings, conversationId: string) =>
     request<ChatMessage[]>(s, `/api/conversations/${conversationId}/messages`),
   tasks: (s: Settings) => request<Task[]>(s, "/api/tasks"),

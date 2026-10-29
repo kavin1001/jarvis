@@ -4,6 +4,7 @@ import { config } from "./config.js";
 import { googleStatus, googleTools, isGoogleTool, runGoogleTool } from "./google.js";
 import { mcpRequestParts } from "./mcp.js";
 import * as lists from "./lists.js";
+import * as notes from "./notes.js";
 import * as memory from "./memory.js";
 import * as places from "./places.js";
 import * as reminders from "./reminders.js";
@@ -82,6 +83,9 @@ const TOOL_STATUS: Record<string, string> = {
   list_show: "Checking your lists…",
   list_change: "Updating your list…",
   list_clear: "Clearing your list…",
+  note_save: "Saving a note…",
+  note_find: "Looking through your notes…",
+  note_delete: "Deleting a note…",
   start_task: "Starting a background task…",
   list_tasks: "Checking your tasks…",
   cancel_task: "Stopping that task…",
@@ -117,6 +121,7 @@ How to work:
 - When the user tells you a lasting preference or fact about themselves, save it with remember. When a saved fact changes, correct it with update_fact. Remove facts with forget when asked.
 - For "when I get home" or "when I leave here" use set_place_reminder; "here" uses the location in the message. Save named places with save_place when asked ("this is my office").
 - Keep the user's lists (shopping, packing, to-dos) with list_add, list_show, list_change and list_clear. "Add eggs and milk" during a shopping chat goes on the shopping list. They can also see and tick off their lists in the app's Lists tab.
+- "Take a note", "jot this down", "save that": keep longer text (ideas, meeting notes, a recipe, a reply worth keeping) with note_save; find it again with note_find. Facts about the user themselves go in remember instead, and items to buy or pack on a list. Notes are in the Lists tab too.
 - For reminders and recurring jobs ("remind me at 5", "every weekday at 8 brief me on my day") use set_reminder. Use action "run" when Jarvis should do something at that time and send the result; "notify" for a plain reminder. Times are in the user's local time zone, given in each message. For timers and "in 20 minutes", pass in_seconds instead of due_at; a timer's text reads like "10-minute timer: pasta".
 - Messages that start with [Scheduled job] were sent by a reminder the user set, not typed live. Answer them as a short notification-sized briefing.
 - Messages that start with [Background task update] are results from tasks you started earlier. Mention them if they are relevant.
@@ -145,6 +150,14 @@ const ListAddInput = z.object({ list: z.string().min(1).max(60), items: z.array(
 const ListShowInput = z.object({ list: z.string().min(1).max(60).optional() });
 const ListChangeInput = z.object({ item_ids: z.array(z.string()).min(1).max(100), action: z.enum(["check", "uncheck", "remove"]) });
 const ListClearInput = z.object({ list: z.string().min(1).max(60), everything: z.boolean().default(false) });
+const NoteSaveInput = z.object({
+  text: z.string().min(1).max(notes.MAX_BODY),
+  title: z.string().min(1).max(120).optional(),
+  note_id: z.string().optional(),
+  mode: z.enum(["append", "replace"]).default("append"),
+});
+const NoteFindInput = z.object({ search: z.string().max(200).optional(), note_id: z.string().optional() });
+const NoteDeleteInput = z.object({ note_id: z.string() });
 const WeatherInput = z
   .object({
     place: z.string().min(1).max(120).optional(),
@@ -334,6 +347,34 @@ const tools: Anthropic.Beta.BetaToolUnion[] = [
       properties: { list: { type: "string" }, everything: { type: "boolean" } },
       required: ["list"],
     },
+  },
+  {
+    name: "note_save",
+    description:
+      "Save a note, or with note_id, add to (default) or replace an existing note's text. Keep the user's words; tidy them only lightly. Give a short title when the first line wouldn't make a good one.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        text: { type: "string" },
+        title: { type: "string" },
+        note_id: { type: "string" },
+        mode: { type: "string", enum: ["append", "replace"] },
+      },
+      required: ["text"],
+    },
+  },
+  {
+    name: "note_find",
+    description: "Find notes by words in their title or text (all words must appear), newest first, or with no search the most recent ones. With note_id, read that note in full.",
+    eager_input_streaming: true,
+    input_schema: { type: "object", properties: { search: { type: "string" }, note_id: { type: "string" } } },
+  },
+  {
+    name: "note_delete",
+    description: "Delete a note by id. Only when the user asks.",
+    eager_input_streaming: true,
+    input_schema: { type: "object", properties: { note_id: { type: "string" } }, required: ["note_id"] },
   },
   {
     name: "start_task",
@@ -534,6 +575,34 @@ async function runClientTool(
         const { list, everything } = ListClearInput.parse(block.input);
         const n = await lists.clearList(config.userId, list, everything);
         return result(`Removed ${n} item${n === 1 ? "" : "s"}.`);
+      }
+      case "note_save": {
+        const { text, title, note_id, mode } = NoteSaveInput.parse(block.input);
+        if (note_id) {
+          const note = await notes.updateNote(config.userId, note_id, { body: text, title, append: mode === "append" });
+          return note ? result(`Updated note [${note.id}] "${note.title}".`) : result("No note with that id. Use note_find.", true);
+        }
+        try {
+          const note = await notes.createNote(config.userId, text, title);
+          return result(`Saved note [${note.id}] "${note.title}".`);
+        } catch (err) {
+          return result((err as Error).message, true);
+        }
+      }
+      case "note_find": {
+        const { search, note_id } = NoteFindInput.parse(block.input);
+        if (note_id) {
+          const note = await notes.getNote(config.userId, note_id);
+          return note ? result(`[${note.id}] ${note.title}\n\n${note.body}`) : result("No note with that id.", true);
+        }
+        const found = await notes.findNotes(config.userId, search ?? "", 15);
+        if (found.length === 0) return result(search ? "No notes match." : "The user has no notes yet.");
+        return result(notes.describeNotes(found));
+      }
+      case "note_delete": {
+        const { note_id } = NoteDeleteInput.parse(block.input);
+        const ok = await notes.deleteNote(config.userId, note_id);
+        return result(ok ? "Deleted." : "No note with that id.", !ok);
       }
       case "start_task": {
         if (!taskLaneConfigured()) {

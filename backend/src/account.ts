@@ -30,6 +30,7 @@ export async function exportData(userId: string) {
       "SELECT text, place_name, on_event, every_time, status, created_at FROM place_reminders WHERE user_id = $1 ORDER BY created_at",
       [userId],
     ),
+    notes: await query("SELECT title, body, created_at, updated_at FROM notes WHERE user_id = $1 ORDER BY created_at", [userId]),
     lists: await query("SELECT list, text, done, created_at FROM list_items WHERE user_id = $1 ORDER BY list, created_at", [userId]),
     tasks: await query(
       "SELECT summary, instructions, status, result, cost_usd::float AS cost_usd, created_at FROM tasks WHERE user_id = $1 ORDER BY created_at",
@@ -51,6 +52,7 @@ export async function deleteAllData(userId: string) {
   await query("DELETE FROM conversations WHERE user_id = $1", [userId]); // cascades to messages, tasks, approvals
   await query("DELETE FROM facts WHERE user_id = $1", [userId]);
   await query("DELETE FROM list_items WHERE user_id = $1", [userId]);
+  await query("DELETE FROM notes WHERE user_id = $1", [userId]);
   await query("DELETE FROM place_reminders WHERE user_id = $1", [userId]);
   await query("DELETE FROM places WHERE user_id = $1", [userId]);
   await query("DELETE FROM mcp_servers WHERE user_id = $1", [userId]);

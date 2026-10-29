@@ -215,6 +215,17 @@ CREATE TABLE IF NOT EXISTS list_items (
 );
 CREATE INDEX IF NOT EXISTS list_items_user_list ON list_items (user_id, list, created_at);
 
+-- Notes the user takes by voice ("take a note: …") or saves from a reply.
+CREATE TABLE IF NOT EXISTS notes (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     TEXT NOT NULL,
+  title       TEXT NOT NULL,
+  body        TEXT NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS notes_user_updated ON notes (user_id, updated_at DESC);
+
 -- Named places ("home", "work") for reminders that go off on arriving or leaving.
 CREATE TABLE IF NOT EXISTS places (
   user_id     TEXT NOT NULL,
