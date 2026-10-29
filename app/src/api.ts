@@ -77,6 +77,8 @@ export type StreamEvent =
   | { type: "conversation"; conversationId: string }
   | { type: "text"; text: string }
   | { type: "task_started"; taskId: string; summary: string }
+  /** What Jarvis is doing while a tool runs, such as "Searching the web…". */
+  | { type: "status"; text: string }
   | { type: "done" }
   | { type: "error"; message: string };
 

@@ -1,6 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { runTurn, setClient, type ChatEvent } from "../src/assistant.js";
+import { runTurn, setClient, toolStatus, type ChatEvent } from "../src/assistant.js";
 import { pool } from "../src/db.js";
 import { addServer } from "../src/mcp.js";
 import * as memory from "../src/memory.js";
@@ -32,9 +32,12 @@ function fakeClient(responses: Msg[]) {
             ...scripted,
           };
           return {
-            on(event: string, fn: (delta: string) => void) {
+            on(event: string, fn: (arg: never) => void) {
+              if (event === "streamEvent") {
+                for (const b of message.content) fn({ type: "content_block_start", content_block: b } as never);
+              }
               if (event !== "text") return;
-              for (const b of message.content) if (b.type === "text") fn(b.text);
+              for (const b of message.content) if (b.type === "text") fn(b.text as never);
             },
             finalMessage: async () => message,
           };
@@ -75,9 +78,11 @@ describe("runTurn", () => {
       { content: [{ type: "text", text: "Noted.", citations: null }], stop_reason: "end_turn" },
     ]);
     const id = await memory.createConversation("me");
-    await runTurn({ conversationId: id, text: "I like tea", source: "text", emit: () => {} });
+    const events: ChatEvent[] = [];
+    await runTurn({ conversationId: id, text: "I like tea", source: "text", emit: (e) => events.push(e) });
 
     expect((await memory.listFacts("me")).map((f) => f.fact)).toEqual(["Likes tea"]);
+    expect(events).toContainEqual({ type: "status", text: "Saving that…" });
     const second = requests[1].messages;
     const last = second.at(-1)!;
     expect(last.role).toBe("user");
@@ -252,5 +257,12 @@ describe("runTurn", () => {
     const stored = await memory.getMessages(id);
     expect(stored.map((m) => m.role)).toEqual(["user", "assistant"]);
     expect(stored[1].display_text).toBe("The best sushi in Austin is …(stopped)");
+  });
+
+  it("describes server, MCP and unknown tools for the status line", () => {
+    expect(toolStatus({ type: "server_tool_use", name: "web_search" })).toBe("Searching the web…");
+    expect(toolStatus({ type: "mcp_tool_use", name: "create_page", server_name: "notion" })).toBe("Using notion…");
+    expect(toolStatus({ type: "tool_use", name: "something_new" })).toBeNull();
+    expect(toolStatus({ type: "text" })).toBeNull();
   });
 });

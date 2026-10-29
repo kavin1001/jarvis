@@ -58,8 +58,33 @@ export interface ApproxLocation {
 export type ChatEvent =
   | { type: "text"; text: string }
   | { type: "task_started"; taskId: string; summary: string }
+  | { type: "status"; text: string }
   | { type: "done" }
   | { type: "error"; message: string };
+
+const TOOL_STATUS: Record<string, string> = {
+  web_search: "Searching the web…",
+  web_fetch: "Reading a page…",
+  remember: "Saving that…",
+  forget: "Forgetting that…",
+  set_reminder: "Setting a reminder…",
+  list_reminders: "Checking your reminders…",
+  cancel_reminder: "Cancelling a reminder…",
+  search_past_chats: "Looking through past chats…",
+  start_task: "Starting a background task…",
+  gmail_search: "Checking your email…",
+  gmail_read: "Reading an email…",
+  gmail_create_draft: "Drafting an email…",
+  calendar_list_events: "Checking your calendar…",
+  calendar_create_event: "Adding to your calendar…",
+};
+
+/** A short line for the app while a tool runs, e.g. "Searching the web…". */
+export function toolStatus(block: { type: string; name?: string; server_name?: string }): string | null {
+  if (block.type === "mcp_tool_use") return `Using ${block.server_name ?? "a connected app"}…`;
+  if (block.type !== "tool_use" && block.type !== "server_tool_use") return null;
+  return TOOL_STATUS[block.name ?? ""] ?? null;
+}
 
 // Kept byte-identical across requests so the prefix stays cached.
 const SYSTEM_PROMPT = `You are Jarvis, a personal assistant on the user's phone. They reach you by voice or text.
@@ -399,6 +424,11 @@ async function runTurnNow(opts: {
     stream.on("text", (delta) => {
       partial += delta;
       emit({ type: "text", text: delta });
+    });
+    stream.on("streamEvent", (event) => {
+      if (event.type !== "content_block_start") return;
+      const status = toolStatus(event.content_block as { type: string; name?: string; server_name?: string });
+      if (status) emit({ type: "status", text: status });
     });
 
     let message: Anthropic.Beta.BetaMessage;

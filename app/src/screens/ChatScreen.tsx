@@ -59,6 +59,7 @@ export default function ChatScreen({
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [docs, setDocs] = useState<Doc[]>([]);
   const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const list = useRef<FlatList<ChatMessage>>(null);
   const [sheet, setSheet] = useState<SheetAction[] | null>(null);
@@ -122,8 +123,12 @@ export default function ChatScreen({
             if (e.conversationId !== conversationId) onConversation(e.conversationId);
             break;
           case "text":
+            setStatus(null);
             appendReply(e.text);
             speaker?.push(e.text);
+            break;
+          case "status":
+            setStatus(e.text);
             break;
           case "task_started":
             appendReply(`\n\n⏳ Working in the background: ${e.summary}`);
@@ -138,6 +143,7 @@ export default function ChatScreen({
       else appendReply(`\n\nCould not reach Jarvis: ${String(err)}`);
     } finally {
       inFlight.current = null;
+      setStatus(null);
       if (controller.signal.aborted) Speech.stop();
       else speaker?.flush();
       setBusy(false);
@@ -209,6 +215,8 @@ export default function ChatScreen({
     } else {
       pressedAt.current = Date.now();
       if (Platform.OS !== "web") Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      // Talking over Jarvis cuts its reply short, as with a person.
+      Speech.stop();
       voice.start();
     }
   };
@@ -302,6 +310,7 @@ export default function ChatScreen({
 
       <ActionSheet actions={sheet} onClose={() => setSheet(null)} />
 
+      {busy && status && !voice.listening && <Text style={styles.partial}>{status}</Text>}
       {voice.listening && <Text style={styles.partial}>{voice.partial || "Listening…"}</Text>}
 
       {docs.length > 0 && (
