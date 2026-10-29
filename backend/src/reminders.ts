@@ -63,6 +63,21 @@ export async function cancelReminder(userId: string, id: string) {
   return rows.length > 0;
 }
 
+/**
+ * "Remind me again in N minutes": a one-off copy of the reminder, so a
+ * repeating schedule keeps its own times. Returns the new reminder's id.
+ */
+export async function snoozeReminder(userId: string, id: string, minutes: number, now = new Date()) {
+  const [r] = await query<Reminder>("SELECT * FROM reminders WHERE id = $1 AND user_id = $2", [id, userId]);
+  if (!r) return null;
+  const [row] = await query<{ id: string }>(
+    `INSERT INTO reminders (user_id, conversation_id, text, action, due_at, repeat, timezone)
+     VALUES ($1, $2, $3, 'notify', $4, NULL, $5) RETURNING id`,
+    [userId, r.conversation_id, r.text, new Date(now.getTime() + minutes * 60_000), r.timezone],
+  );
+  return row.id;
+}
+
 /** Runs a scheduled prompt as a Jarvis turn and returns the answer. Injected to avoid an import cycle. */
 export type RunPrompt = (conversationId: string, text: string) => Promise<string>;
 
@@ -100,7 +115,7 @@ async function fire(r: Reminder, runPrompt: RunPrompt) {
   if (r.action === "notify") {
     const text = `Reminder: ${r.text}`;
     await memory.appendMessage(conversationId, "assistant", [{ type: "text", text }], text, "system", "task_update");
-    await sendPush(r.user_id, "Reminder", r.text, { conversationId, reminderId: r.id });
+    await sendPush(r.user_id, "Reminder", r.text, { conversationId, reminderId: r.id }, "reminder");
     return;
   }
   const answer = await runPrompt(conversationId, r.text);

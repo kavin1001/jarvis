@@ -1,7 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { pool, query } from "../src/db.js";
 import * as memory from "../src/memory.js";
-import { createReminder, fireDueReminders, listReminders, setTimezone } from "../src/reminders.js";
+import { createReminder, fireDueReminders, listReminders, setTimezone, snoozeReminder } from "../src/reminders.js";
 import { resetDb } from "./helpers.js";
 
 beforeEach(resetDb);
@@ -40,5 +40,19 @@ describe("reminders", () => {
     expect(new Date(r.due_at).toISOString()).toBe("2026-10-06T09:00:00.000Z");
     const fired = await query<{ n: string }>("SELECT count(*) AS n FROM reminders WHERE last_fired_at IS NOT NULL");
     expect(fired[0].n).toBe("1");
+  });
+
+  it("snoozes a reminder as a one-off copy and leaves a repeating one on schedule", async () => {
+    const dueAt = new Date("2026-10-30T08:00:00Z");
+    const id = await createReminder({ userId: "me", conversationId: null, text: "Stretch", action: "run", dueAt, repeat: "daily" });
+    const now = new Date("2026-10-29T12:00:00Z");
+    const copy = await snoozeReminder("me", id, 10, now);
+    const all = await listReminders("me");
+    expect(all.map((r) => [r.text, r.action, r.repeat, new Date(r.due_at).toISOString()])).toEqual([
+      ["Stretch", "notify", null, "2026-10-29T12:10:00.000Z"],
+      ["Stretch", "run", "daily", dueAt.toISOString()],
+    ]);
+    expect(all[0].id).toBe(copy);
+    expect(await snoozeReminder("someone-else", id, 10)).toBeNull();
   });
 });

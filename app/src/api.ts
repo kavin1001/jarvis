@@ -231,6 +231,8 @@ export const api = {
   status: (s: Settings) => request<ServerStatus>(s, "/api/status"),
   reminders: (s: Settings) => request<Reminder[]>(s, "/api/reminders"),
   cancelReminder: (s: Settings, id: string) => request(s, `/api/reminders/${id}`, { method: "DELETE" }),
+  snoozeReminder: (s: Settings, id: string, minutes: number) =>
+    request<{ id: string }>(s, `/api/reminders/${id}/snooze`, { method: "POST", body: { minutes } }),
   facts: (s: Settings) => request<Fact[]>(s, "/api/facts"),
   addFact: (s: Settings, fact: string) => request<Fact>(s, "/api/facts", { method: "POST", body: { fact } }),
   deleteFact: (s: Settings, id: string) => request(s, `/api/facts/${id}`, { method: "DELETE" }),

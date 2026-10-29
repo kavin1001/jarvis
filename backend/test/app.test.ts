@@ -57,6 +57,17 @@ describe("facts and conversations", () => {
   });
 });
 
+describe("snoozing a reminder", () => {
+  const json = { ...auth, "Content-Type": "application/json" };
+  it("validates minutes and 404s unknown ids", async () => {
+    const snooze = (id: string, minutes: unknown) =>
+      app.request(`/api/reminders/${id}/snooze`, { method: "POST", headers: json, body: JSON.stringify({ minutes }) });
+    expect((await snooze("00000000-0000-0000-0000-000000000000", 10)).status).toBe(404);
+    expect((await snooze("not-a-uuid", 10)).status).toBe(404);
+    expect((await snooze("00000000-0000-0000-0000-000000000000", 0)).status).toBe(400);
+  });
+});
+
 describe("renaming a conversation", () => {
   const json = { ...auth, "Content-Type": "application/json" };
   it("sets the title, rejects an empty one, and 404s for unknown ids", async () => {

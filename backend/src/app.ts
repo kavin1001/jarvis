@@ -17,7 +17,7 @@ import { disconnectGoogle, googleStatus, handleGoogleCallback, startGoogleAuth }
 import { addServer, deleteServer, listServers, NewServer, setServerEnabled } from "./mcp.js";
 import * as memory from "./memory.js";
 import { savePushToken } from "./push.js";
-import { cancelReminder, createReminder, getTimezone, listReminders } from "./reminders.js";
+import { cancelReminder, createReminder, getTimezone, listReminders, snoozeReminder } from "./reminders.js";
 import { serverStatus } from "./status.js";
 import { firstOccurrence } from "./time.js";
 import { summarize } from "./usage.js";
@@ -233,6 +233,16 @@ app.post("/api/reminders", async (c) => {
   const id = await createReminder({ userId: config.userId, conversationId: null, ...body.data, dueAt });
   return c.json({ id, due_at: dueAt.toISOString() });
 });
+const SnoozeBody = z.object({ minutes: z.number().int().min(1).max(24 * 60) });
+app.post("/api/reminders/:id/snooze", async (c) => {
+  const body = SnoozeBody.safeParse(await c.req.json());
+  if (!body.success) return c.json({ error: body.error.message }, 400);
+  const reminderId = c.req.param("id");
+  if (!z.string().uuid().safeParse(reminderId).success) return c.json({ error: "Not found" }, 404);
+  const id = await snoozeReminder(config.userId, reminderId, body.data.minutes);
+  return id ? c.json({ id }) : c.json({ error: "Not found" }, 404);
+});
+
 app.delete("/api/reminders/:id", async (c) =>
   c.json({ cancelled: await cancelReminder(config.userId, c.req.param("id")) }),
 );

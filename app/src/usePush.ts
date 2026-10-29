@@ -24,6 +24,13 @@ if (pushSupported) Notifications.setNotificationCategoryAsync("approval", [
   { identifier: "deny", buttonTitle: "Deny", options: { opensAppToForeground: true, isDestructive: true } },
 ]).catch(() => {});
 
+// Snooze buttons on reminders. Each snooze is a new one-off reminder, so a daily one keeps its time.
+const SNOOZE: Record<string, number> = { snooze10: 10, snooze60: 60 };
+if (pushSupported) Notifications.setNotificationCategoryAsync("reminder", [
+  { identifier: "snooze10", buttonTitle: "Snooze 10 min", options: { opensAppToForeground: true } },
+  { identifier: "snooze60", buttonTitle: "Snooze 1 hour", options: { opensAppToForeground: true } },
+]).catch(() => {});
+
 export function askApproval(settings: Settings, approvalId: string, summary: string, onDecided?: () => void) {
   const decide = (decision: "allow" | "deny") =>
     api.decide(settings, approvalId, decision).then(onDecided, (err) => Alert.alert("Could not send", String(err)));
@@ -38,8 +45,8 @@ const handled = new Set<string>();
 
 /**
  * Registers this device for notifications and handles taps: Approve/Deny
- * buttons answer right away, a plain tap on an approval asks, and anything
- * tied to a conversation opens it.
+ * and Snooze buttons act right away, a plain tap on an approval asks, and
+ * anything tied to a conversation opens it.
  */
 export function usePush(settings: Settings | null, onTaskUpdate: () => void, onOpenConversation?: (id: string) => void) {
   useEffect(() => {
@@ -59,7 +66,12 @@ export function usePush(settings: Settings | null, onTaskUpdate: () => void, onO
       const key = response.notification.request.identifier + response.actionIdentifier;
       if (handled.has(key)) return;
       handled.add(key);
-      const data = response.notification.request.content.data as { approvalId?: string; conversationId?: string };
+      const data = response.notification.request.content.data as { approvalId?: string; conversationId?: string; reminderId?: string };
+      const snooze = SNOOZE[response.actionIdentifier];
+      if (data.reminderId && snooze) {
+        api.snoozeReminder(settings, data.reminderId, snooze).then(onTaskUpdate, (err) => Alert.alert("Could not snooze", String(err)));
+        return;
+      }
       const summary = response.notification.request.content.body ?? "";
       if (data.approvalId && (response.actionIdentifier === "approve" || response.actionIdentifier === "deny")) {
         const decision = response.actionIdentifier === "approve" ? "allow" : "deny";
