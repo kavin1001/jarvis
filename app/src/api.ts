@@ -378,6 +378,7 @@ export async function streamChat(
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = "";
+  let finished = false;
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -391,7 +392,12 @@ export async function streamChat(
         .filter((line) => line.startsWith("data:"))
         .map((line) => line.slice(5).trim())
         .join("");
-      if (data) onEvent(JSON.parse(data) as StreamEvent);
+      if (!data) continue;
+      const event = JSON.parse(data) as StreamEvent;
+      if (event.type === "done" || event.type === "error") finished = true;
+      onEvent(event);
     }
   }
+  // A proxy or a network change can end the stream cleanly mid-reply; the server is still writing it.
+  if (!finished) throw new Error("The connection closed before the reply finished");
 }

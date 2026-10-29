@@ -96,6 +96,10 @@ export default function ChatScreen({
     working: [],
   });
 
+  // Set when a reply's connection drops: until then, refresh that chat until the reply arrives.
+  const catchUp = useRef<{ until: number; conversationId: string } | null>(null);
+  const catchUpTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
   const refresh = useCallback(async () => {
     const tasks = await api.tasks(settings).catch(() => []);
     setApprovals(tasks.flatMap((t) => t.pending_approvals));
@@ -103,6 +107,16 @@ export default function ChatScreen({
     // A message sent while this was loading (a link or notification reply) shows its own bubbles.
     if (inFlight.current) return;
     setMessages(loaded);
+    // After a dropped connection, keep checking until the server's reply shows up.
+    clearTimeout(catchUpTimer.current);
+    const waiting = catchUp.current;
+    if (waiting && waiting.conversationId === conversationId && Date.now() < waiting.until && loaded.at(-1)?.role !== "assistant") {
+      setStatus("Still working on it…");
+      catchUpTimer.current = setTimeout(() => refreshRef.current(), 3000);
+    } else if (waiting) {
+      catchUp.current = null;
+      setStatus(null);
+    }
     if (!conversationId) {
       const dayAhead = Date.now() + 24 * 3600_000;
       const [reminders, agenda] = await Promise.all([
@@ -117,6 +131,10 @@ export default function ChatScreen({
       });
     }
   }, [settings, conversationId]);
+
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
+  useEffect(() => () => clearTimeout(catchUpTimer.current), []);
 
   useEffect(() => {
     if (!busy) refresh();
@@ -202,6 +220,7 @@ export default function ChatScreen({
         // The connection dropped mid-reply (often the app going to the background). The
         // server finishes the reply anyway, so show what it has instead of an error.
         refreshSoon.current = true;
+        if (replyConversation.current) catchUp.current = { until: Date.now() + 3 * 60_000, conversationId: replyConversation.current };
       } else appendReply(`\n\nCould not reach Jarvis: ${String(err)}`);
     } finally {
       inFlight.current = null;
@@ -431,7 +450,7 @@ export default function ChatScreen({
         </Pressable>
       ))}
 
-      {busy && status && !voice.listening && <Text style={styles.partial}>{status}</Text>}
+      {(busy || catchUp.current) && status && !voice.listening && <Text style={styles.partial}>{status}</Text>}
       {voice.listening && <Text style={styles.partial}>{voice.partial || "Listening…"}</Text>}
 
       {docs.length > 0 && (
