@@ -485,6 +485,17 @@ export const googleTools: Anthropic.Beta.BetaToolUnion[] = [
     },
   },
   {
+    name: "doc_append",
+    description:
+      "Add text to the end of a Google Doc that Jarvis made with drive_create_doc: \"add the hotel address to my trip doc\", \"put this in the meeting notes doc\". Find the doc's id with drive_search (or from when you made it). Plain text; start with a blank line to begin a new paragraph.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: { file_id: { type: "string" }, text: { type: "string" } },
+      required: ["file_id", "text"],
+    },
+  },
+  {
     name: "sheet_append_rows",
     description:
       "Add rows to the end of a Google Sheet that Jarvis made with drive_create_sheet: \"log $12 for lunch in my expenses sheet\", \"add Sam to the guest list\". Find the sheet's id with drive_search (or from when you made it), read it with drive_read first if you need its columns, and give the cells in the same column order. Formulas work.",
@@ -632,6 +643,10 @@ const inputs = {
   drive_read: z.object({ file_id: z.string().regex(/^[\w-]{10,200}$/, "must be a Drive file id") }),
   drive_create_doc: z.object({ title: z.string().trim().min(1).max(200), content: z.string().max(200_000) }),
   drive_create_sheet: z.object({ title: z.string().trim().min(1).max(200), csv: z.string().min(1).max(200_000) }),
+  doc_append: z.object({
+    file_id: z.string().regex(/^[\w-]{10,200}$/, "Not a Drive file id"),
+    text: z.string().min(1).max(100_000),
+  }),
   sheet_append_rows: z.object({
     file_id: z.string().regex(/^[\w-]{10,200}$/, "Not a Drive file id"),
     rows: z.array(z.array(z.union([z.string().max(5000), z.number()])).min(1).max(50)).min(1).max(500),
@@ -1108,6 +1123,7 @@ async function createDriveFile(userId: string, title: string, kind: "doc" | "she
 }
 
 const SHEETS = "https://sheets.googleapis.com/v4/spreadsheets";
+const DOCS = "https://docs.googleapis.com/v1/documents";
 // A range the Sheets API reports back, like Sheet1!A5:C6 or 'My sheet'!A5:C6.
 const RANGE = /^(?:'(?:[^']|'')+'|[\w ]+)!\$?[A-Z]+\$?\d+(?::\$?[A-Z]+\$?\d+)?$/;
 
@@ -1433,6 +1449,22 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
       const { title, csv } = inputs.drive_create_sheet.parse(raw);
       const sheet = await createDriveFile(userId, title, "sheet", csv);
       return `Created the Google Sheet (id ${sheet.id}): ${sheet.webViewLink}`;
+    }
+    case "doc_append": {
+      if (!(await googleStatus(userId)).can_create_docs)
+        throw new Error("Jarvis needs permission to edit Google Docs. In Settings, tap Connect again next to Google.");
+      const { file_id, text } = inputs.doc_append.parse(raw);
+      try {
+        await google(userId, `${DOCS}/${file_id}:batchUpdate`, {
+          method: "POST",
+          body: { requests: [{ insertText: { endOfSegmentLocation: {}, text: text.startsWith("\n") ? text : `\n${text}` } }] },
+        });
+      } catch (err) {
+        if (/\b40[34]\b/.test((err as Error).message))
+          throw new Error("Jarvis can only add to docs it made. Offer to make a new doc, or the user can paste it in themselves.");
+        throw err;
+      }
+      return `Added that to the doc: https://docs.google.com/document/d/${file_id}/edit`;
     }
     case "sheet_append_rows": {
       if (!(await googleStatus(userId)).can_create_docs)

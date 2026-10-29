@@ -71,6 +71,7 @@ describe("activity log", () => {
     expect(undoFor("drive_create_sheet", { title: "Budget" }, "Created the Google Sheet (id sheet_1234567890): https://docs.google.com/s")).toEqual({ tool: "trash_drive_file", file_id: "sheet_1234567890" });
     expect(describeAction("drive_create_sheet", { title: "Budget", csv: "a" })).toBe('Made the Google Sheet "Budget"');
     expect(undoFor("sheet_append_rows", {}, "Added 2 rows to the sheet (id sheet_1234567890, range 'My log'!A5:C6).")).toEqual({ tool: "clear_sheet_range", file_id: "sheet_1234567890", range: "'My log'!A5:C6" });
+    expect(describeAction("doc_append", { file_id: "x", text: "y" })).toBe("Added text to a Google Doc");
     expect(describeAction("sheet_append_rows", { file_id: "x", rows: [["a"], ["b"]] })).toBe("Added 2 rows to a Google Sheet");
     expect(undoFor("gmail_create_draft", { to: "a@x" }, "Draft r-123 saved in Gmail, copying Ana. It has not been sent")).toEqual({ tool: "gmail_delete_draft", draft_id: "r-123" });
     expect(undoFor("calendar_update_event", { event_id: "work@x/ev1", start: "2026-10-29T16:00:00Z" }, "Event updated (it was 2026-10-29T15:00:00.000Z to 2026-10-29T15:30:00.000Z): https://c")).toEqual({

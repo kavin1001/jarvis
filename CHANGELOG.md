@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Add to a doc later: "add the hotel address to my trip doc". Jarvis adds text to the end of a Google Doc it made. Enable the **Google Docs API** and **Google Sheets API** in your Google Cloud project (see `docs/DEPLOY.md`) for this and for adding rows to sheets.
 - Keep a running log in a sheet: "log $12 for lunch in my expenses sheet", "add Sam to the guest list". Jarvis adds rows to the end of a Google Sheet it made, and **Undo** in Settings clears them again. It can't edit sheets it didn't make.
 - After writing up a recorded meeting, Jarvis offers to put the notes in a Google Doc you can share and to set reminders for action items that have a date.
 - Google Sheets: "make me a budget sheet for October", "put these flights in a spreadsheet to compare". Jarvis fills in the rows (formulas work) and gives you the link. **Undo** in Settings moves it to the bin. Uses the same permission as Google Docs.

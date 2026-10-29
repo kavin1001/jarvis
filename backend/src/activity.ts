@@ -74,6 +74,8 @@ export function describeAction(name: string, input: Input, timeZone = "UTC"): st
       return `Made the Google Doc "${str(input.title)}"`;
     case "drive_create_sheet":
       return `Made the Google Sheet "${str(input.title)}"`;
+    case "doc_append":
+      return "Added text to a Google Doc";
     case "sheet_append_rows": {
       const n = Array.isArray(input.rows) ? input.rows.length : 0;
       return `Added ${n} row${n === 1 ? "" : "s"} to a Google Sheet`;

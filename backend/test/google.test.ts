@@ -431,6 +431,23 @@ describe("Google tools", () => {
     await expect(trashDriveFile("me", "../x")).rejects.toThrow(/Not a Drive file id/);
   });
 
+  it("adds text to the end of a doc Jarvis made", async () => {
+    await connect({ access_token: "at", expires_at: Date.now() + 3600_000 }, "email");
+    await expect(runGoogleTool("me", "doc_append", { file_id: "doc_1234567890", text: "x" })).rejects.toThrow(/edit Google Docs/);
+    await query("UPDATE connectors SET scopes = 'email https://www.googleapis.com/auth/drive.file'");
+    const calls = mockFetch({
+      "documents/doc_1234567890:batchUpdate": () => ({ replies: [{}] }),
+      "documents/notmine_1234567890:batchUpdate": () => new Response("not found", { status: 404 }),
+    });
+    expect(await runGoogleTool("me", "doc_append", { file_id: "doc_1234567890", text: "Hotel: Rua Augusta 1" })).toBe(
+      "Added that to the doc: https://docs.google.com/document/d/doc_1234567890/edit",
+    );
+    expect(JSON.parse(calls[0].init!.body as string)).toEqual({
+      requests: [{ insertText: { endOfSegmentLocation: {}, text: "\nHotel: Rua Augusta 1" } }],
+    });
+    await expect(runGoogleTool("me", "doc_append", { file_id: "notmine_1234567890", text: "x" })).rejects.toThrow(/only add to docs it made/);
+  });
+
   it("adds rows to a sheet Jarvis made and clears them for undo", async () => {
     await connect({ access_token: "at", expires_at: Date.now() + 3600_000 }, "email");
     await expect(runGoogleTool("me", "sheet_append_rows", { file_id: "sheet_1234567890", rows: [["a"]] })).rejects.toThrow(/edit Google Sheets/);
