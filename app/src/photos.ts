@@ -40,9 +40,11 @@ async function pick(source: "camera" | "library"): Promise<Photo[]> {
 export interface Attachments {
   photos: Photo[];
   docs: Doc[];
+  /** The user chose to record a meeting instead. */
+  meeting?: boolean;
 }
 
-/** Asks camera, library or file, then returns resized JPEGs or documents ready to send. */
+/** Asks camera, library, file or meeting recording, then returns resized JPEGs or documents ready to send. */
 export function chooseAttachments(): Promise<Attachments> {
   return new Promise((resolve) => {
     const choose = (i: number) =>
@@ -53,11 +55,11 @@ export function chooseAttachments(): Promise<Attachments> {
             ? pick("library").then((photos) => ({ photos, docs: [] }))
             : i === 2
               ? chooseDocuments().then((docs) => ({ photos: [], docs }))
-              : Promise.resolve({ photos: [], docs: [] }),
+              : Promise.resolve({ photos: [], docs: [], meeting: i === 3 }),
       );
     if (Platform.OS === "ios") {
       ActionSheetIOS.showActionSheetWithOptions(
-        { options: ["Take photo", "Choose from library", "Choose a file (PDF or text)", "Cancel"], cancelButtonIndex: 3 },
+        { options: ["Take photo", "Choose from library", "Choose a file (PDF or text)", "Record a meeting", "Cancel"], cancelButtonIndex: 4 },
         choose,
       );
     } else {
@@ -65,7 +67,8 @@ export function chooseAttachments(): Promise<Attachments> {
         { text: "Take photo", onPress: () => choose(0) },
         { text: "Choose from library", onPress: () => choose(1) },
         { text: "Choose a file (PDF or text)", onPress: () => choose(2) },
-        { text: "Cancel", style: "cancel", onPress: () => choose(3) },
+        { text: "Record a meeting", onPress: () => choose(3) },
+        { text: "Cancel", style: "cancel", onPress: () => choose(4) },
       ]);
     }
   });

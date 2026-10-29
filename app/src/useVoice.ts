@@ -4,6 +4,9 @@ import { useRef, useState } from "react";
 import { plainText } from "./Markdown";
 import { voicePrefs } from "./voicePrefs";
 
+/** Who the speech recognizer's events are for: the chat mic, or a meeting being recorded (MeetingRecorder). */
+export const recognizer = { owner: "chat" as "chat" | "meeting" };
+
 /**
  * Hold-to-talk: start() on press, stop() on release. onFinal receives the
  * transcript once recognition ends. speak() reads replies aloud.
@@ -14,10 +17,12 @@ export function useVoice(onFinal: (transcript: string) => void, onSilence?: () =
   const transcript = useRef("");
 
   useSpeechRecognitionEvent("result", (e) => {
+    if (recognizer.owner !== "chat") return;
     transcript.current = e.results[0]?.transcript ?? "";
     setPartial(transcript.current);
   });
   useSpeechRecognitionEvent("end", () => {
+    if (recognizer.owner !== "chat") return;
     setListening(false);
     const text = transcript.current.trim();
     transcript.current = "";
@@ -26,6 +31,7 @@ export function useVoice(onFinal: (transcript: string) => void, onSilence?: () =
     else onSilence?.();
   });
   useSpeechRecognitionEvent("error", (e) => {
+    if (recognizer.owner !== "chat") return;
     // "no-speech" just means nobody talked; anything else is logged.
     if (e.error !== "no-speech") console.warn("speech error", e.error, e.message);
     setListening(false);
@@ -49,7 +55,7 @@ export function useVoice(onFinal: (transcript: string) => void, onSilence?: () =
 }
 
 /** The phone's language and region, such as "en-GB", so recognition matches how you speak. */
-function phoneLocale() {
+export function phoneLocale() {
   const locale = (Intl.DateTimeFormat().resolvedOptions().locale || "en-US").split("-u-")[0];
   return locale === "en" ? "en-US" : locale;
 }

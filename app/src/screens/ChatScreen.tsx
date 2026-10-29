@@ -22,11 +22,13 @@ import { Markdown, plainText } from "../Markdown";
 import { Sources } from "../Sources";
 import * as Speech from "expo-speech";
 import type { Doc } from "../documents";
+import { meetingMessage } from "../meeting";
 import { chooseAttachments, type Photo } from "../photos";
 import { Text, TextInput, useStyles, type Palette, type TextInputHandle } from "../theme";
 import { askApproval } from "../usePush";
 import { createSpeaker, isStopPhrase, useVoice } from "../useVoice";
 import { shouldSpeak } from "../voicePrefs";
+import { MeetingRecorder } from "./MeetingRecorder";
 
 // Shown on an empty chat so a new user sees what Jarvis can do.
 const SUGGESTIONS = [
@@ -79,6 +81,7 @@ export default function ChatScreen({
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const list = useRef<FlatList<ChatMessage>>(null);
   const [sheet, setSheet] = useState<SheetAction[] | null>(null);
+  const [recording, setRecording] = useState(false);
   const inFlight = useRef<AbortController | null>(null);
   // The conversation the reply in flight belongs to, known once the server names it.
   const replyConversation = useRef<string | undefined>(undefined);
@@ -482,6 +485,17 @@ export default function ChatScreen({
       />
 
       <ActionSheet actions={sheet} onClose={() => setSheet(null)} />
+      {recording ? (
+        <MeetingRecorder
+          onCancel={() => setRecording(false)}
+          onDone={(transcript, startedAt, ms) => {
+            setRecording(false);
+            if (!transcript.trim()) return Alert.alert("Nothing was recorded", "Jarvis didn't pick up any words.");
+            const { text, doc } = meetingMessage(transcript, startedAt, ms);
+            send(text, "text", { photos: [], docs: [doc] });
+          }}
+        />
+      ) : null}
 
       {queue.map((item) => (
         <Pressable
@@ -538,12 +552,16 @@ export default function ChatScreen({
           style={styles.attach}
           onPress={() =>
             chooseAttachments().then((a) => {
+              if (a.meeting) {
+                setHandsFree(false);
+                return setRecording(true);
+              }
               setPhotos((all) => [...all, ...a.photos].slice(0, 4));
               setDocs((all) => [...all, ...a.docs].slice(0, 2));
             })
           }
           disabled={busy}
-          accessibilityLabel="Add a photo or file"
+          accessibilityLabel="Add a photo or file, or record a meeting"
         >
           <Text style={styles.attachText}>＋</Text>
         </Pressable>
