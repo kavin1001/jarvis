@@ -8,7 +8,7 @@ import * as pageWatch from "./pageWatch.js";
 import { mcpRequestParts } from "./mcp.js";
 import * as lists from "./lists.js";
 import * as notes from "./notes.js";
-import { describeAction, recordActivity } from "./activity.js";
+import { describeAction, recordActivity, undoFor } from "./activity.js";
 import * as memory from "./memory.js";
 import * as places from "./places.js";
 import * as reminders from "./reminders.js";
@@ -520,11 +520,15 @@ function accountActions(
   results: Anthropic.Beta.BetaToolResultBlockParam[],
   timeZone: string,
 ) {
-  const entries: { kind: string; summary: string }[] = [];
+  const entries: Parameters<typeof recordActivity>[2] = [];
   toolUses.forEach((b, i) => {
     if (results[i]?.is_error) return;
-    const summary = describeAction(b.name, b.input as Record<string, unknown>, timeZone);
-    if (summary) entries.push({ kind: b.name, summary });
+    const input = b.input as Record<string, unknown>;
+    const summary = describeAction(b.name, input, timeZone);
+    if (!summary) return;
+    const content = results[i]?.content;
+    const answer = typeof content === "string" ? content : Array.isArray(content) ? content.map((c) => (c.type === "text" ? c.text : "")).join("") : "";
+    entries.push({ kind: b.name, summary, undo: undoFor(b.name, input, answer) });
   });
   // Calls to the user's own MCP servers can read or change anything there, so all of them are listed.
   for (const b of content) {

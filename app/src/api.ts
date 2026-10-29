@@ -161,6 +161,9 @@ export interface Activity {
   kind: string;
   summary: string;
   created_at: string;
+  /** Jarvis can reverse it: archived mail back to the inbox, an added event deleted, a snooze ended. */
+  can_undo?: boolean;
+  undone?: boolean;
 }
 
 export interface Note {
@@ -431,6 +434,7 @@ export const api = {
   setChatRetention: (s: Settings, days: number | null) =>
     request<{ chat_retention_days: number | null; deleted: number }>(s, "/api/privacy", { method: "PATCH", body: { chat_retention_days: days } }),
   activity: (s: Settings) => request<Activity[]>(s, "/api/activity?limit=50"),
+  undoActivity: (s: Settings, id: string) => request<{ undone: boolean }>(s, `/api/activity/${id}/undo`, { method: "POST" }),
   notes: (s: Settings, search = "") => request<Note[]>(s, `/api/notes${search ? `?q=${encodeURIComponent(search)}` : ""}`),
   createNote: (s: Settings, body: string, title?: string) => request<Note>(s, "/api/notes", { method: "POST", body: { body, title } }),
   updateNote: (s: Settings, id: string, change: { body?: string; title?: string }) =>

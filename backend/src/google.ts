@@ -990,7 +990,7 @@ export async function runGoogleTool(userId: string, name: keyof typeof inputs, r
           end: { dateTime: new Date(e.end).toISOString() },
         },
       });
-      return `Event created: ${created.htmlLink}`;
+      return `Event created (id ${created.id}): ${created.htmlLink}`;
     }
     case "calendar_update_event": {
       const { event_id, start, end, ...rest } = inputs.calendar_update_event.parse(raw);

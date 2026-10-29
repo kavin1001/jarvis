@@ -12,9 +12,19 @@ export interface Activity {
   kind: string;
   summary: string;
   created_at: string;
+  can_undo: boolean;
+  undone: boolean;
 }
 
+/** How to reverse an action: the tool call that puts things back. */
+export type Undo =
+  | { tool: "gmail_organize"; message_ids: string[]; action: string }
+  | { tool: "calendar_delete_event"; event_id: string }
+  | { tool: "unsnooze"; snooze_id: string };
+
 const KEEP_DAYS = 90;
+// Undo is offered for a week; after that the mail or event has likely moved on.
+const UNDO_DAYS = 7;
 
 type Input = Record<string, unknown>;
 const str = (v: unknown, max = 80) => {
@@ -70,19 +80,75 @@ export function describeAction(name: string, input: Input, timeZone = "UTC"): st
   }
 }
 
-export async function recordActivity(userId: string, conversationId: string | null, entries: { kind: string; summary: string }[]) {
+const INVERSE: Record<string, string> = {
+  archive: "move_to_inbox",
+  move_to_inbox: "archive",
+  mark_read: "mark_unread",
+  mark_unread: "mark_read",
+  star: "unstar",
+  unstar: "star",
+};
+
+/** The reverse of an account action, from its input and the tool's answer; null when it can't be undone from here. */
+export function undoFor(name: string, input: Input, result: string): Undo | null {
+  switch (name) {
+    case "gmail_organize": {
+      const ids = Array.isArray(input.message_ids) ? input.message_ids.filter((x): x is string => typeof x === "string") : [];
+      const action = INVERSE[String(input.action)];
+      return ids.length && action ? { tool: "gmail_organize", message_ids: ids, action } : null;
+    }
+    case "calendar_create_event": {
+      const id = result.match(/^Event created \(id ([^)\s]+)\)/)?.[1];
+      return id ? { tool: "calendar_delete_event", event_id: id } : null;
+    }
+    case "gmail_snooze": {
+      const id = result.match(/^Snoozed ([0-9a-f-]{36}):/)?.[1];
+      return id ? { tool: "unsnooze", snooze_id: id } : null;
+    }
+    default:
+      return null;
+  }
+}
+
+export async function recordActivity(userId: string, conversationId: string | null, entries: { kind: string; summary: string; undo?: Undo | null }[]) {
   if (entries.length === 0) return;
   await query(
-    `INSERT INTO activity (user_id, conversation_id, kind, summary)
-     SELECT $1, $2, k, s FROM unnest($3::text[], $4::text[]) AS u(k, s)`,
-    [userId, conversationId, entries.map((e) => e.kind), entries.map((e) => e.summary)],
+    `INSERT INTO activity (user_id, conversation_id, kind, summary, undo)
+     SELECT $1, $2, k, s, u::jsonb FROM unnest($3::text[], $4::text[], $5::text[]) AS e(k, s, u)`,
+    [userId, conversationId, entries.map((e) => e.kind), entries.map((e) => e.summary), entries.map((e) => (e.undo ? JSON.stringify(e.undo) : null))],
   );
   await query(`DELETE FROM activity WHERE user_id = $1 AND created_at < now() - interval '${KEEP_DAYS} days'`, [userId]);
 }
 
 export async function recentActivity(userId: string, limit = 50): Promise<Activity[]> {
   return query<Activity>(
-    "SELECT id::text, conversation_id, kind, summary, created_at FROM activity WHERE user_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2",
+    `SELECT id::text, conversation_id, kind, summary, created_at,
+       (undo IS NOT NULL AND undone_at IS NULL AND created_at > now() - interval '${UNDO_DAYS} days') AS can_undo,
+       undone_at IS NOT NULL AS undone
+     FROM activity WHERE user_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2`,
     [userId, limit],
   );
+}
+
+/**
+ * Reverses an entry with `run`, once. Returns false when there's nothing to undo (unknown,
+ * already undone, too old). If `run` fails, the entry can be undone again later.
+ */
+export async function undoActivity(userId: string, id: string, run: (undo: Undo) => Promise<void>) {
+  if (!/^\d{1,18}$/.test(id)) return false;
+  const [entry] = await query<{ summary: string; undo: Undo; conversation_id: string | null }>(
+    `UPDATE activity SET undone_at = now()
+     WHERE id = $1 AND user_id = $2 AND undo IS NOT NULL AND undone_at IS NULL AND created_at > now() - interval '${UNDO_DAYS} days'
+     RETURNING summary, undo, conversation_id`,
+    [id, userId],
+  );
+  if (!entry) return false;
+  try {
+    await run(entry.undo);
+  } catch (err) {
+    await query("UPDATE activity SET undone_at = NULL WHERE id = $1", [id]);
+    throw err;
+  }
+  await recordActivity(userId, entry.conversation_id, [{ kind: "undo", summary: `Undid: ${entry.summary}` }]);
+  return true;
 }

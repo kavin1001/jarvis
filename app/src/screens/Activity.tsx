@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { View } from "react-native";
 import { api, type Activity as Entry, type Settings } from "../api";
+import { Alert } from "../dialog";
 import { LinkButton, relativeTime, useShared } from "../ui";
 import { Text } from "../theme";
 
 const ICONS: Record<string, string> = {
   gmail_create_draft: "✉️",
   gmail_organize: "✉️",
+  gmail_snooze: "💤",
+  calendar_respond_to_event: "📅",
+  undo: "↩︎",
   calendar_create_event: "📅",
   calendar_update_event: "📅",
   calendar_delete_event: "📅",
@@ -26,6 +30,19 @@ export function Activity({ settings, refreshKey }: { settings: Settings; refresh
     load();
   }, [load, refreshKey]);
 
+  const [undoing, setUndoing] = useState<string | null>(null);
+  async function undo(a: Entry) {
+    setUndoing(a.id);
+    try {
+      await api.undoActivity(settings, a.id);
+      await load();
+    } catch (err) {
+      Alert.alert("Couldn't undo that", String(err));
+    } finally {
+      setUndoing(null);
+    }
+  }
+
   const LIMIT = 5;
   const shown = showAll ? entries ?? [] : (entries ?? []).slice(0, LIMIT);
   return (
@@ -36,9 +53,13 @@ export function Activity({ settings, refreshKey }: { settings: Settings; refresh
         <View key={a.id} style={{ flexDirection: "row", gap: 8, paddingVertical: 4 }}>
           <Text>{ICONS[a.kind] ?? "•"}</Text>
           <View style={{ flex: 1 }}>
-            <Text>{a.summary}</Text>
-            <Text style={styles.rowMeta}>{relativeTime(a.created_at)}</Text>
+            <Text style={a.undone ? { textDecorationLine: "line-through" } : undefined}>{a.summary}</Text>
+            <Text style={styles.rowMeta}>
+              {relativeTime(a.created_at)}
+              {a.undone ? " · undone" : ""}
+            </Text>
           </View>
+          {a.can_undo ? <LinkButton label={undoing === a.id ? "Undoing…" : "Undo"} onPress={() => undoing || undo(a)} /> : null}
         </View>
       ))}
       {(entries?.length ?? 0) > LIMIT ? (

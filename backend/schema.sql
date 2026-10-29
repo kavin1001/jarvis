@@ -287,6 +287,9 @@ CREATE TABLE IF NOT EXISTS activity (
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS activity_user_created ON activity (user_id, created_at DESC);
+-- How to reverse an entry (archived mail back to the inbox, an added event deleted), for Undo in Settings.
+ALTER TABLE activity ADD COLUMN IF NOT EXISTS undo JSONB;
+ALTER TABLE activity ADD COLUMN IF NOT EXISTS undone_at TIMESTAMPTZ;
 
 -- Chats imported from a Claude.ai data export keep the export's id, so importing again skips them.
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS import_ref TEXT;

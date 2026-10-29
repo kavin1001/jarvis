@@ -13,12 +13,12 @@ import { runTurn, sourcesOf, type ChatEvent } from "./assistant.js";
 import { config } from "./config.js";
 import { query } from "./db.js";
 import { allowAttempt, authenticate, createPairingCode, isLimited, listDevices, redeemPairingCode, registerDevice, revokeDevice, type Caller } from "./devices.js";
-import { disconnectGoogle, googleStatus, handleGoogleCallback, modifyMail, startGoogleAuth, upcomingEvents } from "./google.js";
+import { disconnectGoogle, googleStatus, handleGoogleCallback, modifyMail, runGoogleTool, startGoogleAuth, upcomingEvents } from "./google.js";
 import { addServer, deleteServer, listServers, NewServer, setServerEnabled } from "./mcp.js";
 import { handleMcpCallback, startMcpOAuth } from "./mcpOAuth.js";
 import * as lists from "./lists.js";
 import * as notes from "./notes.js";
-import { recentActivity } from "./activity.js";
+import { recentActivity, undoActivity } from "./activity.js";
 import { countOldChats, getChatRetention, RETENTION_CHOICES, setChatRetention, sweepOldChats } from "./retention.js";
 import { ClaudeExport, importClaudeChats } from "./importClaude.js";
 import * as memory from "./memory.js";
@@ -411,6 +411,20 @@ app.put("/api/instructions", async (c) => {
   const body = InstructionsBody.safeParse(await c.req.json().catch(() => null));
   if (!body.success) return c.json({ error: `instructions must be text up to ${memory.MAX_INSTRUCTIONS} characters, or null` }, 400);
   return c.json({ instructions: await memory.setInstructions(config.userId, body.data.instructions) });
+});
+// Settings, Undo: puts archived mail back, deletes an event Jarvis added, ends a snooze.
+app.post("/api/activity/:id/undo", async (c) => {
+  try {
+    const undone = await undoActivity(config.userId, c.req.param("id"), async (u) => {
+      if (u.tool === "unsnooze") {
+        if (!(await mailSnooze.unsnooze(config.userId, u.snooze_id, modifyMail))) throw new Error("That email is already back in the inbox.");
+      } else if (u.tool === "gmail_organize") await runGoogleTool(config.userId, "gmail_organize", { message_ids: u.message_ids, action: u.action });
+      else await runGoogleTool(config.userId, "calendar_delete_event", { event_id: u.event_id });
+    });
+    return undone ? c.json({ undone: true }) : c.json({ error: "There's nothing to undo there any more." }, 404);
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 502);
+  }
 });
 app.get("/api/activity", async (c) => c.json(await recentActivity(config.userId, Math.min(200, Number(c.req.query("limit")) || 50))));
 app.get("/api/notes", async (c) => c.json(await notes.findNotes(config.userId, (c.req.query("q") ?? "").slice(0, 200))));
