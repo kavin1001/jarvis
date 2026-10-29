@@ -65,3 +65,9 @@ CREATE TABLE IF NOT EXISTS push_tokens (
   user_id     TEXT NOT NULL,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- 0.2: tasks survive restarts. Approvals are answered straight to the
+-- session, so nothing waits in memory; replays must not double-insert.
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS summary TEXT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS last_message TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS approvals_task_event_idx ON approvals (task_id, event_id);

@@ -66,6 +66,5 @@ Speech recognition and push notifications need a development build, not Expo Go.
 ## Known limits (MVP)
 
 - Single user, protected by one shared bearer token. Swap in Sign in with Apple/Google before sharing it.
-- Pending approvals live in server memory: restarting the backend while a task waits for approval leaves that task stuck.
 - Voice uses on-device speech recognition and the phone's built-in voice. A streaming speech provider would sound better.
 - The fast lane defaults to `claude-opus-5-5` at low effort. Set `FAST_MODEL=claude-sonnet-5-5` if replies feel slow.

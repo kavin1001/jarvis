@@ -4,110 +4,38 @@ import { query } from "./db.js";
 import * as memory from "./memory.js";
 import { sendPush } from "./push.js";
 
-const client = new Anthropic();
+let client = new Anthropic();
 
-// Resolvers for approvals waiting on the user, keyed by approval id.
-// In memory only: a server restart denies nothing, it just leaves that task
-// waiting, so restart between tasks for now.
-const waiters = new Map<string, (decision: "allow" | "deny") => void>();
+/** Test seam: swap the Claude client for a fake. */
+export function setTaskClient(fake: Anthropic) {
+  client = fake;
+}
+
+type SessionEvent = Anthropic.Beta.Sessions.BetaManagedAgentsStreamSessionEvents;
+
+interface TaskRow {
+  id: string;
+  user_id: string;
+  conversation_id: string;
+  instructions: string;
+  summary: string | null;
+  status: "queued" | "running" | "waiting_approval" | "done" | "failed";
+  session_id: string | null;
+  last_message: string | null;
+}
+
+interface ApprovalRow {
+  id: string;
+  task_id: string;
+  event_id: string;
+  kind: "tool_confirmation" | "custom_tool";
+  summary: string;
+  decision: "allow" | "deny" | null;
+  created_at: string;
+}
 
 export function taskLaneConfigured() {
   return Boolean(config.taskAgentId && config.taskEnvironmentId);
-}
-
-export async function startTask(
-  userId: string,
-  conversationId: string,
-  instructions: string,
-  summary: string,
-): Promise<string> {
-  const [task] = await query<{ id: string }>(
-    "INSERT INTO tasks (user_id, conversation_id, instructions) VALUES ($1, $2, $3) RETURNING id",
-    [userId, conversationId, instructions],
-  );
-  runTask(task.id, userId, conversationId, instructions, summary).catch(async (err) => {
-    console.error(`task ${task.id} failed`, err);
-    await finishTask(task.id, userId, conversationId, summary, "failed", `The task failed: ${String(err)}`);
-  });
-  return task.id;
-}
-
-export async function listTasks(userId: string) {
-  return query(
-    `SELECT t.id, t.status, t.instructions, t.result, t.created_at, t.updated_at,
-            COALESCE(json_agg(a.*) FILTER (WHERE a.id IS NOT NULL AND a.decision IS NULL), '[]') AS pending_approvals
-     FROM tasks t LEFT JOIN approvals a ON a.task_id = t.id
-     WHERE t.user_id = $1 GROUP BY t.id ORDER BY t.created_at DESC LIMIT 50`,
-    [userId],
-  );
-}
-
-export async function decideApproval(userId: string, approvalId: string, decision: "allow" | "deny") {
-  const rows = await query(
-    `UPDATE approvals a SET decision = $3, decided_at = now()
-     FROM tasks t WHERE a.id = $1 AND a.task_id = t.id AND t.user_id = $2 AND a.decision IS NULL
-     RETURNING a.id`,
-    [approvalId, userId, decision],
-  );
-  if (rows.length === 0) return false;
-  waiters.get(approvalId)?.(decision);
-  return true;
-}
-
-async function setStatus(taskId: string, status: string, extra: { sessionId?: string; result?: string } = {}) {
-  await query(
-    `UPDATE tasks SET status = $2, session_id = COALESCE($3, session_id), result = COALESCE($4, result), updated_at = now()
-     WHERE id = $1`,
-    [taskId, status, extra.sessionId ?? null, extra.result ?? null],
-  );
-}
-
-/** Records the request, notifies the phone, and waits for a decision (deny on timeout). */
-async function askApproval(
-  taskId: string,
-  userId: string,
-  eventId: string,
-  kind: "tool_confirmation" | "custom_tool",
-  summary: string,
-): Promise<"allow" | "deny"> {
-  const [approval] = await query<{ id: string }>(
-    "INSERT INTO approvals (task_id, event_id, kind, summary) VALUES ($1, $2, $3, $4) RETURNING id",
-    [taskId, eventId, kind, summary],
-  );
-  await setStatus(taskId, "waiting_approval");
-  await sendPush(userId, "Jarvis needs your OK", summary, { taskId, approvalId: approval.id });
-
-  const decision = await new Promise<"allow" | "deny">((resolve) => {
-    const timer = setTimeout(() => resolve("deny"), config.approvalTimeoutMs);
-    waiters.set(approval.id, (d) => {
-      clearTimeout(timer);
-      resolve(d);
-    });
-  });
-  waiters.delete(approval.id);
-  await query("UPDATE approvals SET decision = COALESCE(decision, $2), decided_at = now() WHERE id = $1", [
-    approval.id,
-    decision,
-  ]);
-  await setStatus(taskId, "running");
-  return decision;
-}
-
-async function finishTask(
-  taskId: string,
-  userId: string,
-  conversationId: string,
-  summary: string,
-  status: "done" | "failed",
-  result: string,
-) {
-  await setStatus(taskId, status, { result });
-  const update = `Task "${summary}" ${status === "done" ? "finished" : "failed"}.\n\n${result}`;
-  await memory.appendMessage(conversationId, "assistant", [{ type: "text", text: update }], update, "system", "task_update");
-  await sendPush(userId, status === "done" ? "Jarvis finished a task" : "Jarvis task failed", `${summary}: ${result}`, {
-    taskId,
-    conversationId,
-  });
 }
 
 const TASK_PREAMBLE = `You are running a background task for the user of the Jarvis assistant. The user is not watching; they will read your final message as a notification and in chat.
@@ -120,69 +48,244 @@ Rules:
 Task:
 `;
 
-async function runTask(
-  taskId: string,
+async function getTask(taskId: string): Promise<TaskRow> {
+  const [task] = await query<TaskRow>("SELECT * FROM tasks WHERE id = $1", [taskId]);
+  return task;
+}
+
+async function setStatus(taskId: string, status: TaskRow["status"], sessionId?: string) {
+  await query(
+    "UPDATE tasks SET status = $2, session_id = COALESCE($3, session_id), updated_at = now() WHERE id = $1",
+    [taskId, status, sessionId ?? null],
+  );
+}
+
+export async function startTask(
   userId: string,
   conversationId: string,
   instructions: string,
   summary: string,
-) {
+): Promise<string> {
+  const [task] = await query<{ id: string }>(
+    "INSERT INTO tasks (user_id, conversation_id, instructions, summary) VALUES ($1, $2, $3, $4) RETURNING id",
+    [userId, conversationId, instructions, summary],
+  );
+  launch(task.id).catch((err) => failTask(task.id, err));
+  return task.id;
+}
+
+async function launch(taskId: string) {
+  const task = await getTask(taskId);
   const session = await client.beta.sessions.create({
     agent: config.taskAgentId!,
     environment_id: config.taskEnvironmentId!,
-    title: summary,
+    title: task.summary ?? "Jarvis task",
     ...(config.taskVaultId ? { vault_ids: [config.taskVaultId] } : {}),
   });
-  await setStatus(taskId, "running", { sessionId: session.id });
+  await setStatus(taskId, "running", session.id);
 
   // Open the stream before sending, so no early event is missed.
   const stream = await client.beta.sessions.events.stream(session.id);
   await client.beta.sessions.events.send(session.id, {
-    events: [{ type: "user.message", content: [{ type: "text", text: TASK_PREAMBLE + instructions }] }],
+    events: [{ type: "user.message", content: [{ type: "text", text: TASK_PREAMBLE + task.instructions }] }],
   });
+  await follow(taskId, stream);
+}
 
-  let lastText = "";
-  loop: for await (const event of stream) {
-    switch (event.type) {
-      case "agent.message": {
-        const text = event.content
-          .filter((b) => b.type === "text")
-          .map((b) => b.text)
-          .join("");
-        if (text) lastText = text;
-        break;
-      }
-      case "agent.custom_tool_use": {
-        let reply = `Unknown tool ${event.name}`;
-        if (event.name === "request_approval") {
-          const ask = String(event.input.summary ?? "The agent wants to take an irreversible step.");
-          const decision = await askApproval(taskId, userId, event.id, "custom_tool", ask);
-          reply = decision === "allow" ? "approved" : "denied: do not do this; tell the user in your final message";
-        }
-        await client.beta.sessions.events.send(session.id, {
-          events: [{ type: "user.custom_tool_result", custom_tool_use_id: event.id, content: [{ type: "text", text: reply }] }],
-        });
-        break;
-      }
-      case "agent.tool_use":
-      case "agent.mcp_tool_use": {
-        // The auto policy pauses calls it can't classify; the user decides.
-        if (event.evaluated_permission === "ask") {
-          const ask = `Allow ${event.name}? ${JSON.stringify(event.input).slice(0, 140)}`;
-          const decision = await askApproval(taskId, userId, event.id, "tool_confirmation", ask);
-          await client.beta.sessions.events.send(session.id, {
-            events: [{ type: "user.tool_confirmation", tool_use_id: event.id, result: decision }],
-          });
-        }
-        break;
-      }
-      case "session.status_idle":
-        if (event.stop_reason.type !== "requires_action") break loop;
-        break;
-      case "session.status_terminated":
-        break loop;
+/** Handles one session event. Safe to call twice for the same event. Returns true when the task is over. */
+async function handleEvent(taskId: string, event: SessionEvent): Promise<boolean> {
+  switch (event.type) {
+    case "agent.message": {
+      const text = event.content
+        .filter((b) => b.type === "text")
+        .map((b) => b.text)
+        .join("");
+      if (text) await query("UPDATE tasks SET last_message = $2, updated_at = now() WHERE id = $1", [taskId, text]);
+      return false;
     }
+    case "agent.custom_tool_use": {
+      if (event.name === "request_approval") {
+        const ask = String(event.input.summary ?? "The agent wants to take an irreversible step.");
+        await recordApproval(taskId, event.id, "custom_tool", ask);
+      } else {
+        await sendToSession(taskId, {
+          type: "user.custom_tool_result",
+          custom_tool_use_id: event.id,
+          content: [{ type: "text", text: `Unknown tool ${event.name}` }],
+          is_error: true,
+        });
+      }
+      return false;
+    }
+    case "agent.tool_use":
+    case "agent.mcp_tool_use":
+      // The auto policy pauses calls it can't classify; the user decides.
+      if (event.evaluated_permission === "ask") {
+        const ask = `Allow ${event.name}? ${JSON.stringify(event.input).slice(0, 140)}`;
+        await recordApproval(taskId, event.id, "tool_confirmation", ask);
+      }
+      return false;
+    case "session.status_idle":
+      if (event.stop_reason.type === "requires_action") return false;
+      await completeTask(taskId, event.stop_reason.type === "end_turn" ? "done" : "failed");
+      return true;
+    case "session.status_terminated":
+      await completeTask(taskId, "failed");
+      return true;
+    default:
+      return false;
+  }
+}
+
+async function follow(taskId: string, stream: AsyncIterable<SessionEvent>, seen = new Set<string>()) {
+  for await (const event of stream) {
+    const id = "id" in event ? event.id : undefined; // delta events carry no id
+    if (id) {
+      if (seen.has(id)) continue;
+      seen.add(id);
+    }
+    if (await handleEvent(taskId, event)) return;
+  }
+}
+
+async function sendToSession(
+  taskId: string,
+  event: Anthropic.Beta.Sessions.EventSendParams["events"][number],
+) {
+  const task = await getTask(taskId);
+  if (!task.session_id) throw new Error(`task ${taskId} has no session`);
+  await client.beta.sessions.events.send(task.session_id, { events: [event] });
+}
+
+async function recordApproval(taskId: string, eventId: string, kind: ApprovalRow["kind"], summary: string) {
+  const inserted = await query<{ id: string }>(
+    `INSERT INTO approvals (task_id, event_id, kind, summary) VALUES ($1, $2, $3, $4)
+     ON CONFLICT (task_id, event_id) DO NOTHING RETURNING id`,
+    [taskId, eventId, kind, summary],
+  );
+  if (inserted.length === 0) return; // already recorded (replay after restart)
+  await setStatus(taskId, "waiting_approval");
+  const task = await getTask(taskId);
+  await sendPush(task.user_id, "Jarvis needs your OK", summary, { taskId, approvalId: inserted[0].id });
+}
+
+/** Records the user's answer and passes it straight to the agent's session. */
+export async function decideApproval(userId: string, approvalId: string, decision: "allow" | "deny") {
+  const [approval] = await query<ApprovalRow>(
+    `UPDATE approvals a SET decision = $3, decided_at = now()
+     FROM tasks t WHERE a.id = $1 AND a.task_id = t.id AND t.user_id = $2 AND a.decision IS NULL
+     RETURNING a.*`,
+    [approvalId, userId, decision],
+  );
+  if (!approval) return false;
+
+  if (approval.kind === "custom_tool") {
+    await sendToSession(approval.task_id, {
+      type: "user.custom_tool_result",
+      custom_tool_use_id: approval.event_id,
+      content: [
+        {
+          type: "text",
+          text: decision === "allow" ? "approved" : "denied: do not do this; tell the user in your final message",
+        },
+      ],
+    });
+  } else {
+    await sendToSession(approval.task_id, {
+      type: "user.tool_confirmation",
+      tool_use_id: approval.event_id,
+      result: decision,
+    });
   }
 
-  await finishTask(taskId, userId, conversationId, summary, "done", lastText || "The agent finished without a summary.");
+  const pending = await query("SELECT 1 FROM approvals WHERE task_id = $1 AND decision IS NULL", [approval.task_id]);
+  if (pending.length === 0) {
+    await query("UPDATE tasks SET status = 'running', updated_at = now() WHERE id = $1 AND status = 'waiting_approval'", [
+      approval.task_id,
+    ]);
+  }
+  return true;
+}
+
+/** Denies approvals nobody answered in time, so a task never hangs forever. */
+export async function expireApprovals() {
+  const stale = await query<{ id: string; user_id: string }>(
+    `SELECT a.id, t.user_id FROM approvals a JOIN tasks t ON t.id = a.task_id
+     WHERE a.decision IS NULL AND a.created_at < now() - ($1 || ' milliseconds')::interval`,
+    [String(config.approvalTimeoutMs)],
+  );
+  for (const a of stale) await decideApproval(a.user_id, a.id, "deny");
+}
+
+async function completeTask(taskId: string, status: "done" | "failed") {
+  // Only the first caller wins, so replays and the live stream can't both report.
+  const [task] = await query<TaskRow>(
+    "UPDATE tasks SET status = $2, result = last_message, updated_at = now() WHERE id = $1 AND status NOT IN ('done', 'failed') RETURNING *",
+    [taskId, status],
+  );
+  if (!task) return;
+  await report(task, status, task.last_message ?? (status === "done" ? "The agent finished without a summary." : "The agent stopped."));
+}
+
+async function failTask(taskId: string, err: unknown) {
+  console.error(`task ${taskId} failed`, err);
+  const [task] = await query<TaskRow>(
+    "UPDATE tasks SET status = 'failed', result = $2, updated_at = now() WHERE id = $1 AND status NOT IN ('done', 'failed') RETURNING *",
+    [taskId, `The task failed: ${String(err)}`],
+  );
+  if (task) await report(task, "failed", `The task failed: ${String(err)}`);
+}
+
+async function report(task: TaskRow, status: "done" | "failed", result: string) {
+  const summary = task.summary ?? "Background task";
+  const update = `Task "${summary}" ${status === "done" ? "finished" : "failed"}.\n\n${result}`;
+  await memory.appendMessage(task.conversation_id, "assistant", [{ type: "text", text: update }], update, "system", "task_update");
+  await sendPush(task.user_id, status === "done" ? "Jarvis finished a task" : "Jarvis task failed", `${summary}: ${result}`, {
+    taskId: task.id,
+    conversationId: task.conversation_id,
+  });
+}
+
+/**
+ * After a restart: re-read each in-flight session's history to catch events
+ * that arrived while the server was down, then keep following it live.
+ */
+export async function resumeTasks() {
+  const tasks = await query<TaskRow>(
+    "SELECT * FROM tasks WHERE status IN ('running', 'waiting_approval') AND session_id IS NOT NULL",
+  );
+  for (const task of tasks) resume(task).catch((err) => failTask(task.id, err));
+  const queued = await query<TaskRow>("SELECT * FROM tasks WHERE status = 'queued'");
+  for (const task of queued) launch(task.id).catch((err) => failTask(task.id, err));
+  return tasks.length + queued.length;
+}
+
+async function resume(task: TaskRow) {
+  const sessionId = task.session_id!;
+  const stream = await client.beta.sessions.events.stream(sessionId);
+  const seen = new Set<string>();
+  for await (const event of client.beta.sessions.events.list(sessionId)) {
+    seen.add(event.id);
+    // Terminal idle events are judged below from the session's current state.
+    if (event.type === "session.status_idle" || event.type === "session.status_terminated") continue;
+    await handleEvent(task.id, event as SessionEvent);
+  }
+  const session = await client.beta.sessions.retrieve(sessionId);
+  if (session.status === "terminated") return completeTask(task.id, "failed");
+  if (session.status === "idle") {
+    const pending = await query("SELECT 1 FROM approvals WHERE task_id = $1 AND decision IS NULL", [task.id]);
+    if (pending.length === 0) return completeTask(task.id, "done");
+  }
+  await follow(task.id, stream, seen);
+}
+
+export async function listTasks(userId: string) {
+  return query(
+    `SELECT t.id, t.status, t.summary, t.instructions, t.result, t.created_at, t.updated_at,
+            COALESCE(json_agg(json_build_object('id', a.id, 'summary', a.summary))
+                     FILTER (WHERE a.id IS NOT NULL AND a.decision IS NULL), '[]') AS pending_approvals
+     FROM tasks t LEFT JOIN approvals a ON a.task_id = t.id
+     WHERE t.user_id = $1 GROUP BY t.id ORDER BY t.created_at DESC LIMIT 50`,
+    [userId],
+  );
 }
