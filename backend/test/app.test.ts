@@ -128,6 +128,8 @@ describe("renaming a conversation", () => {
     const { createConversation, listConversations } = await import("../src/memory.js");
     const older = await createConversation("me");
     await createConversation("me");
+    // Two chats made in the same millisecond would otherwise sort by id.
+    await pool.query("UPDATE conversations SET updated_at = now() - interval '1 hour' WHERE id = $1", [older]);
     const change = (body: unknown) =>
       app.request(`/api/conversations/${older}`, { method: "PATCH", headers: json, body: JSON.stringify(body) });
     expect((await listConversations("me"))[0].id).not.toBe(older);
