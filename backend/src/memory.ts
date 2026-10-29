@@ -115,7 +115,17 @@ export async function addFact(userId: string, fact: string) {
   return row.id;
 }
 
+// Fact ids are integers; anything else matches nothing instead of failing the query.
+const factIdOk = (id: string) => /^\d{1,18}$/.test(id);
+
+export async function updateFact(userId: string, factId: string, fact: string) {
+  if (!factIdOk(factId)) return false;
+  const rows = await query("UPDATE facts SET fact = $3 WHERE user_id = $1 AND id = $2 RETURNING id", [userId, factId, fact]);
+  return rows.length > 0;
+}
+
 export async function deleteFact(userId: string, factId: string) {
+  if (!factIdOk(factId)) return false;
   const rows = await query("DELETE FROM facts WHERE user_id = $1 AND id = $2 RETURNING id", [
     userId,
     factId,

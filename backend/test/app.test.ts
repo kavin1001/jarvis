@@ -62,7 +62,15 @@ describe("facts and conversations", () => {
   it("adds a fact by hand and deletes a conversation", async () => {
     const json = { ...auth, "Content-Type": "application/json" };
     const added = await app.request("/api/facts", { method: "POST", headers: json, body: JSON.stringify({ fact: "Vegetarian" }) });
-    expect(await added.json()).toMatchObject({ fact: "Vegetarian" });
+    const { id: factId } = (await added.json()) as { id: string };
+    const edit = (id: string, fact: string) =>
+      app.request(`/api/facts/${id}`, { method: "PATCH", headers: json, body: JSON.stringify({ fact }) });
+    expect((await edit(factId, "Vegan")).status).toBe(200);
+    expect(await (await app.request("/api/facts", { headers: auth })).json()).toMatchObject([{ id: factId, fact: "Vegan" }]);
+    expect((await edit(factId, "")).status).toBe(400);
+    expect((await edit("999999", "Vegan")).status).toBe(404);
+    expect((await edit("not-a-number", "Vegan")).status).toBe(404);
+    expect(await (await app.request("/api/facts/nope", { method: "DELETE", headers: auth })).json()).toEqual({ deleted: false });
 
     const { createConversation, listConversations } = await import("../src/memory.js");
     const id = await createConversation("me");

@@ -253,6 +253,7 @@ export const api = {
     request<{ id: string }>(s, `/api/reminders/${id}/snooze`, { method: "POST", body: { minutes } }),
   facts: (s: Settings) => request<Fact[]>(s, "/api/facts"),
   addFact: (s: Settings, fact: string) => request<Fact>(s, "/api/facts", { method: "POST", body: { fact } }),
+  updateFact: (s: Settings, id: string, fact: string) => request<Fact>(s, `/api/facts/${id}`, { method: "PATCH", body: { fact } }),
   deleteFact: (s: Settings, id: string) => request(s, `/api/facts/${id}`, { method: "DELETE" }),
   messages: (s: Settings, conversationId: string) =>
     request<ChatMessage[]>(s, `/api/conversations/${conversationId}/messages`),

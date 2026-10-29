@@ -270,6 +270,13 @@ app.post("/api/facts", async (c) => {
   const id = await memory.addFact(config.userId, body.data.fact);
   return c.json({ id, fact: body.data.fact });
 });
+app.patch("/api/facts/:id", async (c) => {
+  const body = FactBody.safeParse(await c.req.json());
+  if (!body.success) return c.json({ error: body.error.message }, 400);
+  const id = c.req.param("id");
+  if (!(await memory.updateFact(config.userId, id, body.data.fact))) return c.json({ error: "Not found" }, 404);
+  return c.json({ id, fact: body.data.fact });
+});
 app.delete("/api/facts/:id", async (c) =>
   c.json({ deleted: await memory.deleteFact(config.userId, c.req.param("id")) }),
 );

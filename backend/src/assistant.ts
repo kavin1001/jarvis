@@ -67,6 +67,7 @@ const TOOL_STATUS: Record<string, string> = {
   web_fetch: "Reading a page…",
   remember: "Saving that…",
   forget: "Forgetting that…",
+  update_fact: "Updating what I know…",
   set_reminder: "Setting a reminder…",
   list_reminders: "Checking your reminders…",
   cancel_reminder: "Cancelling a reminder…",
@@ -98,7 +99,7 @@ How to work:
 - When a request needs real work on the web — logging into an account, filling forms, booking, comparing many pages, scraping, or anything that takes more than a minute — call start_task with complete, self-contained instructions, then tell the user in one short sentence that you are on it and they will get a notification.
 - Never ask the user for passwords or card numbers in chat. Logins live in a secure vault the background agent can use.
 - When the user refers to an earlier conversation that isn't in this chat, look it up with search_past_chats before saying you don't remember.
-- When the user tells you a lasting preference or fact about themselves, save it with remember. Remove facts with forget when asked.
+- When the user tells you a lasting preference or fact about themselves, save it with remember. When a saved fact changes, correct it with update_fact. Remove facts with forget when asked.
 - For reminders and recurring jobs ("remind me at 5", "every weekday at 8 brief me on my day") use set_reminder. Use action "run" when Jarvis should do something at that time and send the result; "notify" for a plain reminder. Times are in the user's local time zone, given in each message.
 - Messages that start with [Scheduled job] were sent by a reminder the user set, not typed live. Answer them as a short notification-sized briefing.
 - Messages that start with [Background task update] are results from tasks you started earlier. Mention them if they are relevant.
@@ -108,6 +109,7 @@ How to work:
 
 const RememberInput = z.object({ fact: z.string().min(1).max(500) });
 const ForgetInput = z.object({ fact_id: z.string() });
+const UpdateFactInput = z.object({ fact_id: z.string(), fact: z.string().min(1).max(500) });
 const SetReminderInput = z.object({
   text: z.string().min(1).max(1000),
   due_at: z.string().refine((v) => !Number.isNaN(Date.parse(v)), "must be an ISO 8601 date-time"),
@@ -143,6 +145,16 @@ const tools: Anthropic.Beta.BetaToolUnion[] = [
       type: "object",
       properties: { fact_id: { type: "string" } },
       required: ["fact_id"],
+    },
+  },
+  {
+    name: "update_fact",
+    description: "Replace a saved fact that has changed (they moved, changed jobs, a preference changed) instead of adding a second one.",
+    eager_input_streaming: true,
+    input_schema: {
+      type: "object",
+      properties: { fact_id: { type: "string" }, fact: { type: "string", description: "The corrected fact, one short sentence." } },
+      required: ["fact_id", "fact"],
     },
   },
   {
@@ -252,6 +264,11 @@ async function runClientTool(
         const { fact_id } = ForgetInput.parse(block.input);
         const ok = await memory.deleteFact(config.userId, fact_id);
         return result(ok ? "Deleted." : "No fact with that id.", !ok);
+      }
+      case "update_fact": {
+        const { fact_id, fact } = UpdateFactInput.parse(block.input);
+        const ok = await memory.updateFact(config.userId, fact_id, fact);
+        return result(ok ? "Updated." : "No fact with that id.", !ok);
       }
       case "set_reminder": {
         const input = SetReminderInput.parse(block.input);

@@ -89,6 +89,20 @@ describe("runTurn", () => {
     expect(JSON.stringify(last.content)).toContain("tool_result");
   });
 
+  it("corrects a saved fact in place", async () => {
+    const factId = await memory.addFact("me", "Lives in Chicago");
+    fakeClient([
+      {
+        content: [{ type: "tool_use", id: "tu_1", name: "update_fact", input: { fact_id: factId, fact: "Lives in Boston" }, caller: undefined } as never],
+        stop_reason: "tool_use",
+      },
+      { content: [{ type: "text", text: "Got it.", citations: null }], stop_reason: "end_turn" },
+    ]);
+    const id = await memory.createConversation("me");
+    await runTurn({ conversationId: id, text: "I moved to Boston", source: "text", emit: () => {} });
+    expect(await memory.listFacts("me")).toEqual([{ id: factId, fact: "Lives in Boston" }]);
+  });
+
   it("marks voice turns and folds in pending task updates", async () => {
     const requests = fakeClient([
       { content: [{ type: "text", text: "Sure.", citations: null }], stop_reason: "end_turn" },

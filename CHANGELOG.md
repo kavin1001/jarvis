@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Memory: tap a fact to **Edit** or **Forget** it. When something about you changes ("I moved to Boston"), Jarvis now corrects the saved fact instead of keeping both. `PATCH /api/facts/:id` takes `{ fact }`.
 - Settings has **Read replies aloud** (when you speak, always, or never) and **Speaking speed** (slower to fastest, with a sample when you pick one). Replies are read without Markdown symbols, voice input follows your phone's language and region, and speech no longer waits forever in browsers that have no voice list.
 - A new chat's coming-up card also shows your next calendar events when Google is connected. `GET /api/agenda` returns them.
 - Lock your phone or switch apps mid-reply and Jarvis still finishes. The answer arrives as a "Jarvis replied" notification, and it's in the chat when you come back. Only the Stop button stops a reply now, through `POST /api/conversations/:id/stop`.
