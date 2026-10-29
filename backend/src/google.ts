@@ -1134,13 +1134,37 @@ async function attachmentBytes(userId: string, messageId: string, attachmentId: 
   return Buffer.from(data, "base64url");
 }
 
+/**
+ * The "Jarvis" folder in the user's Drive, made the first time Jarvis saves something, so its docs, sheets and
+ * saved attachments stay together. Marked with a private app property so a folder of the user's own with the same
+ * name is never used. If Drive won't say, the file goes in My Drive instead.
+ */
+async function inJarvisFolder<T extends object>(userId: string, metadata: T): Promise<T & { parents?: string[] }> {
+  try {
+    const q = "mimeType = 'application/vnd.google-apps.folder' and trashed = false and appProperties has { key = 'jarvis' and value = 'folder' }";
+    const found = await google<{ files: { id: string }[] }>(userId, `${DRIVE}?q=${encodeURIComponent(q)}&fields=files(id)&pageSize=1`);
+    const id =
+      found.files[0]?.id ??
+      (
+        await google<{ id: string }>(userId, `${DRIVE}?fields=id`, {
+          method: "POST",
+          body: { name: "Jarvis", mimeType: "application/vnd.google-apps.folder", appProperties: { jarvis: "folder" } },
+        })
+      ).id;
+    return { ...metadata, parents: [id] };
+  } catch (err) {
+    console.warn("Jarvis Drive folder", (err as Error).message);
+    return metadata;
+  }
+}
+
 /** Uploads a file to Drive as it is, in two steps (a resumable upload), since attachments can be bigger than a multipart upload allows. */
 async function uploadToDrive(userId: string, name: string, mimeType: string, bytes: Buffer) {
   const token = await accessToken(userId);
   const start = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,webViewLink", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": mimeType },
-    body: JSON.stringify({ name, mimeType }),
+    body: JSON.stringify(await inJarvisFolder(userId, { name, mimeType })),
   });
   const session = start.headers.get("location");
   if (!start.ok || !session) throw new Error(`Google API ${start.status}: ${(await start.text()).slice(0, 300)}`);
@@ -1159,7 +1183,7 @@ async function createDriveFile(userId: string, title: string, kind: "doc" | "she
   const boundary = `jarvis-${randomBytes(12).toString("hex")}`;
   const body =
     `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n` +
-    JSON.stringify({ name: title, mimeType }) +
+    JSON.stringify(await inJarvisFolder(userId, { name: title, mimeType })) +
     `\r\n--${boundary}\r\nContent-Type: ${contentType}; charset=UTF-8\r\n\r\n${content}\r\n--${boundary}--`;
   const res = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink", {
     method: "POST",

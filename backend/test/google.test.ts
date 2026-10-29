@@ -414,7 +414,7 @@ describe("Google tools", () => {
     expect(await runGoogleTool("me", "drive_create_doc", { title: "Lisbon trip", content: "## Day 1\n- Café Ç at 9" })).toBe(
       "Created the Google Doc (id doc_1234567890): https://docs.google.com/document/d/doc_1234567890/edit",
     );
-    const upload = calls[0];
+    const upload = calls.find((c) => c.url.includes("upload/"))!;
     expect(upload.url).toContain("uploadType=multipart");
     const type = (upload.init!.headers as Record<string, string>)["Content-Type"];
     const boundary = type.match(/^multipart\/related; boundary=(\S+)$/)![1];
@@ -471,6 +471,28 @@ describe("Google tools", () => {
     await expect(clearSheetRange("me", "sheet_1234567890", "A1:B2/../x")).rejects.toThrow(/Not a sheet range/);
   });
 
+  it("keeps what it makes in a Jarvis folder, making the folder once", async () => {
+    await connect({ access_token: "at", expires_at: Date.now() + 3600_000 }, "email https://www.googleapis.com/auth/drive.file");
+    let folders: { id: string }[] = [];
+    const calls = mockFetch({
+      "upload/drive/v3/files": () => ({ id: "doc_1234567890", webViewLink: "https://docs.google.com/d" }),
+      "drive/v3/files?q=": () => ({ files: folders }),
+      "drive/v3/files?fields=id": () => ((folders = [{ id: "folder_1" }]), { id: "folder_1" }),
+    });
+    const metadata = () => {
+      const upload = calls.filter((c) => c.url.includes("upload/")).at(-1)!;
+      return JSON.parse((upload.init!.body as string).split("\r\n\r\n")[1].split("\r\n")[0]);
+    };
+    await runGoogleTool("me", "drive_create_doc", { title: "Plan", content: "x" });
+    expect(decodeURIComponent(calls[0].url)).toContain("appProperties has { key = 'jarvis' and value = 'folder' }");
+    expect(JSON.parse(calls[1].init!.body as string)).toEqual({ name: "Jarvis", mimeType: "application/vnd.google-apps.folder", appProperties: { jarvis: "folder" } });
+    expect(metadata()).toEqual({ name: "Plan", mimeType: "application/vnd.google-apps.document", parents: ["folder_1"] });
+
+    await runGoogleTool("me", "drive_create_sheet", { title: "Budget", csv: "a" });
+    expect(calls.filter((c) => c.url.includes("fields=id") && c.init?.method === "POST" && !c.url.includes("upload/"))).toHaveLength(1);
+    expect(metadata().parents).toEqual(["folder_1"]);
+  });
+
   it("makes a Google Sheet from CSV", async () => {
     await connect({ access_token: "at", expires_at: Date.now() + 3600_000 }, "email");
     await expect(runGoogleTool("me", "drive_create_sheet", { title: "Budget", csv: "a,b" })).rejects.toThrow(/make Google Sheets/);
@@ -482,8 +504,9 @@ describe("Google tools", () => {
     expect(await runGoogleTool("me", "drive_create_sheet", { title: "October budget", csv })).toBe(
       "Created the Google Sheet (id sheet_1234567890): https://docs.google.com/spreadsheets/d/sheet_1234567890/edit",
     );
-    const boundary = ((calls[0].init!.headers as Record<string, string>)["Content-Type"]).match(/boundary=(\S+)$/)![1];
-    const parts = (calls[0].init!.body as string).split(`--${boundary}`);
+    const upload = calls.find((c) => c.url.includes("upload/"))!;
+    const boundary = ((upload.init!.headers as Record<string, string>)["Content-Type"]).match(/boundary=(\S+)$/)![1];
+    const parts = (upload.init!.body as string).split(`--${boundary}`);
     expect(JSON.parse(parts[1].split("\r\n\r\n")[1])).toEqual({ name: "October budget", mimeType: "application/vnd.google-apps.spreadsheet" });
     expect(parts[2]).toBe(`\r\nContent-Type: text/csv; charset=UTF-8\r\n\r\n${csv}\r\n`);
   });
