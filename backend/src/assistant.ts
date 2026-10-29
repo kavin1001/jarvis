@@ -7,7 +7,7 @@ import * as memory from "./memory.js";
 import * as reminders from "./reminders.js";
 import { cancelTask, listTasks, startTask, taskLaneConfigured } from "./tasks.js";
 import { describeNow } from "./time.js";
-import { overDailyBudget, recordMessageUsage } from "./usage.js";
+import { overDailyBudget, recordMessageUsage, warnNearBudget } from "./usage.js";
 
 let client = new Anthropic();
 
@@ -495,6 +495,7 @@ async function runTurnNow(opts: {
     }
 
     await recordMessageUsage(config.userId, message);
+    warnNearBudget(config.userId, timezone, config.dailyBudgetUsd).catch((err) => console.warn("budget warning failed", err));
 
     if (message.stop_reason === "refusal") {
       // Not stored: a refused turn is not valid history to send back.

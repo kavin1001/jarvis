@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Spending: with `DAILY_BUDGET_USD` set, Jarvis sends one notification a day when today's spend passes 80% of the cap, so the cap doesn't arrive mid-task as a surprise. Background-task costs count too.
 - "Call Mom", "text Sam I'm running late", "email Ana": Jarvis answers with a tappable 📞, 💬 or ✉️ link that opens your phone's dialer, Messages or Mail with everything filled in. Nothing is dialed or sent until you confirm on the phone. Jarvis only uses numbers and addresses you gave it or it saved.
 - Tables in replies (flights, prices, comparisons) show as real tables with a header row, and scroll sideways when they're wide. Read aloud, a table is spoken one row at a time, without the pipes and dashes.
 - Web app on a computer: **Enter** sends and **Shift+Enter** starts a new line. The cursor goes back to the message box once Jarvis has replied.

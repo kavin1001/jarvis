@@ -178,3 +178,10 @@ ALTER TABLE tasks ADD CONSTRAINT tasks_status_check
 
 -- Chats pinned to the top of History.
 ALTER TABLE conversations ADD COLUMN IF NOT EXISTS pinned BOOLEAN NOT NULL DEFAULT false;
+
+-- One "nearly at today's cap" notification per local day.
+CREATE TABLE IF NOT EXISTS budget_alerts (
+  user_id  TEXT NOT NULL,
+  day      DATE NOT NULL,
+  PRIMARY KEY (user_id, day)
+);

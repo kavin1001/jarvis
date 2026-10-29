@@ -1,5 +1,6 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import { query } from "./db.js";
+import { sendPush } from "./push.js";
 
 // USD per million tokens. Cache writes are the 5-minute rate (1.25x input).
 // Keep in step with https://platform.claude.com/docs/en/about-claude/pricing
@@ -96,6 +97,31 @@ export async function summarize(userId: string, timezone: string, dailyBudget: n
     tasks_today: Number(row.tasks),
     daily_budget_usd: dailyBudget,
   };
+}
+
+/** Share of the daily cap that triggers the warning notification. */
+export const WARN_AT = 0.8;
+
+/**
+ * Sends one notification per local day once spend passes 80% of the daily cap,
+ * so the cap doesn't arrive as a surprise mid-task. Returns whether it sent one.
+ */
+export async function warnNearBudget(userId: string, timezone: string, dailyBudget: number | null, push = sendPush) {
+  if (dailyBudget === null || dailyBudget <= 0) return false;
+  const { today_usd } = await summarize(userId, timezone, dailyBudget);
+  if (today_usd < dailyBudget * WARN_AT) return false;
+  const claimed = await query(
+    "INSERT INTO budget_alerts (user_id, day) VALUES ($1, (now() AT TIME ZONE $2)::date) ON CONFLICT DO NOTHING RETURNING day",
+    [userId, timezone],
+  );
+  if (claimed.length === 0) return false;
+  const over = today_usd >= dailyBudget;
+  await push(
+    userId,
+    over ? "Jarvis reached today's cap" : "Jarvis is near today's cap",
+    `$${today_usd.toFixed(2)} of $${dailyBudget.toFixed(2)} used today. ${over ? "Chat pauses until midnight" : "At the cap, chat pauses until midnight"}; raise DAILY_BUDGET_USD to allow more.`,
+  );
+  return true;
 }
 
 export async function overDailyBudget(userId: string, timezone: string, dailyBudget: number | null) {

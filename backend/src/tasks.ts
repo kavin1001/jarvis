@@ -4,6 +4,8 @@ import { query } from "./db.js";
 import { taskMcpParts } from "./mcp.js";
 import * as memory from "./memory.js";
 import { sendPush } from "./push.js";
+import { getTimezone } from "./reminders.js";
+import { warnNearBudget } from "./usage.js";
 
 let client = new Anthropic();
 
@@ -195,6 +197,8 @@ async function handleEvent(taskId: string, event: SessionEvent): Promise<boolean
       if (cost?.currency === "USD") {
         // Amounts are in cents, as a string.
         await query("UPDATE tasks SET cost_usd = $2 WHERE id = $1", [taskId, Number(cost.amount) / 100]);
+        const timezone = await getTimezone(config.userId);
+        warnNearBudget(config.userId, timezone, config.dailyBudgetUsd).catch((err) => console.warn("budget warning failed", err));
       }
       return false;
     }
