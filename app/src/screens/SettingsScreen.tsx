@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AppState, Linking, Pressable, RefreshControl, ScrollView, Switch, View } from "react-native";
 import { Alert } from "../dialog";
 import { appLockAvailable, useAppLockSetting } from "../appLock";
+import { clearCache } from "../cache";
 import { api, clearSettings, type Connectors, type Settings, type Usage } from "../api";
 import { locationSharingEnabled, setLocationSharing } from "../location";
 import { Activity } from "./Activity";
@@ -221,6 +222,7 @@ export default function SettingsScreen({
       <YourData
         settings={settings}
         onErased={() => {
+          clearCache();
           Alert.alert("Erased", "Jarvis has forgotten everything.");
           onErased();
         }}

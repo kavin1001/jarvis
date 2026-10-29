@@ -2,6 +2,7 @@ import { fetch } from "expo/fetch";
 import Constants from "expo-constants";
 import * as SecureStore from "./storage";
 import { Platform } from "react-native";
+import { clearCache } from "./cache";
 
 export interface Settings {
   url: string;
@@ -161,6 +162,7 @@ export async function saveSettings(settings: Settings) {
 
 export async function clearSettings() {
   await SecureStore.deleteItemAsync(KEY);
+  await clearCache();
 }
 
 export interface SearchHit {
@@ -248,6 +250,18 @@ export async function upgradeToDeviceToken(settings: Settings): Promise<Settings
   return upgraded;
 }
 
+/** The server answered with an error, as opposed to the request not getting through. */
+export class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+/** True when a request never reached the server (no signal, server down), so a copy on the phone should be used. */
+export const unreachable = (err: unknown) => !(err instanceof ApiError);
+
 async function request<T>(s: Settings, path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   const res = await fetch(`${s.url}${path}`, {
     method: init.method ?? "GET",
@@ -256,7 +270,7 @@ async function request<T>(s: Settings, path: string, init: { method?: string; bo
   });
   if (!res.ok) {
     const detail = await res.json().then((b: { error?: string }) => b.error).catch(() => undefined);
-    throw new Error(detail ?? `${path} failed: ${res.status}`);
+    throw new ApiError(detail ?? `${path} failed: ${res.status}`, res.status);
   }
   return (await res.json()) as T;
 }

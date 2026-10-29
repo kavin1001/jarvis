@@ -1,3 +1,4 @@
+import { ApiError, unreachable } from "../api";
 import { isCrossing } from "../geofence";
 import { parseLink } from "../links";
 import { plainText } from "../Markdown";
@@ -70,5 +71,13 @@ describe("formatting", () => {
     expect(ago(10_000)).toBe("just now");
     expect(ago(5 * 60_000)).toBe("5 min ago");
     expect(ago(3 * 3600_000)).toBe("3 h ago");
+  });
+});
+
+describe("unreachable", () => {
+  it("tells a request that never got through from an error the server sent", () => {
+    expect(unreachable(new TypeError("Network request failed"))).toBe(true);
+    expect(unreachable(new Error("Unable to resolve host"))).toBe(true);
+    expect(unreachable(new ApiError("Not found", 404))).toBe(false);
   });
 });

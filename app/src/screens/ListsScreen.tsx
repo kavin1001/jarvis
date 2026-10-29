@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { FlatList, Pressable, Share, View } from "react-native";
 import { ActionSheet, type SheetAction } from "../ActionSheet";
-import { api, type List, type ListItem, type Settings } from "../api";
+import { api, unreachable, type List, type ListItem, type Settings } from "../api";
+import { readCache, writeCache } from "../cache";
+import { useConnection } from "../connection";
 import { Alert } from "../dialog";
 import { Choices, Empty, Header, LinkButton, useShared } from "../ui";
 import { Notes } from "./Notes";
@@ -9,6 +11,9 @@ import { Text, TextInput, useColors } from "../theme";
 
 const NEW = "\u0000new";
 const NOTES = "\u0000notes";
+
+/** Check-offs made without a connection, sent when it's back: item id to done. */
+type Pending = Record<string, boolean>;
 
 export default function ListsScreen({ settings }: { settings: Settings }) {
   const styles = useShared();
@@ -20,17 +25,46 @@ export default function ListsScreen({ settings }: { settings: Settings }) {
   const [sheet, setSheet] = useState<SheetAction[] | null>(null);
   const [editing, setEditing] = useState<{ id: string; text: string } | null>(null);
 
+  const [offline, setOffline] = useState(false);
+
   const load = useCallback(async () => {
     try {
+      // Check-offs made offline go first, so the fresh copy includes them.
+      const pending = (await readCache<Pending>("lists-pending"))?.value ?? {};
+      const left: Pending = {};
+      for (const [id, done] of Object.entries(pending)) {
+        await api.updateListItem(settings, id, { done }).catch((err) => {
+          if (unreachable(err)) left[id] = done;
+        });
+      }
+      await writeCache("lists-pending", left);
       setLists(await api.lists(settings));
+      setOffline(false);
     } catch (err) {
-      setLists((l) => l ?? []);
-      Alert.alert("Couldn't load your lists", String(err));
+      if (unreachable(err)) {
+        // Show the copy on this phone, if there is one.
+        const cached = await readCache<List[]>("lists");
+        setLists((l) => l ?? cached?.value ?? []);
+        setOffline(true);
+      } else {
+        setLists((l) => l ?? []);
+        Alert.alert("Couldn't load your lists", String(err));
+      }
     }
   }, [settings]);
   useEffect(() => {
+    // The copy on the phone first, so the list opens at once; then the server's.
+    readCache<List[]>("lists").then((c) => c && setLists((l) => l ?? c.value));
     load();
   }, [load]);
+  useEffect(() => {
+    if (lists) writeCache("lists", lists);
+  }, [lists]);
+  // Back online: send the kept ticks and refresh.
+  const { online } = useConnection();
+  useEffect(() => {
+    if (online && offline) load();
+  }, [online, offline, load]);
 
   // A list made here exists only once it has an item, so keep its name until then.
   const names = [...new Set([...(lists ?? []).map((l) => l.name), ...(selected && selected !== NEW && selected !== NOTES ? [selected] : [])])];
@@ -75,6 +109,13 @@ export default function ListsScreen({ settings }: { settings: Settings }) {
     try {
       await api.updateListItem(settings, item.id, { done: !item.done });
     } catch (err) {
+      if (unreachable(err)) {
+        // Keep the tick and send it when the connection is back.
+        const pending = (await readCache<Pending>("lists-pending"))?.value ?? {};
+        await writeCache("lists-pending", { ...pending, [item.id]: !item.done });
+        setOffline(true);
+        return;
+      }
       patchLocal(item.id, { done: item.done });
       Alert.alert("Couldn't update that", String(err));
     }
@@ -140,6 +181,11 @@ export default function ListsScreen({ settings }: { settings: Settings }) {
   return (
     <>
       {top}
+      {offline ? (
+        <Text style={[styles.rowMeta, { paddingHorizontal: 16, paddingBottom: 8 }]}>
+          No connection: this is the copy on your phone. Ticks are kept and sent when you're back online.
+        </Text>
+      ) : null}
       {current === NEW ? (
         <View style={{ flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingBottom: 8 }}>
           <TextInput

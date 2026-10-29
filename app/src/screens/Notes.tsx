@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { FlatList, Pressable, ScrollView, Share, View } from "react-native";
-import { api, type Note, type Settings } from "../api";
+import { api, unreachable, type Note, type Settings } from "../api";
+import { readCache, writeCache } from "../cache";
 import { Alert } from "../dialog";
 import { Markdown, plainText } from "../Markdown";
 import { Empty, LinkButton, relativeTime, useShared } from "../ui";
@@ -27,14 +28,26 @@ export function Notes({ settings }: { settings: Settings }) {
   const [notes, setNotes] = useState<Note[] | null>(null);
   const [search, setSearch] = useState("");
   const [open, setOpen] = useState<Open | null>(null);
+  const [offline, setOffline] = useState(false);
 
   const load = useCallback(
     async (q: string) => {
       try {
-        setNotes(await api.notes(settings, q.trim()));
+        const found = await api.notes(settings, q.trim());
+        setNotes(found);
+        setOffline(false);
+        if (!q.trim()) writeCache("notes", found);
       } catch (err) {
-        setNotes((n) => n ?? []);
-        Alert.alert("Couldn't load your notes", String(err));
+        if (unreachable(err)) {
+          // No connection: search the copy on this phone instead.
+          const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+          const cached = (await readCache<Note[]>("notes"))?.value ?? [];
+          setNotes(cached.filter((n) => words.every((w) => `${n.title} ${n.body}`.toLowerCase().includes(w))));
+          setOffline(true);
+        } else {
+          setNotes((n) => n ?? []);
+          Alert.alert("Couldn't load your notes", String(err));
+        }
       }
     },
     [settings],
@@ -161,6 +174,9 @@ export function Notes({ settings }: { settings: Settings }) {
         />
         <LinkButton label="+ New" onPress={() => setOpen({ id: null, title: "", body: "", editing: true })} />
       </View>
+      {offline ? (
+        <Text style={[styles.rowMeta, { paddingHorizontal: 16, paddingBottom: 8 }]}>No connection: these are the notes saved on your phone.</Text>
+      ) : null}
       <FlatList
         data={notes ?? []}
         keyExtractor={(n) => n.id}
