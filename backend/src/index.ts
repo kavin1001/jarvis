@@ -30,6 +30,10 @@ const runScheduled = (conversationId: string, text: string) =>
 timers.push(setInterval(() => fireDueReminders(runScheduled).catch((err) => console.error("reminder sweep failed", err)), 5_000));
 
 // Hosts send SIGTERM before replacing the instance; in-flight tasks resume on the next boot.
+// One background job failing (a task, a push, a title) shouldn't take every chat down with it.
+// Node stops the process on an unhandled rejection by default; log it instead.
+process.on("unhandledRejection", (err) => console.error("unhandled rejection", err));
+
 process.on("SIGTERM", () => {
   console.log("Shutting down");
   timers.forEach(clearInterval);

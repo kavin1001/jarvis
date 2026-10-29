@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Reliability: the server keeps running when the database restarts for maintenance or a background job fails unexpectedly. Before, either one could stop the whole server until the host restarted it. Requests now give up after 10 seconds while the database can't be reached, instead of hanging.
 - Follow up on a finished background task: "now book the cheapest one" goes back to the same agent, which still has everything it found. The task shows as running again, and you get a notification when it's done. Connected-app sign-ins aren't passed to a follow-up; start a new task when it needs them.
 - Timers: "set a timer for 10 minutes" goes off within a few seconds of the right time. Jarvis now schedules "in N minutes" from the exact second, and the server checks for due reminders every 5 seconds instead of every 30.
 - Settings, **Notifications**: turn off notifications for replies, finished tasks or spending. Approvals and reminders always notify. `GET` and `PATCH /api/notifications`.
