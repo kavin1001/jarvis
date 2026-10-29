@@ -14,7 +14,7 @@ import { NotifySettings } from "./NotifySettings";
 import { Places } from "./Places";
 import { SiriShortcut } from "./SiriShortcut";
 import { stopPlaceReminders } from "../geofence";
-import { Choices, Header, LinkButton, useShared } from "../ui";
+import { Choices, Header, LinkButton, Section, useShared } from "../ui";
 import { Text, useColors, useTheme, type Appearance } from "../theme";
 import { createSpeaker } from "../useVoice";
 import { RATES, setVoicePrefs, useVoicePrefs, type ReadReplies } from "../voicePrefs";
@@ -95,6 +95,7 @@ export default function SettingsScreen({
 
       <SetupStatus settings={settings} refreshKey={statusKey} />
 
+      <Section title="Usage" />
       <View style={styles.row}>
         <Text style={styles.rowMeta}>Spend today (estimated)</Text>
         <Text style={{ fontSize: 28, fontWeight: "700" }}>
@@ -121,6 +122,7 @@ export default function SettingsScreen({
         ) : null}
       </View>
 
+      <Section title="Accounts" />
       {google?.available ? (
         <View style={styles.row}>
           <Text style={styles.rowMeta}>Gmail, Google Calendar and Contacts</Text>
@@ -152,6 +154,9 @@ export default function SettingsScreen({
         </View>
       ) : null}
 
+      <McpServers settings={settings} />
+
+      <Section title="Voice and appearance" />
       <View style={styles.row}>
         <Text style={styles.rowMeta}>Appearance</Text>
         <Choices options={APPEARANCES} value={appearance} onChange={setAppearance} />
@@ -177,6 +182,7 @@ export default function SettingsScreen({
         />
       </View>
 
+      <Section title="Privacy" />
       <View style={[styles.row, { flexDirection: "row", alignItems: "center" }]}>
         <View style={{ flex: 1 }}>
           <Text style={styles.rowTitle}>Share approximate location</Text>
@@ -202,14 +208,14 @@ export default function SettingsScreen({
         </View>
       )}
 
+      <Section title="Reminders and Siri" />
       <Places settings={settings} />
-
       <SiriShortcut settings={settings} />
 
+      <Section title="Notifications" />
       <NotifySettings settings={settings} />
 
-      <McpServers settings={settings} />
-
+      <Section title="Your data and devices" />
       <YourData
         settings={settings}
         onErased={() => {

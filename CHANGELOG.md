@@ -4,6 +4,8 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Settings is grouped under headings (Usage, Accounts, Voice and appearance, Privacy, Reminders and Siri, Notifications, Your data and devices), so the growing list is easier to scan. Connected apps moved next to Google.
+- Devices: this device is listed first, then the most recently used. A long list folds to five with **Show all**, and **Sign out the others** signs out every device but this one in one go.
 - Hold a message and tap **Remind me about this** to come back to it in 20 minutes, in an hour, this evening at 6 or tomorrow at 9. The reminder goes off in the same chat. `POST /api/reminders/once`.
 - Lists: **Share** sends what's still to get ("Shopping: - eggs - milk") to Messages, Notes or anywhere else from the share sheet.
 - "Hey Siri, Ask Jarvis": Settings, **Ask Jarvis from Siri** makes a token and shows how to build a three-step iPhone Shortcut (dictate, send, speak). Siri then answers with Jarvis's reply without opening the app, and questions a few minutes apart continue the same chat. Works with the web version too. `POST /api/ask` takes JSON `{text}` or plain text and answers in plain text; `POST /api/devices/shortcut` makes the token, which you can revoke under Devices. Steps are also in `docs/DEPLOY.md`, section 6.

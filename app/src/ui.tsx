@@ -49,6 +49,16 @@ export function Choices<T extends string | number>({ options, value, onChange }:
   );
 }
 
+/** A small heading that groups the rows below it, as in iOS Settings. */
+export function Section({ title }: { title: string }) {
+  const styles = useShared();
+  return (
+    <Text style={styles.section} accessibilityRole="header">
+      {title.toUpperCase()}
+    </Text>
+  );
+}
+
 export function Empty({ text }: { text: string }) {
   const styles = useShared();
   return <Text style={styles.empty}>{text}</Text>;
@@ -69,6 +79,7 @@ const makeShared = (colors: Palette) =>
     title: { fontSize: 22, fontWeight: "700" },
     link: { color: colors.accent, fontSize: 16 },
     empty: { color: colors.muted, textAlign: "center", padding: 32 },
+    section: { color: colors.muted, fontSize: 12, fontWeight: "600", letterSpacing: 0.5, paddingHorizontal: 16, paddingTop: 28, paddingBottom: 6 },
     row: {
       paddingHorizontal: 16,
       paddingVertical: 14,

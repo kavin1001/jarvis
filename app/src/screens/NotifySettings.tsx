@@ -32,7 +32,7 @@ export function NotifySettings({ settings }: { settings: Settings }) {
 
   return (
     <View style={styles.row}>
-      <Text style={styles.rowMeta}>Notifications. Approvals and reminders always notify.</Text>
+      <Text style={styles.rowMeta}>Approvals and reminders always notify.</Text>
       {ROWS.map(([key, title, detail]) => (
         <View key={key} style={{ flexDirection: "row", alignItems: "center", paddingTop: 8 }}>
           <View style={{ flex: 1 }}>
