@@ -1,5 +1,5 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
-import { colors } from "./ui";
+import { Pressable, StyleSheet, View } from "react-native";
+import { Text, useStyles, type Palette } from "./theme";
 
 export type Tab = "chat" | "history" | "tasks" | "memory" | "settings";
 
@@ -12,6 +12,7 @@ const TABS: { key: Tab; label: string }[] = [
 ];
 
 export function TabBar({ tab, onChange, badges }: { tab: Tab; onChange: (t: Tab) => void; badges: Partial<Record<Tab, number>> }) {
+  const styles = useStyles(makeStyles);
   return (
     <View style={styles.bar}>
       {TABS.map((t) => (
@@ -24,10 +25,11 @@ export function TabBar({ tab, onChange, badges }: { tab: Tab; onChange: (t: Tab)
   );
 }
 
-const styles = StyleSheet.create({
-  bar: { flexDirection: "row", borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
-  tab: { flex: 1, alignItems: "center", paddingVertical: 12, flexDirection: "row", justifyContent: "center", gap: 4 },
-  label: { color: colors.muted, fontSize: 13, fontWeight: "500" },
-  active: { color: colors.accent },
-  badge: { backgroundColor: colors.danger, color: "white", fontSize: 11, borderRadius: 8, paddingHorizontal: 5, overflow: "hidden" },
-});
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
+    bar: { flexDirection: "row", borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+    tab: { flex: 1, alignItems: "center", paddingVertical: 12, flexDirection: "row", justifyContent: "center", gap: 4 },
+    label: { color: colors.muted, fontSize: 13, fontWeight: "500" },
+    active: { color: colors.accent },
+    badge: { backgroundColor: colors.danger, color: colors.onAccent, fontSize: 11, borderRadius: 8, paddingHorizontal: 5, overflow: "hidden" },
+  });

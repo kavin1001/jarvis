@@ -6,8 +6,6 @@ import {
   Platform,
   Pressable,
   StyleSheet,
-  Text,
-  TextInput,
   View,
 } from "react-native";
 import { api, streamChat, type ChatMessage, type PendingApproval, type Settings } from "../api";
@@ -19,6 +17,7 @@ import { Markdown } from "../Markdown";
 import * as Speech from "expo-speech";
 import type { Doc } from "../documents";
 import { chooseAttachments, type Photo } from "../photos";
+import { Text, TextInput, useStyles, type Palette } from "../theme";
 import { askApproval } from "../usePush";
 import { createSpeaker, isStopPhrase, useVoice } from "../useVoice";
 
@@ -45,6 +44,7 @@ export default function ChatScreen({
   /** A shortcut or Siri link to act on once. */
   command?: Command | null;
 }) {
+  const styles = useStyles(makeStyles);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [photos, setPhotos] = useState<Photo[]>([]);
@@ -174,7 +174,7 @@ export default function ChatScreen({
             style={[styles.pill, handsFree && styles.pillOn]}
             accessibilityLabel={handsFree ? "Turn off hands-free" : "Start a hands-free conversation"}
           >
-            <Text style={[styles.pillText, handsFree && { color: "white" }]}>Hands-free</Text>
+            <Text style={[styles.pillText, handsFree && styles.pillTextOn]}>Hands-free</Text>
           </Pressable>
           <Pressable onPress={() => onConversation(undefined)}>
             <Text style={styles.link}>New chat</Text>
@@ -304,35 +304,37 @@ export default function ChatScreen({
   );
 }
 
-const styles = StyleSheet.create({
-  root: { flex: 1 },
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16 },
-  title: { fontSize: 22, fontWeight: "700" },
-  link: { color: "#2563eb", fontSize: 16 },
-  approval: { backgroundColor: "#fef3c7", marginHorizontal: 16, marginBottom: 8, padding: 12, borderRadius: 8 },
-  approvalText: { color: "#92400e" },
-  list: { padding: 16, gap: 8 },
-  bubble: { maxWidth: "85%", padding: 12, borderRadius: 16 },
-  user: { alignSelf: "flex-end", backgroundColor: "#2563eb" },
-  userText: { color: "white" },
-  assistant: { alignSelf: "flex-start", backgroundColor: "#f1f5f9" },
-  taskUpdate: { borderWidth: 1, borderColor: "#94a3b8" },
-  partial: { textAlign: "center", color: "#64748b", padding: 8 },
-  photos: { flexDirection: "row", gap: 8, paddingHorizontal: 12 },
-  docChip: { backgroundColor: "#f1f5f9", borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6, maxWidth: 220 },
-  thumb: { width: 56, height: 56, borderRadius: 8 },
-  attach: { paddingHorizontal: 6, paddingVertical: 8 },
-  attachText: { fontSize: 24, color: "#2563eb" },
-  composer: { flexDirection: "row", padding: 12, gap: 8, alignItems: "flex-end" },
-  input: { flex: 1, borderWidth: 1, borderColor: "#cbd5e1", borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, maxHeight: 120 },
-  button: { backgroundColor: "#2563eb", borderRadius: 24, paddingHorizontal: 18, paddingVertical: 12 },
-  listening: { backgroundColor: "#dc2626" },
-  pill: { borderWidth: 1, borderColor: "#2563eb", borderRadius: 14, paddingHorizontal: 10, paddingVertical: 4 },
-  pillOn: { backgroundColor: "#2563eb" },
-  pillText: { color: "#2563eb", fontSize: 14 },
-  buttonText: { color: "white", fontWeight: "600" },
-  empty: { alignItems: "center", gap: 10, paddingTop: 48 },
-  emptyTitle: { fontSize: 18, fontWeight: "600", color: "#334155", marginBottom: 6 },
-  suggestion: { borderWidth: 1, borderColor: "#cbd5e1", borderRadius: 16, paddingHorizontal: 14, paddingVertical: 8 },
-  suggestionText: { color: "#334155" },
-});
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
+    root: { flex: 1 },
+    header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", padding: 16 },
+    title: { fontSize: 22, fontWeight: "700" },
+    link: { color: colors.accent, fontSize: 16 },
+    approval: { backgroundColor: colors.warning, marginHorizontal: 16, marginBottom: 8, padding: 12, borderRadius: 8 },
+    approvalText: { color: colors.warningText },
+    list: { padding: 16, gap: 8 },
+    bubble: { maxWidth: "85%", padding: 12, borderRadius: 16 },
+    user: { alignSelf: "flex-end", backgroundColor: colors.accent },
+    userText: { color: colors.onAccent },
+    assistant: { alignSelf: "flex-start", backgroundColor: colors.surface },
+    taskUpdate: { borderWidth: 1, borderColor: colors.muted },
+    partial: { textAlign: "center", color: colors.muted, padding: 8 },
+    photos: { flexDirection: "row", gap: 8, paddingHorizontal: 12 },
+    docChip: { backgroundColor: colors.surface, borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6, maxWidth: 220 },
+    thumb: { width: 56, height: 56, borderRadius: 8 },
+    attach: { paddingHorizontal: 6, paddingVertical: 8 },
+    attachText: { fontSize: 24, color: colors.accent },
+    composer: { flexDirection: "row", padding: 12, gap: 8, alignItems: "flex-end" },
+    input: { flex: 1, borderWidth: 1, borderColor: colors.inputBorder, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 10, maxHeight: 120 },
+    button: { backgroundColor: colors.accent, borderRadius: 24, paddingHorizontal: 18, paddingVertical: 12 },
+    listening: { backgroundColor: colors.danger },
+    pill: { borderWidth: 1, borderColor: colors.accent, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 4 },
+    pillOn: { backgroundColor: colors.accent },
+    pillText: { color: colors.accent, fontSize: 14 },
+    pillTextOn: { color: colors.onAccent },
+    buttonText: { color: colors.onAccent, fontWeight: "600" },
+    empty: { alignItems: "center", gap: 10, paddingTop: 48 },
+    emptyTitle: { fontSize: 18, fontWeight: "600", color: colors.subtle, marginBottom: 6 },
+    suggestion: { borderWidth: 1, borderColor: colors.inputBorder, borderRadius: 16, paddingHorizontal: 14, paddingVertical: 8 },
+    suggestionText: { color: colors.subtle },
+  });

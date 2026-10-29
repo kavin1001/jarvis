@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
-import { FlatList, Pressable, RefreshControl, Text, TextInput } from "react-native";
+import { FlatList, Pressable, RefreshControl } from "react-native";
 import { Alert } from "../dialog";
 import { api, type Conversation, type SearchHit, type Settings } from "../api";
-import { colors, Empty, Header, LinkButton, relativeTime, styles } from "../ui";
+import { Empty, Header, LinkButton, relativeTime, useShared } from "../ui";
+import { Text, TextInput, useColors } from "../theme";
 
 export default function HistoryScreen({
   settings,
@@ -13,6 +14,8 @@ export default function HistoryScreen({
   current: string | undefined;
   onOpen: (id: string | undefined) => void;
 }) {
+  const styles = useShared();
+  const colors = useColors();
   const [items, setItems] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState("");
@@ -68,7 +71,7 @@ export default function HistoryScreen({
           marginHorizontal: 16,
           marginBottom: 8,
           borderWidth: 1,
-          borderColor: colors.border,
+          borderColor: colors.inputBorder,
           borderRadius: 8,
           padding: 10,
         }}

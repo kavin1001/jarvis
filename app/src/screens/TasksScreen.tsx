@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { FlatList, Pressable, RefreshControl, Text, View } from "react-native";
+import { FlatList, Pressable, RefreshControl, View } from "react-native";
 import { Alert } from "../dialog";
 import { api, type Reminder, type Settings, type Task } from "../api";
 import { askApproval } from "../usePush";
-import { colors, Empty, Header, LinkButton, relativeTime, styles } from "../ui";
+import { Empty, Header, LinkButton, relativeTime, useShared } from "../ui";
+import { Text, useColors } from "../theme";
 
 const ROUTINES: { label: string; text: string; time: string; repeat: "daily" | "weekdays" }[] = [
   {
@@ -29,6 +30,8 @@ const STATUS_LABEL: Record<Task["status"], string> = {
 };
 
 export default function TasksScreen({ settings, refreshKey }: { settings: Settings; refreshKey: number }) {
+  const styles = useShared();
+  const colors = useColors();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState<string | null>(null);

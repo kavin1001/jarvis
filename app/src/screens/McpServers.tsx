@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { Switch, Text, TextInput, View } from "react-native";
+import { Switch, View } from "react-native";
 import { Alert } from "../dialog";
 import { api, type McpServer, type Settings } from "../api";
-import { colors, LinkButton, styles } from "../ui";
-
-const input = { borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 10 } as const;
+import { LinkButton, useShared } from "../ui";
+import { Text, TextInput } from "../theme";
 
 /** Settings section: remote MCP servers that give Jarvis tools for your other apps. */
 export function McpServers({ settings }: { settings: Settings }) {
+  const styles = useShared();
   const [servers, setServers] = useState<McpServer[]>([]);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
@@ -59,9 +59,9 @@ export function McpServers({ settings }: { settings: Settings }) {
       ))}
       {adding ? (
         <View style={{ gap: 8, paddingTop: 4 }}>
-          <TextInput style={input} value={name} onChangeText={setName} placeholder="Name, e.g. notion" autoCapitalize="none" />
-          <TextInput style={input} value={url} onChangeText={setUrl} placeholder="https://… server URL" autoCapitalize="none" keyboardType="url" />
-          <TextInput style={input} value={token} onChangeText={setToken} placeholder="Access token (optional)" autoCapitalize="none" secureTextEntry />
+          <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Name, e.g. notion" autoCapitalize="none" />
+          <TextInput style={styles.input} value={url} onChangeText={setUrl} placeholder="https://… server URL" autoCapitalize="none" keyboardType="url" />
+          <TextInput style={styles.input} value={token} onChangeText={setToken} placeholder="Access token (optional)" autoCapitalize="none" secureTextEntry />
           <View style={{ flexDirection: "row", gap: 16 }}>
             <LinkButton label="Add" onPress={add} />
             <LinkButton label="Cancel" onPress={() => setAdding(false)} />

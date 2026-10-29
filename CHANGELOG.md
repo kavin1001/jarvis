@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- **Dark mode**: Jarvis follows your phone's light or dark setting. Settings, **Appearance**, lets you pick Light or Dark instead.
 - A new chat shows suggestions you can tap, such as "What's on my calendar today?", so it is clear what Jarvis can do.
 - **Stop**: while Jarvis is answering, the Send/Talk button becomes Stop. The part already shown is kept in history, so the next message picks up from what you saw.
 - Your data: Settings, **Export as JSON** downloads every conversation, fact, reminder, task and connected app, with no secrets included. **Erase everything** deletes all of it and disconnects Google. Your devices and spend history stay.

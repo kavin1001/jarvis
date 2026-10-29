@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { Text, View } from "react-native";
+import { View } from "react-native";
 import { Alert } from "../dialog";
 import { api, type Device, type Settings } from "../api";
-import { LinkButton, relativeTime, styles } from "../ui";
+import { LinkButton, relativeTime, useShared } from "../ui";
+import { Text } from "../theme";
 
 /** Settings section: signed-in devices, revoke, and a code to pair another one. */
 export function Devices({ settings, onSignOut }: { settings: Settings; onSignOut: () => void }) {
+  const styles = useShared();
   const [devices, setDevices] = useState<Device[]>([]);
   const load = useCallback(() => api.devices(settings).then(setDevices).catch(() => {}), [settings]);
   useEffect(() => {

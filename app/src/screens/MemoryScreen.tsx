@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useState } from "react";
-import { FlatList, Pressable, Text, TextInput, View } from "react-native";
+import { FlatList, Pressable, View } from "react-native";
 import { Alert } from "../dialog";
 import { api, type Fact, type Settings } from "../api";
-import { colors, Empty, Header, LinkButton, styles } from "../ui";
+import { Empty, Header, LinkButton, useShared } from "../ui";
+import { Text, TextInput, useColors } from "../theme";
 
 export default function MemoryScreen({ settings }: { settings: Settings }) {
+  const styles = useShared();
+  const colors = useColors();
   const [facts, setFacts] = useState<Fact[]>([]);
   const [draft, setDraft] = useState("");
 
@@ -35,7 +38,7 @@ export default function MemoryScreen({ settings }: { settings: Settings }) {
       </Text>
       <View style={{ flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingBottom: 8 }}>
         <TextInput
-          style={{ flex: 1, borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 10 }}
+          style={{ flex: 1, borderWidth: 1, borderColor: colors.inputBorder, borderRadius: 8, padding: 10 }}
           value={draft}
           onChangeText={setDraft}
           placeholder="Add something Jarvis should know"

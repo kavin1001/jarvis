@@ -1,5 +1,6 @@
 import { Fragment, type ReactNode } from "react";
-import { Linking, Platform, StyleSheet, Text, View, type TextStyle } from "react-native";
+import { Linking, Platform, StyleSheet, View, type TextStyle } from "react-native";
+import { Text, useStyles, type Palette } from "./theme";
 
 /**
  * A small markdown renderer for assistant replies: headings, bullet and
@@ -7,7 +8,8 @@ import { Linking, Platform, StyleSheet, Text, View, type TextStyle } from "react
  * Anything else renders as plain text, so odd input never breaks a bubble.
  */
 export function Markdown({ text, style }: { text: string; style?: TextStyle }) {
-  return <View style={{ gap: 6 }}>{blocks(text).map((b, i) => renderBlock(b, i, style))}</View>;
+  const styles = useStyles(makeStyles);
+  return <View style={{ gap: 6 }}>{blocks(text).map((b, i) => renderBlock(b, i, styles, style))}</View>;
 }
 
 type Block =
@@ -51,7 +53,9 @@ function blocks(text: string): Block[] {
   return out;
 }
 
-function renderBlock(b: Block, key: number, style?: TextStyle) {
+type Styles = ReturnType<typeof makeStyles>;
+
+function renderBlock(b: Block, key: number, styles: Styles, style?: TextStyle) {
   switch (b.kind) {
     case "code":
       return (
@@ -62,20 +66,20 @@ function renderBlock(b: Block, key: number, style?: TextStyle) {
     case "h":
       return (
         <Text key={key} style={[style, styles.heading]}>
-          {inline(b.text)}
+          {inline(b.text, styles)}
         </Text>
       );
     case "li":
       return (
         <View key={key} style={styles.item}>
           <Text style={[style, styles.marker]}>{b.marker}</Text>
-          <Text style={[style, { flex: 1 }]}>{inline(b.text)}</Text>
+          <Text style={[style, { flex: 1 }]}>{inline(b.text, styles)}</Text>
         </View>
       );
     default:
       return (
         <Text key={key} style={style}>
-          {inline(b.text)}
+          {inline(b.text, styles)}
         </Text>
       );
   }
@@ -83,7 +87,7 @@ function renderBlock(b: Block, key: number, style?: TextStyle) {
 
 const INLINE = /\*\*([^*]+)\*\*|`([^`]+)`|\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)|(?<![\w*])\*([^*\s][^*]*?)\*(?!\w)|(?<!\w)_([^_\s][^_]*?)_(?!\w)/g;
 
-function inline(text: string): ReactNode[] {
+function inline(text: string, styles: Styles): ReactNode[] {
   const out: ReactNode[] = [];
   let last = 0;
   for (const m of text.matchAll(INLINE)) {
@@ -106,11 +110,12 @@ function inline(text: string): ReactNode[] {
 }
 
 const mono = Platform.select({ ios: "Menlo", default: "monospace" });
-const styles = StyleSheet.create({
-  heading: { fontWeight: "700", fontSize: 17 },
-  item: { flexDirection: "row", gap: 6 },
-  marker: { minWidth: 14 },
-  code: { fontFamily: mono, fontSize: 14, backgroundColor: "#e2e8f0" },
-  codeBlock: { fontFamily: mono, fontSize: 13, backgroundColor: "#e2e8f0", padding: 8, borderRadius: 6 },
-  link: { color: "#2563eb", textDecorationLine: "underline" },
-});
+const makeStyles = (colors: Palette) =>
+  StyleSheet.create({
+    heading: { fontWeight: "700", fontSize: 17 },
+    item: { flexDirection: "row", gap: 6 },
+    marker: { minWidth: 14 },
+    code: { fontFamily: mono, fontSize: 14, backgroundColor: colors.code },
+    codeBlock: { fontFamily: mono, fontSize: 13, backgroundColor: colors.code, padding: 8, borderRadius: 6 },
+    link: { color: colors.accent, textDecorationLine: "underline" },
+  });

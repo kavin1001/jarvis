@@ -1,7 +1,7 @@
 import * as SecureStore from "./src/storage";
 import { StatusBar } from "expo-status-bar";
 import { useCallback, useEffect, useState } from "react";
-import { ActivityIndicator, Button, Platform, SafeAreaView, StyleSheet, Text, TextInput, View } from "react-native";
+import { ActivityIndicator, Button, Platform, SafeAreaView, StyleSheet, View } from "react-native";
 import { api, loadSettings, saveSettings, signIn, upgradeToDeviceToken, type Settings } from "./src/api";
 import { useDeepLinkCommand } from "./src/deepLink";
 import ChatScreen from "./src/screens/ChatScreen";
@@ -10,11 +10,21 @@ import MemoryScreen from "./src/screens/MemoryScreen";
 import SettingsScreen from "./src/screens/SettingsScreen";
 import TasksScreen from "./src/screens/TasksScreen";
 import { TabBar, type Tab } from "./src/TabBar";
+import { Text, TextInput, ThemeProvider, useColors, useTheme } from "./src/theme";
 import { usePush } from "./src/usePush";
 
 const CONVERSATION_KEY = "jarvis-conversation";
 
 export default function App() {
+  return (
+    <ThemeProvider>
+      <Root />
+    </ThemeProvider>
+  );
+}
+
+function Root() {
+  const { colors, scheme } = useTheme();
   const [settings, setSettings] = useState<Settings | null | undefined>(undefined);
 
   useEffect(() => {
@@ -27,8 +37,8 @@ export default function App() {
 
   if (settings === undefined) return null;
   return (
-    <SafeAreaView style={styles.root}>
-      <StatusBar style="auto" />
+    <SafeAreaView style={[styles.root, { backgroundColor: colors.background }]}>
+      <StatusBar style={scheme === "dark" ? "light" : "dark"} />
       {settings ? (
         <Main settings={settings} onSignOut={() => setSettings(null)} />
       ) : (
@@ -106,6 +116,7 @@ function Setup({ onSignedIn }: { onSignedIn: (s: Settings) => void }) {
     process.env.EXPO_PUBLIC_JARVIS_API_URL ?? (Platform.OS === "web" ? globalThis.location?.origin ?? "" : ""),
   );
   const [secret, setSecret] = useState("");
+  const colors = useColors();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -125,10 +136,10 @@ function Setup({ onSignedIn }: { onSignedIn: (s: Settings) => void }) {
     <View style={styles.setup}>
       <Text style={styles.title}>Connect Jarvis</Text>
       <Text>Backend URL</Text>
-      <TextInput style={styles.input} value={url} onChangeText={setUrl} autoCapitalize="none" keyboardType="url" placeholder="https://jarvis.example.com" />
+      <TextInput style={[styles.input, { borderColor: colors.inputBorder }]} value={url} onChangeText={setUrl} autoCapitalize="none" keyboardType="url" placeholder="https://jarvis.example.com" />
       <Text>Pairing code from another device, or your JARVIS_APP_TOKEN</Text>
-      <TextInput style={styles.input} value={secret} onChangeText={setSecret} autoCapitalize="none" autoCorrect={false} secureTextEntry />
-      {error ? <Text style={styles.error}>{error}</Text> : null}
+      <TextInput style={[styles.input, { borderColor: colors.inputBorder }]} value={secret} onChangeText={setSecret} autoCapitalize="none" autoCorrect={false} secureTextEntry />
+      {error ? <Text style={{ color: colors.danger }}>{error}</Text> : null}
       {busy ? <ActivityIndicator /> : <Button title="Connect" disabled={!url || !secret} onPress={submit} />}
     </View>
   );
@@ -138,6 +149,5 @@ const styles = StyleSheet.create({
   root: { flex: 1 },
   setup: { flex: 1, padding: 24, gap: 12, justifyContent: "center" },
   title: { fontSize: 28, fontWeight: "700", marginBottom: 12 },
-  input: { borderWidth: 1, borderColor: "#ccc", borderRadius: 8, padding: 12 },
-  error: { color: "#dc2626" },
+  input: { borderWidth: 1, borderRadius: 8, padding: 12 },
 });

@@ -1,11 +1,13 @@
 import { File, Paths } from "expo-file-system";
-import { Platform, Share, Text, View } from "react-native";
+import { Platform, Share, View } from "react-native";
 import { api, type Settings } from "../api";
 import { Alert } from "../dialog";
-import { LinkButton, styles } from "../ui";
+import { LinkButton, useShared } from "../ui";
+import { Text } from "../theme";
 
 /** Settings section: download everything Jarvis keeps, or erase it. */
 export function YourData({ settings, onErased }: { settings: Settings; onErased: () => void }) {
+  const styles = useShared();
   async function exportAll() {
     try {
       const json = JSON.stringify(await api.exportData(settings), null, 2);

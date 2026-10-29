@@ -1,13 +1,20 @@
 import Constants from "expo-constants";
 import { useCallback, useEffect, useState } from "react";
-import { AppState, Linking, RefreshControl, ScrollView, Switch, Text, View } from "react-native";
+import { AppState, Linking, Pressable, RefreshControl, ScrollView, Switch, View } from "react-native";
 import { Alert } from "../dialog";
 import { api, clearSettings, type Connectors, type Settings, type Usage } from "../api";
 import { locationSharingEnabled, setLocationSharing } from "../location";
 import { Devices } from "./Devices";
 import { YourData } from "./YourData";
 import { McpServers } from "./McpServers";
-import { colors, Header, LinkButton, styles } from "../ui";
+import { Header, LinkButton, useShared } from "../ui";
+import { Text, useColors, useTheme, type Appearance } from "../theme";
+
+const APPEARANCES: [Appearance, string][] = [
+  ["system", "Match phone"],
+  ["light", "Light"],
+  ["dark", "Dark"],
+];
 
 const usd = (n: number) => `$${n < 1 ? n.toFixed(3) : n.toFixed(2)}`;
 
@@ -21,6 +28,9 @@ export default function SettingsScreen({
   /** After "Erase everything": start a fresh chat. */
   onErased: () => void;
 }) {
+  const styles = useShared();
+  const colors = useColors();
+  const { appearance, setAppearance } = useTheme();
   const [usage, setUsage] = useState<Usage | null>(null);
   const [connectors, setConnectors] = useState<Connectors | null>(null);
   const [loading, setLoading] = useState(false);
@@ -107,6 +117,30 @@ export default function SettingsScreen({
           </View>
         </View>
       ) : null}
+
+      <View style={styles.row}>
+        <Text style={styles.rowMeta}>Appearance</Text>
+        <View style={{ flexDirection: "row", gap: 8, paddingTop: 4 }}>
+          {APPEARANCES.map(([value, label]) => (
+            <Pressable
+              key={value}
+              onPress={() => setAppearance(value)}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: appearance === value }}
+              style={{
+                borderWidth: 1,
+                borderColor: colors.accent,
+                backgroundColor: appearance === value ? colors.accent : undefined,
+                borderRadius: 14,
+                paddingHorizontal: 12,
+                paddingVertical: 4,
+              }}
+            >
+              <Text style={{ color: appearance === value ? colors.onAccent : colors.accent }}>{label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
 
       <View style={[styles.row, { flexDirection: "row", alignItems: "center" }]}>
         <View style={{ flex: 1 }}>
