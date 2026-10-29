@@ -2,6 +2,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { runTurn, setClient, type ChatEvent } from "../src/assistant.js";
 import { pool } from "../src/db.js";
+import { addServer } from "../src/mcp.js";
 import * as memory from "../src/memory.js";
 import { resetDb } from "./helpers.js";
 
@@ -136,5 +137,24 @@ describe("runTurn", () => {
     await runTurn({ conversationId: id, text: "x", source: "text", emit: (e) => events.push(e) });
     expect((await memory.getApiHistory(id)).map((m) => m.role)).toEqual(["user"]);
     expect(events.at(-1)).toEqual({ type: "done" });
+  });
+
+  it("passes enabled MCP servers as servers plus toolsets", async () => {
+    process.env.CONNECTOR_SECRET = "s";
+    await addServer("me", { name: "notion", url: "https://mcp.notion.example/mcp", token: "tok" });
+    await addServer("me", { name: "linear", url: "https://mcp.linear.example/sse" });
+    const requests = fakeClient([{ content: [{ type: "text", text: "ok", citations: null }], stop_reason: "end_turn" }]);
+    const id = await memory.createConversation("me");
+    await runTurn({ conversationId: id, text: "hi", source: "text", emit: () => {} });
+    const req = requests[0] as Anthropic.Beta.MessageCreateParams & { mcp_servers?: unknown[] };
+    expect(req.betas).toContain("mcp-client-2026-09-15");
+    expect(req.mcp_servers).toEqual([
+      { type: "url", name: "linear", url: "https://mcp.linear.example/sse" },
+      { type: "url", name: "notion", url: "https://mcp.notion.example/mcp", authorization_token: "tok" },
+    ]);
+    expect(req.tools!.slice(-2)).toEqual([
+      { type: "mcp_toolset", mcp_server_name: "linear" },
+      { type: "mcp_toolset", mcp_server_name: "notion" },
+    ]);
   });
 });

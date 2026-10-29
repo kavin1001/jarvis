@@ -130,3 +130,15 @@ CREATE TABLE IF NOT EXISTS oauth_states (
   provider    TEXT NOT NULL,
   expires_at  TIMESTAMPTZ NOT NULL
 );
+
+-- 0.6: remote MCP servers the user adds (Notion, Linear, Zapier...). Tokens encrypted with CONNECTOR_SECRET.
+CREATE TABLE IF NOT EXISTS mcp_servers (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     TEXT NOT NULL,
+  name        TEXT NOT NULL,
+  url         TEXT NOT NULL,
+  token       TEXT,
+  enabled     BOOLEAN NOT NULL DEFAULT true,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, name)
+);

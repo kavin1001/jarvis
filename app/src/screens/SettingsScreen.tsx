@@ -2,6 +2,7 @@ import Constants from "expo-constants";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, AppState, Linking, RefreshControl, ScrollView, Text, View } from "react-native";
 import { api, clearSettings, type Connectors, type Settings, type Usage } from "../api";
+import { McpServers } from "./McpServers";
 import { colors, Header, LinkButton, styles } from "../ui";
 
 const usd = (n: number) => `$${n < 1 ? n.toFixed(3) : n.toFixed(2)}`;
@@ -89,6 +90,8 @@ export default function SettingsScreen({ settings, onSignOut }: { settings: Sett
           </View>
         </View>
       ) : null}
+
+      <McpServers settings={settings} />
 
       <View style={styles.row}>
         <Text style={styles.rowMeta}>Backend</Text>

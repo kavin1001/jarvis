@@ -85,8 +85,19 @@ async function request<T>(s: Settings, path: string, init: { method?: string; bo
     headers: { Authorization: `Bearer ${s.token}`, "Content-Type": "application/json" },
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
   });
-  if (!res.ok) throw new Error(`${path} failed: ${res.status}`);
+  if (!res.ok) {
+    const detail = await res.json().then((b: { error?: string }) => b.error).catch(() => undefined);
+    throw new Error(detail ?? `${path} failed: ${res.status}`);
+  }
   return (await res.json()) as T;
+}
+
+export interface McpServer {
+  id: string;
+  name: string;
+  url: string;
+  enabled: boolean;
+  has_token: boolean;
 }
 
 export interface Connectors {
@@ -94,6 +105,12 @@ export interface Connectors {
 }
 
 export const api = {
+  mcpServers: (s: Settings) => request<McpServer[]>(s, "/api/mcp-servers"),
+  addMcpServer: (s: Settings, body: { name: string; url: string; token?: string }) =>
+    request<{ id: string }>(s, "/api/mcp-servers", { method: "POST", body }),
+  setMcpServerEnabled: (s: Settings, id: string, enabled: boolean) =>
+    request(s, `/api/mcp-servers/${id}`, { method: "PATCH", body: { enabled } }),
+  deleteMcpServer: (s: Settings, id: string) => request(s, `/api/mcp-servers/${id}`, { method: "DELETE" }),
   connectors: (s: Settings) => request<Connectors>(s, "/api/connectors"),
   startGoogle: (s: Settings) => request<{ url: string }>(s, "/api/connectors/google/start", { method: "POST" }),
   disconnectGoogle: (s: Settings) => request(s, "/api/connectors/google", { method: "DELETE" }),

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { runTurn, type ChatEvent } from "./assistant.js";
 import { config } from "./config.js";
 import { disconnectGoogle, googleStatus, handleGoogleCallback, startGoogleAuth } from "./google.js";
+import { addServer, deleteServer, listServers, NewServer, setServerEnabled } from "./mcp.js";
 import * as memory from "./memory.js";
 import { savePushToken } from "./push.js";
 import { cancelReminder, getTimezone, listReminders } from "./reminders.js";
@@ -149,3 +150,27 @@ app.post("/api/connectors/google/start", async (c) => {
   return c.json({ url: await startGoogleAuth(config.userId) });
 });
 app.delete("/api/connectors/google", async (c) => c.json({ disconnected: await disconnectGoogle(config.userId) }));
+
+app.get("/api/mcp-servers", async (c) => c.json(await listServers(config.userId)));
+app.post("/api/mcp-servers", async (c) => {
+  const body = NewServer.safeParse(await c.req.json());
+  if (!body.success) return c.json({ error: body.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ") }, 400);
+  try {
+    return c.json({ id: await addServer(config.userId, body.data) });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
+});
+const Toggle = z.object({ enabled: z.boolean() });
+app.patch("/api/mcp-servers/:id", async (c) => {
+  const body = Toggle.safeParse(await c.req.json());
+  if (!body.success) return c.json({ error: body.error.message }, 400);
+  const id = z.string().uuid().safeParse(c.req.param("id"));
+  if (!id.success) return c.json({ error: "Not found" }, 404);
+  const ok = await setServerEnabled(config.userId, id.data, body.data.enabled);
+  return ok ? c.json({ ok }) : c.json({ error: "Not found" }, 404);
+});
+app.delete("/api/mcp-servers/:id", async (c) => {
+  const id = z.string().uuid().safeParse(c.req.param("id"));
+  return c.json({ deleted: id.success && (await deleteServer(config.userId, id.data)) });
+});

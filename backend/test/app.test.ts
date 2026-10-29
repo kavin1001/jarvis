@@ -56,3 +56,28 @@ describe("facts and conversations", () => {
     expect(await listConversations("me")).toEqual([]);
   });
 });
+
+describe("MCP servers API", () => {
+  const json = { ...auth, "Content-Type": "application/json" };
+  it("adds, lists without the token, toggles and deletes", async () => {
+    process.env.CONNECTOR_SECRET = "s";
+    const bad = await app.request("/api/mcp-servers", { method: "POST", headers: json, body: JSON.stringify({ name: "Bad Name", url: "http://x" }) });
+    expect(bad.status).toBe(400);
+
+    const add = await app.request("/api/mcp-servers", {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({ name: "notion", url: "https://mcp.notion.example/mcp", token: "secret-token" }),
+    });
+    const { id } = await add.json();
+    const list = await (await app.request("/api/mcp-servers", { headers: auth })).json();
+    expect(list).toMatchObject([{ id, name: "notion", enabled: true, has_token: true }]);
+    expect(JSON.stringify(list)).not.toContain("secret-token");
+
+    const off = await app.request(`/api/mcp-servers/${id}`, { method: "PATCH", headers: json, body: JSON.stringify({ enabled: false }) });
+    expect(off.status).toBe(200);
+    expect((await app.request("/api/mcp-servers/nope", { method: "PATCH", headers: json, body: JSON.stringify({ enabled: true }) })).status).toBe(404);
+    const del = await app.request(`/api/mcp-servers/${id}`, { method: "DELETE", headers: auth });
+    expect(await del.json()).toEqual({ deleted: true });
+  });
+});

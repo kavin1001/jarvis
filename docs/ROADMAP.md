@@ -15,9 +15,12 @@ Goal: a personal agent on your phone that answers instantly, remembers you, and 
 | Deploy setup (Docker, Render blueprint) | Run the backend somewhere your phone can reach |
 | Gmail and Calendar connectors | Read your inbox and schedule; draft, don't send |
 | Siri / Shortcuts / Action button links, tap-to-talk | Reach Jarvis without opening the app |
+| Connected apps via MCP servers | Plug in GitHub, Zapier and other tools without new code |
 
 ## Later
 
+- OAuth sign-in for MCP servers that need it (Notion, Linear)
+- Give the background task agent the same MCP servers
 - Sign in with Apple/Google instead of the shared app token
 - Streaming speech provider for more natural voice; continuous conversation mode
 - Native App Intents so Siri answers without opening the app
