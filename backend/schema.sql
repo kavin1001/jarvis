@@ -71,3 +71,27 @@ CREATE TABLE IF NOT EXISTS push_tokens (
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS summary TEXT;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS last_message TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS approvals_task_event_idx ON approvals (task_id, event_id);
+
+-- 0.3: reminders and scheduled jobs.
+CREATE TABLE IF NOT EXISTS user_settings (
+  user_id     TEXT PRIMARY KEY,
+  timezone    TEXT NOT NULL DEFAULT 'UTC',
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- action 'notify' sends the text as a push; 'run' runs it as a prompt
+-- (for example a morning briefing) and pushes Jarvis's answer.
+CREATE TABLE IF NOT EXISTS reminders (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id         TEXT NOT NULL,
+  conversation_id UUID REFERENCES conversations(id) ON DELETE SET NULL,
+  text            TEXT NOT NULL,
+  action          TEXT NOT NULL DEFAULT 'notify' CHECK (action IN ('notify', 'run')),
+  due_at          TIMESTAMPTZ NOT NULL,
+  repeat          TEXT CHECK (repeat IN ('daily', 'weekdays', 'weekly')),
+  timezone        TEXT NOT NULL DEFAULT 'UTC',
+  status          TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled', 'done', 'cancelled')),
+  last_fired_at   TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS reminders_due_idx ON reminders (due_at) WHERE status = 'scheduled';

@@ -56,7 +56,8 @@ export default function ChatScreen({
       setMessages((m) => m.map((msg) => (msg.id === replyId ? { ...msg, text: msg.text + delta } : msg)));
 
     try {
-      await streamChat(settings, { conversationId, text, source }, (e) => {
+      const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      await streamChat(settings, { conversationId, text, source, timezone }, (e) => {
         switch (e.type) {
           case "conversation":
             if (e.conversationId !== conversationId) onConversation(e.conversationId);

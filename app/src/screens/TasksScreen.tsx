@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { FlatList, Pressable, RefreshControl, Text, View } from "react-native";
-import { api, type Settings, type Task } from "../api";
+import { Alert, FlatList, Pressable, RefreshControl, Text, View } from "react-native";
+import { api, type Reminder, type Settings, type Task } from "../api";
 import { askApproval } from "../usePush";
 import { colors, Empty, Header, relativeTime, styles } from "../ui";
 
@@ -16,11 +16,14 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setTasks(await api.tasks(settings));
+      const [t, r] = await Promise.all([api.tasks(settings), api.reminders(settings)]);
+      setTasks(t);
+      setReminders(r);
     } finally {
       setLoading(false);
     }
@@ -39,11 +42,40 @@ export default function TasksScreen({ settings, refreshKey }: { settings: Settin
 
   return (
     <>
-      <Header title="Tasks" />
+      <Header title="Tasks and reminders" />
       <FlatList
         data={tasks}
         keyExtractor={(t) => t.id}
         refreshControl={<RefreshControl refreshing={loading} onRefresh={load} />}
+        ListHeaderComponent={
+          reminders.length > 0 ? (
+            <View>
+              <Text style={[styles.rowMeta, { paddingHorizontal: 16, paddingTop: 8 }]}>Upcoming</Text>
+              {reminders.map((r) => (
+                <Pressable
+                  key={r.id}
+                  style={styles.row}
+                  onPress={() =>
+                    Alert.alert("Cancel this?", r.text, [
+                      { text: "Keep", style: "cancel" },
+                      { text: "Cancel it", style: "destructive", onPress: () => api.cancelReminder(settings, r.id).then(load) },
+                    ])
+                  }
+                >
+                  <Text style={styles.rowTitle} numberOfLines={2}>
+                    {r.action === "run" ? "⚙︎ " : "⏰ "}
+                    {r.text}
+                  </Text>
+                  <Text style={styles.rowMeta}>
+                    {new Date(r.due_at).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit", month: "short", day: "numeric" })}
+                    {r.repeat ? ` · ${r.repeat}` : ""}
+                  </Text>
+                </Pressable>
+              ))}
+              <Text style={[styles.rowMeta, { paddingHorizontal: 16, paddingTop: 16 }]}>Background tasks</Text>
+            </View>
+          ) : undefined
+        }
         ListEmptyComponent={loading ? undefined : <Empty text="Background tasks Jarvis runs for you show up here." />}
         renderItem={({ item }) => (
           <Pressable style={styles.row} onPress={() => setOpen(open === item.id ? null : item.id)}>

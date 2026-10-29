@@ -46,7 +46,8 @@ describe("runTurn", () => {
 
     expect(events).toEqual([{ type: "text", text: "Hi there." }, { type: "done" }]);
     expect(requests).toHaveLength(1);
-    expect(requests[0].messages).toEqual([{ role: "user", content: [{ type: "text", text: "hello" }] }]);
+    const first = requests[0].messages[0].content as { text: string }[];
+    expect(first.at(-1)).toEqual({ type: "text", text: "hello" });
     const stored = await memory.getApiHistory(id);
     expect(stored.map((m) => m.role)).toEqual(["user", "assistant"]);
   });
@@ -78,7 +79,32 @@ describe("runTurn", () => {
     await runTurn({ conversationId: id, text: "thanks", source: "voice", emit: () => {} });
 
     const texts = (requests[0].messages[0].content as { text: string }[]).map((b) => b.text);
-    expect(texts).toEqual(["[Background task update]\nBooked the table", "(Sent by voice.)", "thanks"]);
+    expect(texts[0]).toBe("[Background task update]\nBooked the table");
+    expect(texts[1]).toMatch(/^\(User's local time: .+, UTC\.\)$/);
+    expect(texts.slice(2)).toEqual(["(Sent by voice.)", "thanks"]);
+  });
+
+  it("schedules a reminder through the tool", async () => {
+    fakeClient([
+      {
+        content: [
+          {
+            type: "tool_use",
+            id: "tu_r",
+            name: "set_reminder",
+            input: { text: "Stretch", due_at: new Date(Date.now() + 3_600_000).toISOString(), repeat: "daily" },
+          } as never,
+        ],
+        stop_reason: "tool_use",
+      },
+      { content: [{ type: "text", text: "Done.", citations: null }], stop_reason: "end_turn" },
+    ]);
+    const id = await memory.createConversation("me");
+    const answer = await runTurn({ conversationId: id, text: "remind me", source: "text", emit: () => {}, timezone: "Europe/Paris" });
+    expect(answer).toBe("Done.");
+    const { listReminders } = await import("../src/reminders.js");
+    const [r] = await listReminders("me");
+    expect(r).toMatchObject({ text: "Stretch", repeat: "daily", action: "notify", timezone: "Europe/Paris" });
   });
 
   it("does not store a refused turn", async () => {
