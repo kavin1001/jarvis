@@ -44,6 +44,11 @@ function items(s: ServerStatus): Item[] {
       fix: "Set CONNECTOR_SECRET to a long random string so Jarvis can store Google and app tokens.",
     },
     {
+      ok: s.public_url,
+      label: "Sign-in links",
+      fix: "Set PUBLIC_URL to the server's https address, so Google and app sign-ins can return to Jarvis.",
+    },
+    {
       ok: s.google,
       label: "Gmail and Google Calendar",
       fix: "Add a Google OAuth client: docs/DEPLOY.md, section 5.",

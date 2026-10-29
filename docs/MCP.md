@@ -12,6 +12,14 @@ In the app, go to **Settings**, then **Connected apps**, then **Add a server**:
 
 Use the switch to turn a server off without deleting it.
 
+## Signing in (OAuth)
+
+Hosted servers such as Notion's (`https://mcp.notion.com/mcp`) or Linear's (`https://mcp.linear.app/mcp`) don't take a pasted token. Add them with no token, and Jarvis opens the server's sign-in page in your browser. After you approve, the page says "Connected" and the server shows **signed in** in Settings. If a sign-in lapses, tap **Sign in again**.
+
+This needs `PUBLIC_URL` (your backend's address, which the sign-in page returns to) and `CONNECTOR_SECRET` set on the server. Jarvis registers itself with the server automatically (dynamic client registration), so there's no client ID to create. Tokens are encrypted, refreshed before they expire, and never sent to the app.
+
+Background tasks get the current access token for the length of the task, without the refresh token.
+
 ## What works
 
 - Servers that accept a bearer token or carry the key in their URL. Examples are GitHub's remote MCP server with a fine-grained personal access token, or a Zapier or Pipedream MCP URL.
@@ -27,7 +35,6 @@ The task sandbox has to be allowed to reach MCP servers. `scripts/setup-agent.ts
 
 ## What doesn't (yet)
 
-- Servers that require a full browser OAuth sign-in, such as some official Notion or Linear servers. Jarvis doesn't run that OAuth flow yet. Use a server that takes an API token, or paste a token you got elsewhere.
 - Local (stdio) servers on your computer.
 
 ## Safety

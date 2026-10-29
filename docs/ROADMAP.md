@@ -6,7 +6,7 @@ Goal: a personal agent on your phone that answers instantly, remembers you, and 
 
 - **Talk or type:** streaming replies, tap or hold to talk, hands-free conversation, talking over Jarvis stops its speech, the best installed voice, a stop button.
 - **Knows you:** long-term memory you can edit, full chat history with search, conversation titles and renaming, approximate location when you allow it.
-- **Your accounts:** Gmail and Google Calendar (drafts, never sends), any MCP server (GitHub, Zapier, Pipedream…) for both quick answers and background tasks.
+- **Your accounts:** Gmail and Google Calendar (drafts, never sends), any MCP server (Notion and Linear with sign-in, GitHub, Zapier, Pipedream…) for both quick answers and background tasks.
 - **Gets things done:** background tasks on Claude Managed Agents with approve or deny from the notification, reminders and routines with snooze, a "coming up" card on a new chat, a status line while tools run.
 - **Inputs:** photos, camera, PDFs and text files, Siri and Shortcuts links, Android share sheet (web app).
 - **Phone-ready:** app icon and launch screen, dark mode, device pairing and revoking, an installable web app, an offline banner that keeps unsent messages, push notifications.
@@ -16,7 +16,6 @@ Goal: a personal agent on your phone that answers instantly, remembers you, and 
 
 | Feature | Why |
 | --- | --- |
-| OAuth sign-in for MCP servers that need it (Notion, Linear) | Many hosted servers don't take a pasted token |
 | Native App Intents | Siri answers without opening the app |
 | iOS share extension | Share a link or screenshot to Jarvis from any app on iPhone |
 | Streaming speech provider | A more natural voice than the system one |

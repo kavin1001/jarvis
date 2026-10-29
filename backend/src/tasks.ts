@@ -121,7 +121,11 @@ async function agentWithUserServers(task: TaskRow): Promise<{ agent: AgentRef; v
     for (const s of withTokens) {
       await client.beta.vaults.credentials.create(vaultId, {
         display_name: s.name,
-        auth: { type: "static_bearer", mcp_server_url: s.url, token: s.token! },
+        // An OAuth token goes in without its refresh token: if the vault refreshed it, a
+        // rotating server would invalidate the copy Jarvis keeps for chat.
+        auth: s.expiresAt
+          ? { type: "mcp_oauth", mcp_server_url: s.url, access_token: s.token!, expires_at: new Date(s.expiresAt).toISOString() }
+          : { type: "static_bearer", mcp_server_url: s.url, token: s.token! },
       });
     }
   }

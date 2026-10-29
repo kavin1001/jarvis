@@ -56,6 +56,7 @@ export interface ServerStatus {
   task_vault: boolean;
   google: boolean;
   connector_secret: boolean;
+  public_url: boolean;
   push_devices: number;
 }
 
@@ -201,6 +202,8 @@ export interface McpServer {
   url: string;
   enabled: boolean;
   has_token: boolean;
+  /** Signed in with OAuth from the app. */
+  signed_in: boolean;
 }
 
 export interface Connectors {
@@ -222,6 +225,7 @@ export const api = {
   setMcpServerEnabled: (s: Settings, id: string, enabled: boolean) =>
     request(s, `/api/mcp-servers/${id}`, { method: "PATCH", body: { enabled } }),
   deleteMcpServer: (s: Settings, id: string) => request(s, `/api/mcp-servers/${id}`, { method: "DELETE" }),
+  startMcpSignIn: (s: Settings, id: string) => request<{ url: string }>(s, `/api/mcp-servers/${id}/oauth`, { method: "POST" }),
   connectors: (s: Settings) => request<Connectors>(s, "/api/connectors"),
   startGoogle: (s: Settings) => request<{ url: string }>(s, "/api/connectors/google/start", { method: "POST" }),
   disconnectGoogle: (s: Settings) => request(s, "/api/connectors/google", { method: "DELETE" }),

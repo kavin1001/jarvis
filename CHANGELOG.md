@@ -4,6 +4,7 @@ Newest first. Each entry matches a merged pull request.
 
 ## Unreleased
 
+- Connected apps: servers that use OAuth, such as Notion's and Linear's hosted MCP servers, can now be added without a token. Jarvis opens their sign-in page, registers itself, and keeps the token refreshed. This needs `PUBLIC_URL` and `CONNECTOR_SECRET`.
 - Offline: when the server can't be reached, a banner says so, with **Retry**, and clears by itself once the server answers again. A message that never reached the server goes back into the message box, photos and files included, so you can send it again.
 - While Jarvis works, a line under the chat says what it's doing: "Searching the web…", "Checking your calendar…", "Using notion…". Tapping the mic while Jarvis is speaking now stops the speech, so you can talk over it.
 - A new chat shows what's coming up: reminders in the next 24 hours, and background tasks that are working or waiting for your OK.

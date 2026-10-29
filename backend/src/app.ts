@@ -15,6 +15,7 @@ import { query } from "./db.js";
 import { allowAttempt, authenticate, createPairingCode, listDevices, redeemPairingCode, registerDevice, revokeDevice, type Caller } from "./devices.js";
 import { disconnectGoogle, googleStatus, handleGoogleCallback, startGoogleAuth } from "./google.js";
 import { addServer, deleteServer, listServers, NewServer, setServerEnabled } from "./mcp.js";
+import { handleMcpCallback, startMcpOAuth } from "./mcpOAuth.js";
 import * as memory from "./memory.js";
 import { savePushToken } from "./push.js";
 import { cancelReminder, createReminder, getTimezone, listReminders, snoozeReminder } from "./reminders.js";
@@ -85,6 +86,18 @@ app.get("/oauth/google/callback", async (c) => {
   } catch (err) {
     console.error("google callback failed", err);
     return c.html(page("Google not connected", escapeHtml(err instanceof Error ? err.message : "Something went wrong.")), 400);
+  }
+});
+
+app.get("/oauth/mcp/callback", async (c) => {
+  const { code, state, error, error_description } = c.req.query();
+  if (error || !code || !state) return c.html(page("Not connected", escapeHtml(error_description ?? error ?? "Missing code.")), 400);
+  try {
+    const name = await handleMcpCallback(code, state);
+    return c.html(page("Connected", `Jarvis can now use ${escapeHtml(name)}. You can close this page.`));
+  } catch (err) {
+    console.error("mcp oauth callback failed", err);
+    return c.html(page("Not connected", escapeHtml(err instanceof Error ? err.message : "Something went wrong.")), 400);
   }
 });
 
@@ -295,6 +308,15 @@ app.patch("/api/mcp-servers/:id", async (c) => {
   if (!id.success) return c.json({ error: "Not found" }, 404);
   const ok = await setServerEnabled(config.userId, id.data, body.data.enabled);
   return ok ? c.json({ ok }) : c.json({ error: "Not found" }, 404);
+});
+app.post("/api/mcp-servers/:id/oauth", async (c) => {
+  const id = z.string().uuid().safeParse(c.req.param("id"));
+  if (!id.success) return c.json({ error: "Not found" }, 404);
+  try {
+    return c.json({ url: await startMcpOAuth(config.userId, id.data) });
+  } catch (err) {
+    return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+  }
 });
 app.delete("/api/mcp-servers/:id", async (c) => {
   const id = z.string().uuid().safeParse(c.req.param("id"));

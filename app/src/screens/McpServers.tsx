@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Switch, View } from "react-native";
+import { AppState, Linking, Switch, View } from "react-native";
 import { Alert } from "../dialog";
 import { api, type McpServer, type Settings } from "../api";
 import { LinkButton, useShared } from "../ui";
@@ -17,7 +17,18 @@ export function McpServers({ settings }: { settings: Settings }) {
   const load = useCallback(() => api.mcpServers(settings).then(setServers).catch(() => {}), [settings]);
   useEffect(() => {
     load();
+    // Coming back from a sign-in page in the browser.
+    const sub = AppState.addEventListener("change", (state) => state === "active" && load());
+    return () => sub.remove();
   }, [load]);
+
+  async function signIn(server: McpServer, quiet = false) {
+    try {
+      await Linking.openURL((await api.startMcpSignIn(settings, server.id)).url);
+    } catch (err) {
+      if (!quiet) Alert.alert(`Couldn't sign in to ${server.name}`, err instanceof Error ? err.message : String(err));
+    }
+  }
 
   async function add() {
     try {
@@ -26,7 +37,12 @@ export function McpServers({ settings }: { settings: Settings }) {
       setUrl("");
       setToken("");
       setAdding(false);
-      load();
+      await load();
+      // Without a token, try OAuth straight away; servers that don't need sign-in say so.
+      if (!token.trim()) {
+        const added = (await api.mcpServers(settings)).find((s) => s.name === name.trim().toLowerCase());
+        if (added) signIn(added, true);
+      }
     } catch (err) {
       Alert.alert("Couldn't add server", String(err));
     }
@@ -41,9 +57,10 @@ export function McpServers({ settings }: { settings: Settings }) {
             <Text style={styles.rowTitle}>{s.name}</Text>
             <Text style={styles.rowMeta} numberOfLines={1}>
               {s.url}
-              {s.has_token ? " · token saved" : ""}
+              {s.has_token ? " · token saved" : s.signed_in ? " · signed in" : ""}
             </Text>
           </View>
+          {!s.has_token && <LinkButton label={s.signed_in ? "Sign in again" : "Sign in"} onPress={() => signIn(s)} />}
           <Switch value={s.enabled} onValueChange={(v) => api.setMcpServerEnabled(settings, s.id, v).then(load)} />
           <LinkButton
             label="Remove"

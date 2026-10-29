@@ -2,12 +2,14 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { decrypt, encrypt } from "./crypto.js";
 import { query } from "./db.js";
+import { freshTokens } from "./mcpOAuth.js";
 
 interface Row {
   id: string;
   name: string;
   url: string;
   token: string | null;
+  oauth: string | null;
   enabled: boolean;
   created_at: string;
 }
@@ -31,7 +33,7 @@ function secret() {
 /** For the app: never returns the token itself. */
 export async function listServers(userId: string) {
   const rows = await query<Row>("SELECT * FROM mcp_servers WHERE user_id = $1 ORDER BY name", [userId]);
-  return rows.map(({ token, ...r }) => ({ ...r, has_token: token !== null }));
+  return rows.map(({ token, oauth, ...r }) => ({ ...r, has_token: token !== null, signed_in: oauth !== null }));
 }
 
 export async function addServer(userId: string, input: z.infer<typeof NewServer>) {
@@ -39,7 +41,8 @@ export async function addServer(userId: string, input: z.infer<typeof NewServer>
   const sealed = input.token ? encrypt(input.token, secret()!) : null;
   const [row] = await query<{ id: string }>(
     `INSERT INTO mcp_servers (user_id, name, url, token) VALUES ($1, $2, $3, $4)
-     ON CONFLICT (user_id, name) DO UPDATE SET url = $3, token = $4, enabled = true
+     ON CONFLICT (user_id, name) DO UPDATE SET url = $3, token = $4, enabled = true,
+       oauth = CASE WHEN mcp_servers.url = $3 AND $4::text IS NULL THEN mcp_servers.oauth ELSE NULL END
      RETURNING id`,
     [userId, input.name, input.url, sealed],
   );
@@ -61,18 +64,41 @@ export async function mcpRequestParts(userId: string): Promise<{
   servers: Anthropic.Beta.BetaRequestMCPServerURLDefinition[];
   toolsets: Anthropic.Beta.BetaToolUnion[];
 }> {
-  const rows = await query<Row>("SELECT * FROM mcp_servers WHERE user_id = $1 AND enabled ORDER BY name", [userId]);
-  const key = secret();
-  const usable = rows.filter((r) => r.token === null || key !== null);
+  const usable = await enabledServers(userId);
   return {
     servers: usable.map((r) => ({
       type: "url",
       name: r.name,
       url: r.url,
-      ...(r.token ? { authorization_token: decrypt(r.token, key!) } : {}),
+      ...(r.token ? { authorization_token: r.token } : {}),
     })),
     toolsets: usable.map((r) => ({ type: "mcp_toolset", mcp_server_name: r.name })),
   };
+}
+
+/**
+ * Enabled servers with a usable bearer token (pasted, or OAuth refreshed as needed).
+ * A server whose secret can't be read, or whose sign-in has lapsed, is left out
+ * rather than failing the whole turn.
+ */
+async function enabledServers(userId: string) {
+  const rows = await query<Row>("SELECT * FROM mcp_servers WHERE user_id = $1 AND enabled ORDER BY name", [userId]);
+  const key = secret();
+  const out: { name: string; url: string; token: string | null; expiresAt?: number }[] = [];
+  for (const r of rows) {
+    if ((r.token || r.oauth) && !key) continue;
+    if (r.oauth) {
+      try {
+        const t = await freshTokens(r.id, r.oauth, key!);
+        out.push({ name: r.name, url: r.url, token: t.access_token, expiresAt: t.expires_at });
+      } catch (err) {
+        console.warn(`MCP server ${r.name}: sign-in needs renewing`, err instanceof Error ? err.message : err);
+      }
+      continue;
+    }
+    out.push({ name: r.name, url: r.url, token: r.token ? decrypt(r.token, key!) : null });
+  }
+  return out;
 }
 
 /**
@@ -80,9 +106,5 @@ export async function mcpRequestParts(userId: string): Promise<{
  * the server list; they go into a vault, matched to each server by URL.
  */
 export async function taskMcpParts(userId: string) {
-  const rows = await query<Row>("SELECT * FROM mcp_servers WHERE user_id = $1 AND enabled ORDER BY name", [userId]);
-  const key = secret();
-  return rows
-    .filter((r) => r.token === null || key !== null)
-    .map((r) => ({ name: r.name, url: r.url, token: r.token ? decrypt(r.token, key!) : null }));
+  return enabledServers(userId);
 }

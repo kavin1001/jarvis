@@ -49,6 +49,7 @@ export async function serverStatus(userId: string) {
     task_vault: Boolean(config.taskVaultId),
     google: googleConfigured(),
     connector_secret: Boolean(process.env.CONNECTOR_SECRET),
+    public_url: Boolean(process.env.PUBLIC_URL),
     push_devices: push.n,
   };
 }

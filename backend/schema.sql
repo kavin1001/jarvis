@@ -166,3 +166,7 @@ CREATE INDEX IF NOT EXISTS messages_display_text_fts_idx
 
 -- A vault Jarvis creates for one task to hold its MCP server tokens; deleted when the task ends.
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS vault_id TEXT;
+
+-- OAuth sign-in for MCP servers: tokens per server, and the pending sign-in's PKCE verifier and client.
+ALTER TABLE mcp_servers ADD COLUMN IF NOT EXISTS oauth TEXT;
+ALTER TABLE oauth_states ADD COLUMN IF NOT EXISTS data TEXT;
