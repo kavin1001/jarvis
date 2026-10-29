@@ -126,6 +126,8 @@ describe("task lane", () => {
     stream.push({ type: "agent.message", id: "evt_msg", content: [{ type: "text", text: "Booked for 7pm." }] });
     stream.push({ type: "session.status_idle", id: "evt_idle", stop_reason: { type: "end_turn" } });
     await until(async () => (await taskStatus(taskId)) === "done");
+    // The status flips just before the update message is written.
+    await until(async () => (await memory.getMessages(conv)).some((m) => m.kind === "task_update"));
 
     expect(await memory.takePendingTaskUpdates(conv)).toEqual(['Task "Book dinner" finished.\n\nBooked for 7pm.']);
   });
