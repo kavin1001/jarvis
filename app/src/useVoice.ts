@@ -47,6 +47,28 @@ export function useVoice(onFinal: (transcript: string) => void, onSilence?: () =
 }
 
 /**
+ * The most natural installed voice for the phone's language: a downloaded
+ * "Premium" or "Enhanced" Siri voice when there is one (Settings, Accessibility,
+ * Spoken Content, Voices), otherwise the system default.
+ */
+let bestVoice: Promise<string | undefined> | null = null;
+function pickVoice() {
+  bestVoice ??= Speech.getAvailableVoicesAsync()
+    .then((voices) => {
+      const lang = (Intl.DateTimeFormat().resolvedOptions().locale || "en-US").split("-")[0];
+      const mine = voices.filter((v) => v.language?.toLowerCase().startsWith(lang));
+      const pick =
+        mine.find((v) => /premium/i.test(v.identifier)) ??
+        mine.find((v) => v.quality === Speech.VoiceQuality.Enhanced) ??
+        undefined;
+      return pick?.identifier;
+    })
+    .catch(() => undefined);
+  return bestVoice;
+}
+pickVoice();
+
+/**
  * Speaks streamed text sentence by sentence, so voice replies start early.
  * onFinished runs once everything queued before flush() has been spoken,
  * unless speech was stopped (for example by tapping the mic).
@@ -56,13 +78,18 @@ export function createSpeaker(onFinished?: () => void) {
   let queued = 0;
   let flushed = false;
   let stopped = false;
+  let order: Promise<void> = Promise.resolve();
   const done = () => {
     queued--;
     if (flushed && queued === 0 && !stopped) onFinished?.();
   };
   const say = (text: string) => {
     queued++;
-    Speech.speak(text, { onDone: done, onError: done, onStopped: () => ((stopped = true), done()) });
+    // Chained so sentences stay in order while the voice lookup is still pending.
+    order = order.then(async () => {
+      const voice = await pickVoice();
+      Speech.speak(text, { voice, onDone: done, onError: done, onStopped: () => ((stopped = true), done()) });
+    });
   };
   return {
     push(delta: string) {

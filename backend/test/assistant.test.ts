@@ -185,4 +185,26 @@ describe("runTurn", () => {
     // The second request already sees the first exchange, so roles alternate.
     expect(requests[1].messages.map((m) => m.role)).toEqual(["user", "assistant", "user"]);
   });
+
+  it("attaches PDFs through the Files API and text files inline", async () => {
+    const requests = fakeClient([{ content: [{ type: "text", text: "ok", citations: null }], stop_reason: "end_turn" }]);
+    const id = await memory.createConversation("me");
+    await runTurn({
+      conversationId: id,
+      text: "compare these",
+      source: "text",
+      emit: () => {},
+      documents: [
+        { name: "lease.pdf", media_type: "application/pdf", data: Buffer.from("%PDF-1.4 fake").toString("base64") },
+        { name: "notes.txt", media_type: "text/plain", data: Buffer.from("rent is $2000").toString("base64") },
+      ],
+    });
+    const blocks = requests[0].messages[0].content as { type: string; title?: string; source?: unknown }[];
+    expect(blocks.filter((b) => b.type === "document")).toEqual([
+      { type: "document", title: "lease.pdf", source: { type: "file", file_id: "file_123" } },
+      { type: "document", title: "notes.txt", source: { type: "text", media_type: "text/plain", data: "rent is $2000" } },
+    ]);
+    const [stored] = await memory.getMessages(id);
+    expect(stored.display_text).toBe("📄 lease.pdf\n📄 notes.txt\ncompare these");
+  });
 });

@@ -30,6 +30,25 @@ async function uploadImage(image: ImageInput): Promise<Anthropic.Beta.BetaImageB
   return { type: "image", source: { type: "file", file_id: file.id } };
 }
 
+export interface DocumentInput {
+  name: string;
+  media_type: "application/pdf" | "text/plain";
+  data: string; // base64
+}
+
+// Text files go inline; PDFs are uploaded once so history carries a file id, not the bytes.
+async function documentBlock(doc: DocumentInput): Promise<Anthropic.Beta.BetaRequestDocumentBlock> {
+  const title = doc.name.replace(/[\r\n]+/g, " ").slice(0, 200);
+  if (doc.media_type === "text/plain") {
+    const text = Buffer.from(doc.data, "base64").toString("utf8").slice(0, 400_000);
+    return { type: "document", title, source: { type: "text", media_type: "text/plain", data: text } };
+  }
+  const file = await client.files.upload({
+    file: await toFile(Buffer.from(doc.data, "base64"), "document.pdf", { type: "application/pdf" }),
+  });
+  return { type: "document", title, source: { type: "file", file_id: file.id } };
+}
+
 export interface ApproxLocation {
   latitude: number;
   longitude: number;
@@ -287,6 +306,7 @@ async function runTurnNow(opts: {
   emit: (e: ChatEvent) => void;
   timezone?: string;
   images?: ImageInput[];
+  documents?: DocumentInput[];
   location?: ApproxLocation;
 }): Promise<string> {
   const { conversationId, text, source, emit } = opts;
@@ -299,7 +319,11 @@ async function runTurnNow(opts: {
     return notice;
   }
 
-  const userContent: (Anthropic.Beta.BetaTextBlockParam | Anthropic.Beta.BetaImageBlockParam)[] = [];
+  const userContent: (
+    | Anthropic.Beta.BetaTextBlockParam
+    | Anthropic.Beta.BetaImageBlockParam
+    | Anthropic.Beta.BetaRequestDocumentBlock
+  )[] = [];
   for (const update of await memory.takePendingTaskUpdates(conversationId)) {
     userContent.push({ type: "text", text: `[Background task update]\n${update}` });
   }
@@ -312,13 +336,16 @@ async function runTurnNow(opts: {
     userContent.push({ type: "text", text: `(User's approximate location: ${place}(${latitude.toFixed(2)}, ${longitude.toFixed(2)}).)` });
   }
   if (source === "voice") userContent.push({ type: "text", text: "(Sent by voice.)" });
+  for (const doc of opts.documents ?? []) userContent.push(await documentBlock(doc));
   for (const image of opts.images ?? []) userContent.push(await uploadImage(image));
   userContent.push({ type: "text", text: source === "scheduled" ? `[Scheduled job] ${text}` : text });
   await memory.appendMessage(
     conversationId,
     "user",
     userContent,
-    source === "scheduled" ? `Scheduled: ${text}` : opts.images?.length ? `📷 ${text}` : text,
+    source === "scheduled"
+      ? `Scheduled: ${text}`
+      : `${(opts.documents ?? []).map((d) => `📄 ${d.name}\n`).join("")}${opts.images?.length ? "📷 " : ""}${text}`,
     source === "scheduled" ? "system" : source,
   );
 

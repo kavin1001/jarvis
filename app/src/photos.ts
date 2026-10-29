@@ -2,6 +2,7 @@ import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import * as ImagePicker from "expo-image-picker";
 import { ActionSheetIOS, Platform } from "react-native";
 import { Alert } from "./dialog";
+import { chooseDocuments, type Doc } from "./documents";
 
 export interface Photo {
   uri: string; // for the preview
@@ -36,17 +37,35 @@ async function pick(source: "camera" | "library"): Promise<Photo[]> {
   return Promise.all(result.assets.slice(0, 4).map(prepare));
 }
 
-/** Asks camera or library, then returns resized JPEGs ready to send. */
-export function choosePhotos(): Promise<Photo[]> {
+export interface Attachments {
+  photos: Photo[];
+  docs: Doc[];
+}
+
+/** Asks camera, library or file, then returns resized JPEGs or documents ready to send. */
+export function chooseAttachments(): Promise<Attachments> {
   return new Promise((resolve) => {
-    const choose = (i: number) => resolve(i === 0 ? pick("camera") : i === 1 ? pick("library") : Promise.resolve([]));
+    const choose = (i: number) =>
+      resolve(
+        i === 0
+          ? pick("camera").then((photos) => ({ photos, docs: [] }))
+          : i === 1
+            ? pick("library").then((photos) => ({ photos, docs: [] }))
+            : i === 2
+              ? chooseDocuments().then((docs) => ({ photos: [], docs }))
+              : Promise.resolve({ photos: [], docs: [] }),
+      );
     if (Platform.OS === "ios") {
-      ActionSheetIOS.showActionSheetWithOptions({ options: ["Take photo", "Choose from library", "Cancel"], cancelButtonIndex: 2 }, choose);
+      ActionSheetIOS.showActionSheetWithOptions(
+        { options: ["Take photo", "Choose from library", "Choose a file (PDF or text)", "Cancel"], cancelButtonIndex: 3 },
+        choose,
+      );
     } else {
-      Alert.alert("Add a photo", undefined, [
+      Alert.alert("Add an attachment", undefined, [
         { text: "Take photo", onPress: () => choose(0) },
         { text: "Choose from library", onPress: () => choose(1) },
-        { text: "Cancel", style: "cancel", onPress: () => choose(2) },
+        { text: "Choose a file (PDF or text)", onPress: () => choose(2) },
+        { text: "Cancel", style: "cancel", onPress: () => choose(3) },
       ]);
     }
   });

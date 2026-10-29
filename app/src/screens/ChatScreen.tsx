@@ -16,7 +16,8 @@ import * as Haptics from "expo-haptics";
 import type { Command } from "../deepLink";
 import { approximateLocation } from "../location";
 import { Markdown } from "../Markdown";
-import { choosePhotos, type Photo } from "../photos";
+import type { Doc } from "../documents";
+import { chooseAttachments, type Photo } from "../photos";
 import { askApproval } from "../usePush";
 import { createSpeaker, isStopPhrase, useVoice } from "../useVoice";
 
@@ -38,6 +39,7 @@ export default function ChatScreen({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState("");
   const [photos, setPhotos] = useState<Photo[]>([]);
+  const [docs, setDocs] = useState<Doc[]>([]);
   const [busy, setBusy] = useState(false);
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const list = useRef<FlatList<ChatMessage>>(null);
@@ -60,17 +62,19 @@ export default function ChatScreen({
   }, [refresh, refreshKey]);
 
   async function send(text: string, source: "text" | "voice") {
-    if ((!text.trim() && photos.length === 0) || busy) return;
-    if (!text.trim()) text = "What's in this photo?";
+    if ((!text.trim() && photos.length === 0 && docs.length === 0) || busy) return;
+    if (!text.trim()) text = docs.length ? "Summarize this." : "What's in this photo?";
     const images = photos.map(({ media_type, data }) => ({ media_type, data }));
+    const documents = docs;
     setBusy(true);
     setDraft("");
     setPhotos([]);
+    setDocs([]);
     const speaker = source === "voice" ? createSpeaker(() => handsFreeRef.current && voice.start()) : null;
     const replyId = `pending-${Date.now()}`;
     setMessages((m) => [
       ...m,
-      { id: `local-${Date.now()}`, role: "user", kind: "turn", text: images.length ? `📷 ${text}` : text, source },
+      { id: `local-${Date.now()}`, role: "user", kind: "turn", text: `${documents.map((d) => `📄 ${d.name}\n`).join("")}${images.length ? "📷 " : ""}${text}`, source },
       { id: replyId, role: "assistant", kind: "turn", text: "", source: "text" },
     ]);
     const appendReply = (delta: string) =>
@@ -79,7 +83,7 @@ export default function ChatScreen({
     try {
       const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const location = await approximateLocation();
-      await streamChat(settings, { conversationId, text, source, timezone, images, location }, (e) => {
+      await streamChat(settings, { conversationId, text, source, timezone, images, documents, location }, (e) => {
         switch (e.type) {
           case "conversation":
             if (e.conversationId !== conversationId) onConversation(e.conversationId);
@@ -202,6 +206,16 @@ export default function ChatScreen({
 
       {voice.listening && <Text style={styles.partial}>{voice.partial || "Listening…"}</Text>}
 
+      {docs.length > 0 && (
+        <View style={styles.photos}>
+          {docs.map((d, i) => (
+            <Pressable key={`${d.name}-${i}`} style={styles.docChip} onPress={() => setDocs((all) => all.filter((_, j) => j !== i))}>
+              <Text numberOfLines={1}>📄 {d.name} ✕</Text>
+            </Pressable>
+          ))}
+        </View>
+      )}
+
       {photos.length > 0 && (
         <View style={styles.photos}>
           {photos.map((p, i) => (
@@ -215,9 +229,14 @@ export default function ChatScreen({
       <View style={styles.composer}>
         <Pressable
           style={styles.attach}
-          onPress={() => choosePhotos().then((p) => setPhotos((all) => [...all, ...p].slice(0, 4)))}
+          onPress={() =>
+            chooseAttachments().then((a) => {
+              setPhotos((all) => [...all, ...a.photos].slice(0, 4));
+              setDocs((all) => [...all, ...a.docs].slice(0, 2));
+            })
+          }
           disabled={busy}
-          accessibilityLabel="Add a photo"
+          accessibilityLabel="Add a photo or file"
         >
           <Text style={styles.attachText}>＋</Text>
         </Pressable>
@@ -229,7 +248,7 @@ export default function ChatScreen({
           multiline
           editable={!busy}
         />
-        {draft || photos.length ? (
+        {draft || photos.length || docs.length ? (
           <Pressable style={styles.button} onPress={() => send(draft, "text")} disabled={busy}>
             <Text style={styles.buttonText}>Send</Text>
           </Pressable>
@@ -264,6 +283,7 @@ const styles = StyleSheet.create({
   taskUpdate: { borderWidth: 1, borderColor: "#94a3b8" },
   partial: { textAlign: "center", color: "#64748b", padding: 8 },
   photos: { flexDirection: "row", gap: 8, paddingHorizontal: 12 },
+  docChip: { backgroundColor: "#f1f5f9", borderRadius: 12, paddingHorizontal: 10, paddingVertical: 6, maxWidth: 220 },
   thumb: { width: 56, height: 56, borderRadius: 8 },
   attach: { paddingHorizontal: 6, paddingVertical: 8 },
   attachText: { fontSize: 24, color: "#2563eb" },

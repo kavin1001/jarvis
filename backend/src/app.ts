@@ -100,6 +100,16 @@ const ChatBody = z.object({
     )
     .max(4)
     .optional(),
+  documents: z
+    .array(
+      z.object({
+        name: z.string().min(1).max(200),
+        media_type: z.enum(["application/pdf", "text/plain"]),
+        data: z.string().max(28_000_000), // ~20 MB decoded
+      }),
+    )
+    .max(2)
+    .optional(),
   location: z
     .object({
       latitude: z.number().min(-90).max(90),
@@ -140,6 +150,7 @@ app.post("/api/chat", async (c) => {
         source: body.data.source,
         timezone: body.data.timezone,
         images: body.data.images,
+        documents: body.data.documents,
         location: body.data.location,
         emit: (e) => void send(e),
       });

@@ -204,6 +204,7 @@ export async function streamChat(
     source: "text" | "voice";
     timezone?: string;
     images?: { media_type: string; data: string }[];
+    documents?: { name: string; media_type: string; data: string }[];
     location?: { latitude: number; longitude: number; label?: string };
   },
   onEvent: (e: StreamEvent) => void,
