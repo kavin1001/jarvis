@@ -335,6 +335,9 @@ export interface NotifySettings {
   replies: boolean;
   tasks: boolean;
   spending: boolean;
+  /** Quiet hours in minutes after local midnight, or null when off. */
+  quiet_start: number | null;
+  quiet_end: number | null;
 }
 
 // The few countries that use Fahrenheit, going by the phone's region.

@@ -10,7 +10,7 @@ Goal: a personal agent on your phone that answers instantly, remembers you, and 
 - **Everyday answers:** weather forecasts for where you are or anywhere else, without a web search.
 - **Gets things done:** background tasks on Claude Managed Agents with approve or deny from the notification and files you can open from Tasks, reminders and routines with snooze, alerts when a particular email arrives (or a nudge when it hasn't by a deadline) or a web page changes, reminders for when you arrive or leave a place, a "coming up" card on a new chat, a status line while tools run.
 - **Inputs:** photos, camera, PDFs and text files, meeting recordings written up as notes, "Hey Siri, Ask Jarvis" through a Shortcut that speaks the answer, Siri and Shortcuts links, Android share sheet (web app).
-- **Phone-ready:** app icon and launch screen, dark mode, device pairing and revoking, an installable web app, an offline banner, and messages sent offline go out once the connection is back, push notifications.
+- **Phone-ready:** app icon and launch screen, dark mode, device pairing and revoking, an installable web app, an offline banner, and messages sent offline go out once the connection is back, push notifications with quiet hours.
 - **Running it:** Docker image and Render blueprint, `/health`, spend tracking with a daily cap, a setup checklist in Settings, data export and erase, CI with backend tests.
 
 ## Next

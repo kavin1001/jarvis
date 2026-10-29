@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { app } from "../src/app.js";
 import { query, pool } from "../src/db.js";
-import { savePushToken, sendPush } from "../src/push.js";
+import { isQuiet, savePushToken, sendPush } from "../src/push.js";
 import { setTimezone } from "../src/reminders.js";
 import { auth, resetDb } from "./helpers.js";
 
@@ -40,9 +40,9 @@ describe("notification settings", () => {
     const sent: unknown[] = [];
     vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => (sent.push(...JSON.parse(init.body as string)), Response.json({ data: [] }))));
     const json = { ...auth, "Content-Type": "application/json" };
-    expect(await (await app.request("/api/notifications", { headers: auth })).json()).toEqual({ replies: true, tasks: true, spending: true });
+    expect(await (await app.request("/api/notifications", { headers: auth })).json()).toEqual({ replies: true, tasks: true, spending: true, quiet_start: null, quiet_end: null });
     const off = await app.request("/api/notifications", { method: "PATCH", headers: json, body: JSON.stringify({ tasks: false }) });
-    expect(await off.json()).toEqual({ replies: true, tasks: false, spending: true });
+    expect(await off.json()).toEqual({ replies: true, tasks: false, spending: true, quiet_start: null, quiet_end: null });
     expect((await app.request("/api/notifications", { method: "PATCH", headers: json, body: JSON.stringify({ approvals: false }) })).status).toBe(400);
 
     await sendPush("me", "Jarvis finished a task", "Done", {}, "reply", "tasks");
@@ -50,6 +50,41 @@ describe("notification settings", () => {
     await sendPush("me", "Jarvis replied", "Hi", {}, "reply", "replies");
     await sendPush("me", "Jarvis needs your OK", "Book it?", {}, "approval");
     expect(sent).toHaveLength(2);
+  });
+});
+
+describe("quiet hours", () => {
+  it("knows when it's quiet, across midnight and in the user's time zone", () => {
+    const night = { quiet_start: 22 * 60, quiet_end: 7 * 60 };
+    expect(isQuiet(night, "UTC", new Date("2026-10-29T23:30:00Z"))).toBe(true);
+    expect(isQuiet(night, "UTC", new Date("2026-10-29T06:59:00Z"))).toBe(true);
+    expect(isQuiet(night, "UTC", new Date("2026-10-29T07:00:00Z"))).toBe(false);
+    expect(isQuiet(night, "UTC", new Date("2026-10-29T12:00:00Z"))).toBe(false);
+    // 03:00 UTC is 23:00 the evening before in New York.
+    expect(isQuiet(night, "America/New_York", new Date("2026-10-29T03:00:00Z"))).toBe(true);
+    expect(isQuiet(night, "America/New_York", new Date("2026-10-29T14:00:00Z"))).toBe(false);
+    expect(isQuiet({ quiet_start: 13 * 60, quiet_end: 14 * 60 }, "UTC", new Date("2026-10-29T13:15:00Z"))).toBe(true);
+    expect(isQuiet({ quiet_start: null, quiet_end: null }, "UTC", new Date("2026-10-29T23:30:00Z"))).toBe(false);
+  });
+
+  it("sends silently in quiet hours, except reminders the user set", async () => {
+    await savePushToken("me", "ExponentPushToken[live]");
+    let sent: Record<string, unknown>[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_url: string, init: RequestInit) => ((sent = JSON.parse(init.body as string)), Response.json({ data: [] }))));
+    const json = { ...auth, "Content-Type": "application/json" };
+    // Quiet all day except the last minute, so the test doesn't depend on the clock.
+    const res = await app.request("/api/notifications", { method: "PATCH", headers: json, body: JSON.stringify({ quiet_start: 0, quiet_end: 1439 }) });
+    expect(await res.json()).toMatchObject({ quiet_start: 0, quiet_end: 1439 });
+    expect((await app.request("/api/notifications", { method: "PATCH", headers: json, body: JSON.stringify({ quiet_start: 1440 }) })).status).toBe(400);
+    const lastMinute = new Date().getUTCHours() === 23 && new Date().getUTCMinutes() === 59;
+    if (lastMinute) return;
+
+    await sendPush("me", "Jarvis replied", "Hi", {}, "reply", "replies");
+    expect(sent[0]).toMatchObject({ interruptionLevel: "passive", channelId: "quiet" });
+    expect(sent[0]).not.toHaveProperty("sound");
+    await sendPush("me", "Reminder", "Pills", {}, "reminder", undefined, undefined, true);
+    expect(sent[0]).toMatchObject({ sound: "default" });
+    expect(sent[0]).not.toHaveProperty("interruptionLevel");
   });
 });
 

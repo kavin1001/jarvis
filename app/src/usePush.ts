@@ -78,6 +78,9 @@ export function usePush(
       const { status } = await Notifications.requestPermissionsAsync();
       const projectId = Constants.expoConfig?.extra?.eas?.projectId as string | undefined;
       if (status !== "granted" || !projectId) return; // projectId comes from `eas init`
+      // Notifications sent in quiet hours use this channel, so Android shows them without a sound.
+      if (Platform.OS === "android")
+        await Notifications.setNotificationChannelAsync("quiet", { name: "Quiet hours", importance: Notifications.AndroidImportance.LOW, sound: null });
       const { data } = await Notifications.getExpoPushTokenAsync({ projectId });
       await api.pushToken(settings, data);
     })().catch((err) => console.warn("push registration failed", err));

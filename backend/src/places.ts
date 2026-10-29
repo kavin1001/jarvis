@@ -128,6 +128,6 @@ export async function triggerPlaceReminder(userId: string, id: string, event: "a
   await memory.appendMessage(conversationId, "assistant", [{ type: "text", text }], text, "system", "task_update");
   const where = r.place_name === "home" ? "home" : r.place_name;
   const title = r.on_event === "arrive" ? `Arrived ${r.place_name === "home" ? "home" : `at ${where}`}` : `Leaving ${where}`;
-  await sendPush(userId, title, r.text, { conversationId });
+  await sendPush(userId, title, r.text, { conversationId }, undefined, undefined, undefined, true);
   return "sent" as const;
 }

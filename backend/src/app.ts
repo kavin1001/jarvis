@@ -637,7 +637,11 @@ app.post("/api/push-token", async (c) => {
 });
 
 app.get("/api/notifications", async (c) => c.json(await getNotifySettings(config.userId)));
-const NotifyChange = z.object({ replies: z.boolean(), tasks: z.boolean(), spending: z.boolean() }).partial().strict();
+const minuteOfDay = z.number().int().min(0).max(1439).nullable();
+const NotifyChange = z
+  .object({ replies: z.boolean(), tasks: z.boolean(), spending: z.boolean(), quiet_start: minuteOfDay, quiet_end: minuteOfDay })
+  .partial()
+  .strict();
 app.patch("/api/notifications", async (c) => {
   const body = NotifyChange.safeParse(await c.req.json());
   if (!body.success) return c.json({ error: body.error.message }, 400);

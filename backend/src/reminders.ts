@@ -186,9 +186,9 @@ async function fire(r: Reminder, runPrompt: RunPrompt, now = new Date()) {
         [r.user_id, conversationId, r.text, new Date(now.getTime() + r.nag_minutes * 60_000), r.timezone, r.nag_minutes, r.nag_of ?? r.id, nagsLeft - 1],
       );
     }
-    await sendPush(r.user_id, "Reminder", r.text, { conversationId, reminderId: r.id }, r.nag_minutes ? "nag" : "reminder");
+    await sendPush(r.user_id, "Reminder", r.text, { conversationId, reminderId: r.id }, r.nag_minutes ? "nag" : "reminder", undefined, undefined, true);
     return;
   }
   const answer = await runPrompt(conversationId, r.text);
-  await sendPush(r.user_id, "Jarvis", answer || r.text, { conversationId, reminderId: r.id }, "reply");
+  await sendPush(r.user_id, "Jarvis", answer || r.text, { conversationId, reminderId: r.id }, "reply", undefined, undefined, true);
 }

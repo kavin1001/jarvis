@@ -217,6 +217,9 @@ CREATE TABLE IF NOT EXISTS notify_settings (
   tasks     BOOLEAN NOT NULL DEFAULT true,
   spending  BOOLEAN NOT NULL DEFAULT true
 );
+-- Quiet hours, in minutes after local midnight: notifications still arrive but without a sound.
+ALTER TABLE notify_settings ADD COLUMN IF NOT EXISTS quiet_start SMALLINT;
+ALTER TABLE notify_settings ADD COLUMN IF NOT EXISTS quiet_end SMALLINT;
 
 -- Lists the user keeps with Jarvis: shopping, packing, to-dos. One row per item.
 CREATE TABLE IF NOT EXISTS list_items (
