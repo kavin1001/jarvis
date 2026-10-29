@@ -28,6 +28,7 @@ describe("meeting transcript", () => {
     const { text, doc } = meetingMessage("We agreed to ship Friday.", new Date(2026, 9, 29, 15, 5), 32 * 60_000);
     expect(doc).toEqual({ name: "Meeting transcript, Thu, Oct 29 3:05 PM.txt", media_type: "text/plain", data: utf8ToBase64("We agreed to ship Friday.") });
     expect(text).toMatch(/^I recorded a meeting \(32 minutes, started Thu, Oct 29 at 3:05 PM\)/);
-    expect(text).toMatch(/save that as a note titled "Meeting notes, Thu, Oct 29"\.$/);
+    expect(text).toMatch(/save that as a note titled "Meeting notes, Thu, Oct 29"\. /);
+    expect(text).toMatch(/offer, in one line, to put the notes in a Google Doc to share and to set reminders for action items with a date\.$/);
   });
 });

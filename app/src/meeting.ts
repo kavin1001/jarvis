@@ -45,6 +45,7 @@ export function meetingMessage(transcript: string, startedAt: Date, ms: number) 
   const text =
     `I recorded a meeting (${minutes} minute${minutes === 1 ? "" : "s"}, started ${day} at ${time}). The transcript is attached; ` +
     `my phone's speech recognition made it, so expect wrong words and no speaker names. Write it up: a short summary, ` +
-    `decisions, and action items with who owns them where you can tell. Then save that as a note titled "Meeting notes, ${day}".`;
+    `decisions, and action items with who owns them where you can tell. Then save that as a note titled "Meeting notes, ${day}". ` +
+    `Afterwards offer, in one line, to put the notes in a Google Doc to share and to set reminders for action items with a date.`;
   return { text, doc };
 }
